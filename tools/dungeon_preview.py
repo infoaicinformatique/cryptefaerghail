@@ -29,6 +29,7 @@ DIRS = ((0, -1), (1, 0), (0, 1), (-1, 0))            # N, E, S, O
 
 # morceaux, dans l'ordre ou build_art les empile
 BG, FRONT, LEFT, RIGHT, DOOR, MONSTER = 0, 1, 5, 9, 13, 16
+FRONTL, FRONTR, OUTERL, OUTERR = 20, 24, 28, 30
 
 
 def load_art():
@@ -85,10 +86,14 @@ def solid(c):
     return (c & 0x0f) in (G.WALL, G.DOOR)
 
 
+def cell_at(grid, px, py, dirn, depth, offset):
+    dx, dy = DIRS[dirn]
+    rx, ry = DIRS[(dirn + 1) & 3]
+    return cell(grid, px + dx * depth + rx * offset, py + dy * depth + ry * offset)
+
+
 def draw_view(screen, raw, pieces, grid, px, py, dirn):
     dx, dy = DIRS[dirn]
-    lx, ly = DIRS[(dirn + 3) & 3]                    # a gauche
-    rx, ry = DIRS[(dirn + 1) & 3]                    # a droite
     blit(screen, raw, pieces[BG], masked=False)
 
     block = 0
@@ -102,13 +107,19 @@ def draw_view(screen, raw, pieces, grid, px, py, dirn):
             blit(screen, raw, pieces[DOOR + block - 1])
         else:
             blit(screen, raw, pieces[FRONT + block - 1])
-    maxd = (block - 1) if block else 4
-    for i in range(min(maxd, 4) - 1, -1, -1):
-        cx, cy = px + dx * i, py + dy * i
-        if solid(cell(grid, cx + lx, cy + ly)):
-            blit(screen, raw, pieces[LEFT + i])
-        if solid(cell(grid, cx + rx, cy + ry)):
-            blit(screen, raw, pieces[RIGHT + i])
+
+    maxd = (block - 1) if block else 3
+    for i in range(min(maxd, 3), -1, -1):            # du plus loin au plus pres
+        for side, wall, front, outer in ((-1, LEFT, FRONTL, OUTERL),
+                                         (1, RIGHT, FRONTR, OUTERR)):
+            if solid(cell_at(grid, px, py, dirn, i, side)):
+                blit(screen, raw, pieces[wall + i])
+                continue
+            # passage ouvert : on voit le fond du passage, puis son mur
+            if solid(cell_at(grid, px, py, dirn, i + 1, side)):
+                blit(screen, raw, pieces[front + i])
+            if i >= 2 and solid(cell_at(grid, px, py, dirn, i, 2 * side)):
+                blit(screen, raw, pieces[outer + i - 2])
 
 
 # --- texte 8x8 ----------------------------------------------------------

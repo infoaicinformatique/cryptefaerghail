@@ -103,19 +103,24 @@ def snap(x0, x1):
     return a, b
 
 
-def make_front(k, door=False):
-    """Mur qui ferme le couloir a la distance k."""
+def make_front(k, door=False, offset=0):
+    """Face d'une case a la distance k, decalee lateralement de `offset`
+    cases : offset 0 ferme le couloir, offset -1 ou +1 ferme le fond d'un
+    passage lateral."""
     half = F / k
-    x0, x1 = snap(CX - half, CX + half)
-    y0, y1 = int(CY - half), int(round(CY + half))
-    y0, y1 = max(0, y0), min(VIEW_H, y1)
+    xa = CX + 2 * half * (offset - 0.5)
+    xb = CX + 2 * half * (offset + 0.5)
+    x0, x1 = snap(xa, xb)
+    y0, y1 = max(0, int(CY - half)), min(VIEW_H, int(round(CY + half)))
+    if x1 <= x0 or y1 <= y0:
+        return Piece(0, 0, 16, 1)                    # hors ecran
     p = Piece(x0, y0, x1 - x0, y1 - y0)
     for y in range(y0, y1):
         for x in range(x0, x1):
-            if abs(x - CX) > half or abs(y - CY) > half:
+            if not (xa <= x < xb) or abs(y - CY) > half:
                 continue
-            u = (x - CX) / (2 * half)                # -0.5 .. 0.5
-            v = (y - CY) / (2 * half)
+            u = (x - CX) * k / (2 * F)               # coordonnees monde
+            v = (y - CY) * k / (2 * F)
             if door and -0.22 < u < 0.22 and v > -0.30:
                 p.set(x, y, door_pixel(u, v, k))
             else:
@@ -134,27 +139,34 @@ def door_pixel(u, v, k):
     return 9
 
 
-def make_side(i, right):
-    """Mur lateral de la case a la profondeur i, entre les distances i et i+1."""
-    near = max(i, 0.42)
-    xa = CX - F / near if not right else CX + F / near
-    xb = CX - F / (i + 1) if not right else CX + F / (i + 1)
-    lo, hi = (xa, xb) if not right else (xb, xa)
-    x0, x1 = snap(lo, hi)
+def make_side(i, lateral):
+    """Mur vertical a la position laterale `lateral` (en demi-cases :
+    -0.5 = mur gauche du couloir, -1.5 = mur du fond d'un passage a
+    gauche), vu entre les distances i et i+1.
+
+    Ces murs se projettent en droites passant par le point de fuite :
+    a la colonne x, la distance vaut 2*F*lateral / (x - CX), ce qui donne
+    un placage de texture exact, sans division par pixel a l'execution."""
+    near, far = max(i, 0.42), i + 1
+    xa = CX + 2 * F * lateral / near
+    xb = CX + 2 * F * lateral / far
+    x0, x1 = snap(min(xa, xb), max(xa, xb))
+    if x1 <= x0:
+        return Piece(0, 0, 16, 1)                    # entierement hors ecran
     p = Piece(x0, 0, x1 - x0, VIEW_H)
+    drawn = False
     for x in range(x0, x1):
-        halfw = abs(CX - x)                          # = F / distance
-        if halfw < 1e-6:
+        if x == CX:
             continue
-        dist = F / halfw
-        if not (near - 1e-6 <= dist <= i + 1 + 1e-6):
+        dist = 2 * F * lateral / (x - CX)
+        if not (near - 1e-6 <= dist <= far + 1e-6):
             continue
-        ytop = int(CY - halfw)
-        ybot = int(round(CY + halfw))
-        for y in range(max(0, ytop), min(VIEW_H, ybot)):
-            v = 0.5 * (y - CY) / halfw
+        halfw = F / dist
+        for y in range(max(0, int(CY - halfw)), min(VIEW_H, int(round(CY + halfw)))):
+            v = (y - CY) * dist / (2 * F)
             p.set(x, y, brick(dist, v, dist, True))
-    return p
+            drawn = True
+    return p if drawn else Piece(0, 0, 16, 1)
 
 
 def make_background():
@@ -254,11 +266,17 @@ def encode(piece):
 
 def build_art():
     pieces = [make_background()]
-    pieces += [make_front(k) for k in (1, 2, 3, 4)]
-    pieces += [make_side(i, False) for i in range(DEPTHS)]
-    pieces += [make_side(i, True) for i in range(DEPTHS)]
-    pieces += [make_front(k, door=True) for k in (1, 2, 3)]
-    pieces += [make_monster(k) for k in range(4)]
+    pieces += [make_front(k) for k in (1, 2, 3, 4)]              # 1..4
+    pieces += [make_side(i, -0.5) for i in range(DEPTHS)]        # 5..8
+    pieces += [make_side(i, 0.5) for i in range(DEPTHS)]         # 9..12
+    pieces += [make_front(k, door=True) for k in (1, 2, 3)]      # 13..15
+    pieces += [make_monster(k) for k in range(4)]                # 16..19
+    # de quoi habiller les passages lateraux : la face du fond du passage
+    # et son mur exterieur, sans quoi une ouverture n'est qu'un trou noir
+    pieces += [make_front(k, offset=-1) for k in (1, 2, 3, 4)]   # 20..23
+    pieces += [make_front(k, offset=1) for k in (1, 2, 3, 4)]    # 24..27
+    pieces += [make_side(i, -1.5) for i in (2, 3)]               # 28..29
+    pieces += [make_side(i, 1.5) for i in (2, 3)]                # 30..31
 
     blobs, descs = [], []
     offset = 2 + len(pieces) * 12

@@ -109,8 +109,9 @@ Start:
 	move.w	#$7fff,DMACON(a5)
 
 	bsr	InitDemo
+	bsr	PT_Init			; module ProTracker
 
-	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER,DMACON(a5)
+	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 
 MainLoop:
 	bsr	WaitVBlank
@@ -134,6 +135,8 @@ MainLoop:
 .rotOk:
 	move.w	d0,PalRot
 
+	bsr	PT_Tick			; un tick de musique par image
+
 	move.l	BackRec,a0
 	bsr	UpdateBitplanes		; pointeurs + scroll fin
 	move.l	BackRec,a0
@@ -141,8 +144,9 @@ MainLoop:
 	bsr	MoveSprite
 
 	btst	#6,CIAAPRA
-	bne.s	MainLoop
+	bne	MainLoop
 
+	bsr	PT_Stop
 	bsr	RestoreSystem
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
@@ -631,6 +635,9 @@ WaitVBlank:
 	move.l	(sp)+,d0
 	rts
 
+; --- replayer ProTracker : son code reste dans cette section ---
+	include	"ptreplay.i"
+
 ;======================================================================
 	SECTION	scrolldata,DATA
 ;======================================================================
@@ -680,3 +687,4 @@ Scratch:	ds.b	16
 
 CopList1:	ds.b	COPMAXSIZE
 CopList2:	ds.b	COPMAXSIZE
+

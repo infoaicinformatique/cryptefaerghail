@@ -8,7 +8,8 @@ assembleur Motorola pour `vasm`, liées en exécutables *hunk* Amiga par `vlink`
 | `bin/AGADemo` | dégradé plein écran généré **ligne par ligne par le copper en 24 bits réels**, plus une boule en **sprite matériel** |
 | `bin/AGAScroll` | playfield **8 bitplanes (256 couleurs 24 bits)** de 640×384 pixels, parcouru par une caméra en **scrolling 100 % matériel** |
 
-Les deux se quittent par le bouton gauche de la souris.
+Les deux jouent un **module ProTracker 4 voies sur Paula** et se quittent par
+le bouton gauche de la souris.
 
 ![Aperçu de AGAScroll](docs/preview.png)
 
@@ -22,7 +23,8 @@ plus bas.)*
 | Machine | Amiga 1200 (chipset AGA), 68020+ |
 | Système | AmigaOS 3.0 / 3.1 et supérieur (`graphics.library` V39) |
 | Écran | PAL lores 320×256 |
-| Mémoire | `AGADemo` : quelques Ko de Chip — `AGAScroll` : 240 Ko de Chip pour le bitmap, plus 8 Ko de copperlists |
+| Mémoire | `AGADemo` : quelques Ko de Chip — `AGAScroll` : 240 Ko de Chip pour le bitmap, plus 8 Ko de copperlists ; le module (7,5 Ko) est en Chip dans les deux |
+| Audio | 4 voies Paula, module ProTracker cadencé par le VBlank (50 Hz) |
 
 ## Compilation
 
@@ -40,6 +42,13 @@ Régénérer les données (table sinus, pixels du sprite, palette 256 couleurs) 
 
 ```sh
 make data          # Python 3, réécrit src/sine.i, src/sprite.i, src/palette.i
+```
+
+Régénérer la musique, ou l'écouter sans Amiga :
+
+```sh
+make music         # réécrit data/music.mod (samples et partition synthétisés)
+make wav           # rejoue le module en Python et écrit music.wav
 ```
 
 Vérifier l'arithmétique du scrolling et la disposition de la copperlist, et
@@ -67,8 +76,12 @@ src/hardware.i   equates des registres custom et LVO exec/graphics
 src/sine.i       table sinus 256 entrées                    (généré)
 src/sprite.i     boule 16×16, 2 plans                       (généré)
 src/palette.i    256 couleurs 24 bits (hauts / bas)         (généré)
-tools/gen_data.py  générateur des trois fichiers ci-dessus
-tools/preview.py   modèle Python du pipeline de scroll.s : contrôles + aperçu
+src/ptreplay.i   replayer ProTracker 4 voies pour Paula
+data/music.mod   module ProTracker, samples et partition     (généré)
+tools/gen_data.py    générateur des trois .i de données
+tools/gen_module.py  générateur du module ProTracker
+tools/render_mod.py  rejoue le module en Python et écrit un WAV
+tools/preview.py     modèle Python du pipeline de scroll.s : contrôles + aperçu
 scripts/get-toolchain.sh  installation de vasm + vlink
 ```
 
@@ -139,6 +152,41 @@ de contrôle de l'affichage, donc sous Workbench) par un chunky-to-planar par
 paquets de 16 pixels, en deux passes de 4 plans : `lsr.b` sort le bit dans X,
 `roxl.w` le récupère dans l'accumulateur du plan.
 
+## Points techniques — musique (`src/ptreplay.i`)
+
+**Cadence.** `PT_Tick` est appelé une fois par image depuis la boucle
+principale, juste après l'échange de copperlist : le VBlank sert d'horloge
+(50 Hz), et `Fxx` règle le nombre de ticks par ligne (6 par défaut). Pas
+d'interruption de niveau 3, donc pas de vecteur à installer ni de passage en
+mode superviseur — en contrepartie, une image trop longue ralentirait la
+musique.
+
+**La séquence que Paula impose** pour lancer une note, et qui est la source
+d'erreur classique :
+
+1. couper le DMA du canal ;
+2. écrire `AUDxLC`, `AUDxLEN`, `AUDxPER`, `AUDxVOL` ;
+3. attendre deux lignes raster, le temps que Paula constate l'arrêt ;
+4. relancer le DMA ;
+5. **au tick suivant seulement**, écrire le point de boucle dans `AUDxLC` /
+   `AUDxLEN` — Paula a alors déjà chargé l'adresse de départ, et rebouclera
+   sur la boucle du sample.
+
+**Le module doit être en Chip RAM** : `incbin` dans une section `DATA_C`, ce
+que l'on vérifie sur le fichier lié (le hunk du module porte bien le drapeau
+CHIP). Le filtre passe-bas est coupé au démarrage (`bset #1,$BFE001`, le bit
+de la LED) et remis dans son état d'origine à la sortie.
+
+**Effets implémentés** : `0xy` arpège, `1xx`/`2xx` portamento, `3xx`
+portamento vers la note, `Axy` volume slide, `Cxx` volume, `Fxx` vitesse,
+`Bxx` saut de position, `Dxx` break. Les autres sont ignorés, ainsi que le
+finetune : c'est un sous-ensemble assumé, pas un replayer ProTracker complet.
+
+**Le module est synthétisé** par `tools/gen_module.py` — samples (grosse
+caisse, caisse claire, charleston, basse, lead, nappe) et partition en Am –
+F – C – G. Rien n'est emprunté à un module existant, le dépôt reste libre de
+droits.
+
 ## Ce qui est vérifié, et ce qui ne l'est pas
 
 Les deux programmes s'assemblent et se lient (exécutables hunk valides, hunks
@@ -147,8 +195,14 @@ disposition de la copperlist, les adresses patchées à chaque image, le
 chunky-to-planar et le calcul de scroll — c'est ce modèle qui produit
 `docs/preview.png`.
 
-En revanche **rien n'a encore tourné sur Amiga réel ni sous émulateur** : le
-modèle valide l'arithmétique du code, pas le comportement du chipset.
+Côté musique, `tools/render_mod.py` rejoue le module avec exactement la même
+sémantique que le replayer 68k (mêmes effets, même cadence 50 Hz, mêmes règles
+de boucle) et produit un WAV : c'est ce qui vérifie le module et la logique de
+rejeu.
+
+En revanche **rien n'a encore tourné sur Amiga réel ni sous émulateur** : les
+modèles valident l'arithmétique et la logique du code, pas le comportement du
+chipset ni celui de Paula.
 
 ## Pistes pour la suite
 
@@ -156,5 +210,6 @@ modèle valide l'arithmétique du code, pas le comportement du chipset.
   colonne redessinée au blitter à chaque franchissement de mot.
 - Blitter : effacement, dessin de bobs avec masque (cookie-cut), lignes.
 - Interruption niveau 3 (VERTB / COPER) plutôt qu'une attente active.
-- Replayer ProTracker et DMA Paula pour la musique.
+- Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que
+  par le VBlank.
 - Scroller sinusoïdal avec police 8×8 et copper text.

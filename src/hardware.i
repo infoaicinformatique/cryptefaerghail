@@ -45,6 +45,13 @@ BPL1PTH         = $0e0
 SPR0PTH         = $120
 SPR0PTL         = $122
 
+; --- audio (Paula) : AUD0 en $DFF0A0, un canal tous les $10 ---
+AUD0LCH         = $0a0
+AUDx_LC         = 0             ; long : adresse du sample (Chip RAM)
+AUDx_LEN        = 4             ; word : longueur en mots
+AUDx_PER        = 6             ; word : periode
+AUDx_VOL        = 8             ; word : volume 0..64
+
 ; --- palette ---
 COLOR00         = $180
 COLOR17         = $1a2
@@ -65,6 +72,8 @@ DMAF_COPPER     = $0080
 DMAF_RASTER     = $0100
 DMAF_SPRITE     = $0020
 DMAF_MASTER     = $0200
+DMAF_AUD0       = $0001
+DMAF_AUDIO      = $000f
 
 ; --- CIA-A ---
 CIAAPRA         = $bfe001       ; bit 6 = bouton gauche souris (0 = appuye)

@@ -12,10 +12,10 @@ DgnPalette:
 	dc.w	$0444,$0860		; couleur 5
 	dc.w	$0222,$0cb8		; couleur 6
 	dc.w	$0111,$0a86		; couleur 7
-	dc.w	$0962,$0608		; couleur 8
-	dc.w	$0531,$0c84		; couleur 9
-	dc.w	$0654,$0ec0		; couleur 10
-	dc.w	$0332,$0a02		; couleur 11
+	dc.w	$0da7,$0c8c		; couleur 8
+	dc.w	$0853,$0ccc		; couleur 9
+	dc.w	$0a85,$0c0c		; couleur 10
+	dc.w	$0532,$0088		; couleur 11
 	dc.w	$0394,$0c66		; couleur 12
 	dc.w	$0fff,$0fff		; couleur 13
 	dc.w	$0fc3,$008c		; couleur 14

@@ -11,6 +11,7 @@ gonflerait le depot pour rien.
 
     python3 tools/gen_dungeon.py
 """
+import math
 import os
 import random
 import struct
@@ -27,6 +28,7 @@ F = 64.0                                 # demi-taille d'un mur a distance 1
 SCRBPL = 40                              # octets par ligne d'un plan d'ecran
 DEPTHS = 4
 NMONSTERART = 9                          # familles de silhouettes
+NCLASSPORTRAIT = 8                       # un visage par classe
 
 # --- palette 16 couleurs ------------------------------------------------
 PALETTE = [
@@ -38,10 +40,13 @@ PALETTE = [
     (0x48, 0x46, 0x40),                  # 5
     (0x2c, 0x2b, 0x28),                  # 6  pierre, la plus sombre
     (0x1a, 0x18, 0x16),                  # 7  joints
-    (0x96, 0x60, 0x28),                  # 8  porte, clair
-    (0x5c, 0x38, 0x14),                  # 9  porte, sombre
-    (0x6e, 0x5c, 0x40),                  # 10 sol
-    (0x3a, 0x30, 0x22),                  # 11 sol lointain
+    # Les quatre bruns servent deux fois : bois et sol pour le donjon,
+    # et la gamme de carnation des portraits, qui n'avait autrement
+    # aucune teinte de peau dans cette palette de pierre.
+    (0xdc, 0xa8, 0x7c),                  # 8  bois clair / peau claire
+    (0x8c, 0x5c, 0x3c),                  # 9  bois sombre / peau ombree
+    (0xac, 0x80, 0x5c),                  # 10 sol / carnation moyenne
+    (0x50, 0x38, 0x28),                  # 11 sol lointain / ombre profonde
     (0x3c, 0x96, 0x46),                  # 12 vert (mousse, PV)
     (0xff, 0xff, 0xff),                  # 13 blanc
     (0xf0, 0xc8, 0x3c),                  # 14 or
@@ -258,50 +263,319 @@ def make_niche():
     return p
 
 
-def make_portrait(cls):
-    """Portrait 32x32 : visage simple mais reconnaissable par classe."""
-    p = Piece(0, 0, 32, 32)
-    cx, cy = 16, 17
-    skin, hair = (3, 6), (6, 5)
-    for y in range(32):                               # fond
+# Gamme de carnation, du plus clair au plus sombre. La palette de
+# pierre n'avait aucune teinte de peau : les quatre bruns du bois et du
+# sol ont ete choisis pour servir aussi de carnation.
+SKIN = [1, 8, 10, 9, 11, 7]
+STEEL = [1, 2, 3, 4, 5, 6, 7]
+
+# Un visage de trente-deux pixels ne supporte pas des traits calcules :
+# le volume vient d'un eclairage d'ellipsoide, mais les yeux, le nez et
+# la bouche sont poses pixel par pixel, sans quoi ils se noient.
+FACE_CX, FACE_CY = 15, 14                          # centre de la tete
+FACE_RX, FACE_RY = 8.4, 10.0
+EYE_Y = 14                               # ligne des yeux
+EYE_L, EYE_R = 11, 18                    # bord gauche de chaque oeil
+NOSE_X = 15
+MOUTH_Y = 20
+LIGHT = (-0.52, -0.60, 0.61)             # haut, gauche, devant
+
+
+def ramp(tones, t):
+    """t de 0 (le plus clair) a 1 (le plus sombre) -> index de palette."""
+    i = int(t * (len(tones) - 1) + 0.5)
+    return tones[max(0, min(len(tones) - 1, i))]
+
+
+def head_half(y, cy, rx, ry, jaw):
+    """Demi-largeur de la tete a cette hauteur : crane rond, machoire
+    qui se resserre jusqu'au menton."""
+    dy = (y - cy) / ry
+    if dy < -1.05 or dy > 1.12:
+        return 0.0
+    if dy <= 0.0:
+        return rx * math.sqrt(max(0.0, 1.0 - dy * dy))
+    taper = 1.0 - jaw * dy * dy
+    return rx * max(0.0, taper) * math.sqrt(max(0.0, 1.0 - (dy / 1.10) ** 3))
+
+
+def draw_face(p, tones, jaw=0.34, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, cx=FACE_CX):
+    """Le volume de la tete, eclaire d'en haut a gauche."""
+    lx, ly, lz = LIGHT
+    for y in range(32):
+        half = head_half(y, cy, rx, ry, jaw)
+        if half < 0.6:
+            continue
         for x in range(32):
-            p.set(x, y, 0)
-    ellipse(p, cx, cy, 9, 11, skin[0])                # visage
-    ellipse(p, cx, cy + 2, 7, 9, skin[0])
-    for e in (-4, 4):                                 # yeux
-        p.set(cx + e, cy - 1, 0)
-        p.set(cx + e + 1, cy - 1, 0)
-    if cls == 0:                                      # guerrier : casque
-        for y in range(cy - 13, cy - 3):
-            for x in range(cx - 11, cx + 12):
-                if ((x - cx) / 11.0) ** 2 + ((y - (cy - 4)) / 10.0) ** 2 <= 1.0:
-                    p.set(x, y, 2)
-        for y in range(cy - 6, cy + 4):               # nasal
-            p.set(cx, y, 4)
-    elif cls == 1:                                    # barbare : crete et barbe
-        for x in range(cx - 2, cx + 3):
-            for y in range(cy - 16, cy - 6):
-                p.set(x, y, 15)
-        for y in range(cy + 5, cy + 13):
-            for x in range(cx - 8, cx + 9):
-                if abs(x - cx) < 8 - (y - cy - 5) // 2:
-                    p.set(x, y, hair[1])
-    elif cls == 2:                                    # eclaireur : capuche
-        for y in range(cy - 14, cy + 6):
-            for x in range(cx - 12, cx + 13):
-                d = ((x - cx) / 12.0) ** 2 + ((y - (cy - 3)) / 12.0) ** 2
-                if d <= 1.0 and not (abs(x - cx) < 8 and cy - 8 < y < cy + 6):
-                    p.set(x, y, 5)
-    else:                                             # clerc : capuchon clair
-        for y in range(cy - 14, cy + 8):
-            for x in range(cx - 12, cx + 13):
-                d = ((x - cx) / 12.0) ** 2 + ((y - (cy - 2)) / 13.0) ** 2
-                if d <= 1.0 and not (abs(x - cx) < 8 and cy - 9 < y < cy + 7):
-                    p.set(x, y, 2)
-        for y in range(cy - 12, cy - 6):              # symbole
-            p.set(cx, y, 14)
-        for x in range(cx - 3, cx + 4):
-            p.set(x, cy - 10, 14)
+            if abs(x - cx) > half:
+                continue
+            nx = (x - cx) / half
+            ny = (y - cy) / ry
+            nz = math.sqrt(max(0.04, 1.0 - min(1.0, 0.88 * nx * nx
+                                               + 0.5 * ny * ny)))
+            lum = 0.36 + 0.64 * max(0.0, nx * lx + ny * ly + nz * lz)
+            if y < cy - ry * 0.42:                    # le front recule un peu
+                lum -= 0.06
+            if EYE_Y - 3 <= y <= EYE_Y - 1 and abs(x - cx) < rx * 0.80:
+                lum -= 0.13                           # creux des orbites
+            if EYE_Y + 2 <= y <= EYE_Y + 5 and rx * 0.34 < abs(x - cx) < rx * 0.92:
+                lum += 0.10                           # pommettes
+            lum -= 0.26 * max(0.0, abs(x - cx) / half - 0.74) / 0.26
+            p.set(x, y, ramp(tones, 1.0 - max(0.0, min(1.0, lum))))
+
+
+def draw_features(p, tones, iris=9, brow=9, cx=FACE_CX, narrow=0):
+    """Yeux, nez, bouche, menton : poses au pixel."""
+    light, mid, dark = tones[0], tones[2], tones[3]
+    el, er = EYE_L + narrow, EYE_R - narrow
+    # Un blanc de chaque cote de l'iris donnait un regard de poupee : on
+    # n'en garde qu'un, du cote eclaire, comme sur un vrai reflet.
+    for ox, out in ((el, 0), (er, 2)):
+        for x in range(ox - 1, ox + 3):           # paupiere superieure
+            p.set(x, EYE_Y - 1, 7)
+        p.set(ox, EYE_Y, dark)
+        p.set(ox + 1, EYE_Y, dark)
+        p.set(ox + 2, EYE_Y, dark)
+        p.set(ox + out, EYE_Y, 13)                # reflet
+        p.set(ox + (1 if out else 1), EYE_Y, iris)
+        p.set(ox + 2 - out, EYE_Y, 7)             # pupille, cote ombre
+        for x in range(ox, ox + 3):               # paupiere inferieure
+            p.set(x, EYE_Y + 1, mid)
+    for ox in (el - 1, er - 1):                   # sourcils
+        for x in range(ox, ox + 4):
+            p.set(x, EYE_Y - 3, brow)
+
+    for y in range(EYE_Y + 1, MOUTH_Y - 2):       # arete du nez
+        p.set(NOSE_X, y, light)
+        p.set(NOSE_X + 1, y, dark)                # cote a l'ombre
+    p.set(NOSE_X - 1, MOUTH_Y - 2, 11)            # narines
+    p.set(NOSE_X + 2, MOUTH_Y - 2, 11)
+    p.set(NOSE_X, MOUTH_Y - 2, light)
+    p.set(NOSE_X + 1, MOUTH_Y - 2, dark)
+
+    for x in range(cx - 3, cx + 4):               # bouche
+        p.set(x, MOUTH_Y, 11)
+    p.set(cx - 4, MOUTH_Y, dark)
+    p.set(cx + 4, MOUTH_Y, dark)
+    for x in range(cx - 2, cx + 3):               # levre inferieure eclairee
+        p.set(x, MOUTH_Y + 1, light)
+    for x in range(cx - 2, cx + 3):               # creux sous la levre
+        p.set(x, MOUTH_Y + 2, mid)
+
+
+def draw_neck(p, tones, cx=FACE_CX, cy=FACE_CY, ry=FACE_RY, wide=4, top=None):
+    top = top if top is not None else int(cy + ry * 0.94)
+    for y in range(top, 28):
+        for x in range(cx - wide, cx + wide + 1):
+            t = 0.58 + 0.24 * (1.0 - (x - cx + wide) / (2.0 * wide))
+            p.set(x, y, ramp(tones, t))
+    for x in range(cx - wide + 1, cx + wide):     # ombre portee du menton
+        p.set(x, top, ramp(tones, 0.90))
+        p.set(x, top + 1, ramp(tones, 0.80))
+
+
+def draw_shoulders(p, cols, cx=FACE_CX):
+    """Buste : deux tons, pour asseoir le portrait dans son cadre."""
+    for y in range(27, 32):
+        w = 7 + (y - 27) * 3
+        for x in range(cx - w, cx + w + 1):
+            if not 0 <= x < 32:
+                continue
+            t = (x - (cx - w)) / (2.0 * w)
+            p.set(x, y, cols[0] if 0.20 < t < 0.60 else cols[1])
+
+
+def draw_hair(p, tones, cx=FACE_CX, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, jaw=0.34,
+              hairline=-0.32, drop=0.0, volume=1.12, base=0.24,
+              spread=0.48, parted=False, sweep=0.0, vshade=0.20):
+    """Masse de cheveux : une coque autour du crane, qui redescend le
+    long du visage jusqu'a `drop`. Dessiner des meches isolees donnait
+    des trainees ; une masse ombree se lit bien mieux en 32 pixels."""
+    bottom = cy + ry * drop
+    for y in range(32):
+        outer = head_half(y, cy, rx * volume, ry * volume, 0.18)
+        if outer < 0.6 or y > bottom + 0.5:
+            continue
+        face = head_half(y, cy, rx, ry, jaw)
+        for x in range(32):
+            d = abs(x - cx)
+            if d > outer:
+                continue
+            limit = ry * (hairline + sweep * (x - cx) / rx)
+            above = (y - cy) <= limit
+            if not above and d <= face:
+                continue                          # on ne couvre pas le visage
+            if parted and above and d <= 1 and (y - cy) < -ry * 0.60:
+                continue                          # la raie
+            t = base + spread * d / outer \
+                + vshade * max(0.0, (y - cy + ry) / ry)
+            p.set(x, y, ramp(tones, min(1.0, t)))
+
+
+def draw_beard(p, tones, cx=FACE_CX, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, length=4,
+               moustache=True, top=None, base=0.28, spread=0.44):
+    """Barbe : suit la machoire, deborde sous le menton, laisse la
+    bouche visible si on ne veut pas de moustache."""
+    top = top if top is not None else MOUTH_Y + 2
+    chin = int(cy + ry * 0.94)
+    for y in range(top, chin + length):
+        if y <= chin:
+            half = head_half(y, cy, rx * 1.02, ry, 0.34)
+        else:                                     # la barbe pend, en pointe
+            k = (y - chin) / max(1.0, length)
+            half = head_half(chin, cy, rx * 1.02, ry, 0.34) * (1.0 - 0.72 * k)
+        if half < 0.6:
+            continue
+        for x in range(32):
+            if abs(x - cx) > half:
+                continue
+            if y <= MOUTH_Y + 1 and abs(x - cx) < rx * 0.42:
+                continue                          # on degage la bouche
+            t = base + spread * abs(x - cx) / half + 0.24 * (y - top) / \
+                max(1.0, chin + length - top)
+            p.set(x, y, ramp(tones, min(1.0, t)))
+    if moustache:
+        for x in range(cx - 4, cx + 5):
+            t = base + spread * abs(x - cx) / 4.0
+            p.set(x, MOUTH_Y - 1, ramp(tones, t))
+            if length > 4:                        # les longues barbes la
+                p.set(x, MOUTH_Y, ramp(tones, t + 0.14))
+
+
+def draw_helmet(p, cx=FACE_CX, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, nasal=True, crest=None,
+                brim=-0.34):
+    """Casque : calotte d'acier, bord marque, protege-nez."""
+    lx, ly, _ = LIGHT
+    for y in range(32):
+        half = head_half(y, cy, rx * 1.16, ry * 1.14, 0.30)
+        if half < 0.6 or y - cy > ry * brim:
+            continue
+        for x in range(32):
+            if abs(x - cx) > half:
+                continue
+            nx = (x - cx) / half
+            ny = (y - cy) / ry
+            nz = math.sqrt(max(0.05, 1.0 - min(1.0, nx * nx)))
+            lum = 0.22 + 0.78 * max(0.0, nx * lx + ny * ly + nz * 0.62)
+            if abs(nx) < 0.22:                    # arete centrale, en reflet
+                lum += 0.22
+            p.set(x, y, ramp(STEEL, 1.0 - max(0.0, min(1.0, lum))))
+    band = int(cy + ry * brim)
+    half = head_half(band, cy, rx * 1.16, ry * 1.14, 0.30)
+    for x in range(int(cx - half), int(cx + half) + 1):
+        p.set(x, band, 6)
+        p.set(x, band - 1, 1)
+    if nasal:
+        for y in range(band, MOUTH_Y - 2):
+            p.set(cx, y, 2)
+            p.set(cx + 1, y, 4)
+    if crest is not None:
+        for y in range(int(cy - ry * 1.32), band - 1):
+            p.set(cx - 1, y, crest)
+            p.set(cx, y, crest)
+            p.set(cx + 1, y, 9)
+
+
+def draw_hood(p, tones, cx=FACE_CX, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, shade=True,
+              base=0.24, spread=0.50, low=1.14):
+    """Capuche : couronne large, ouverture ovale sur le visage."""
+    for y in range(32):
+        outer = head_half(y, cy - 1, rx * 1.38, ry * 1.30, 0.10)
+        if outer < 0.6 or y - cy > ry * low:
+            continue
+        inner = head_half(y, cy, rx * 1.02, ry * 1.02, 0.34)
+        for x in range(32):
+            d = abs(x - cx)
+            if d > outer:
+                continue
+            if d <= inner and y - cy > -ry * 0.56:
+                continue                          # l'ouverture du visage
+            t = base + spread * d / outer \
+                + 0.24 * max(0.0, (y - cy) / ry)
+            p.set(x, y, ramp(tones, min(1.0, t)))
+    if shade:                                     # ombre portee du capuchon
+        for y in range(int(cy - ry * 0.56), EYE_Y - 3):
+            half = head_half(y, cy, rx, ry, 0.34)
+            for x in range(int(cx - half), int(cx + half) + 1):
+                p.set(x, y, ramp(SKIN, 0.86))
+
+
+def make_portrait(cls):
+    """Portrait 32x32, un par classe : meme tete eclairee, coiffee,
+    casquee ou encapuchonnee selon le metier."""
+    p = Piece(0, 0, 32, 32)
+    if cls == 0:                                      # guerrier
+        draw_shoulders(p, (4, 6))
+        draw_face(p, SKIN, jaw=0.26)
+        draw_neck(p, SKIN, wide=5)
+        draw_features(p, SKIN, iris=9, brow=9)
+        draw_beard(p, [9, 11, 7, 7], length=3, moustache=True)
+        draw_helmet(p, nasal=True)
+    elif cls == 1:                                    # barbare
+        draw_shoulders(p, (9, 11))
+        draw_hair(p, [15, 15, 9, 11], jaw=0.28, hairline=-0.28,
+                  drop=0.98, volume=1.40, base=0.04, spread=0.48,
+                  vshade=0.18)
+        draw_face(p, SKIN, jaw=0.28)
+        draw_neck(p, SKIN, wide=6)
+        draw_features(p, SKIN, iris=10, brow=9)
+        draw_beard(p, [15, 15, 9, 11], length=6, moustache=True,
+                   base=0.14, spread=0.40)
+        for y in range(EYE_Y - 5, EYE_Y + 2):         # cicatrice
+            p.set(FACE_CX - 6, y, 9)
+    elif cls == 2:                                    # roublard
+        draw_shoulders(p, (6, 7))
+        draw_face(p, SKIN, jaw=0.40, rx=FACE_RX * 0.94)
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=11, brow=7, narrow=1)
+        draw_hood(p, [5, 5, 6, 7, 7], low=1.30, base=0.10)
+    elif cls == 3:                                    # rodeur
+        draw_shoulders(p, (12, 11))
+        draw_hair(p, [10, 9, 11], jaw=0.32, hairline=-0.24,
+                  drop=0.40, volume=1.08, base=0.18)
+        draw_face(p, SKIN, jaw=0.32)
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=12, brow=9)
+        draw_beard(p, [9, 11, 7, 7], length=2, moustache=False)
+        draw_hood(p, [12, 12, 12, 11, 7], shade=False, base=0.06,
+                  low=1.30)
+    elif cls == 4:                                    # paladin
+        draw_shoulders(p, (2, 4))
+        draw_face(p, SKIN, jaw=0.28)
+        draw_neck(p, SKIN, wide=5)
+        draw_features(p, SKIN, iris=9, brow=9)
+        draw_helmet(p, nasal=True, crest=15)
+    elif cls == 5:                                    # clerc
+        draw_shoulders(p, (2, 3))
+        draw_face(p, SKIN, jaw=0.32)
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=9, brow=3)
+        draw_hood(p, [1, 1, 2, 3, 5], shade=False, base=0.10,
+                  low=1.30)
+        for y in range(3, 8):                         # symbole sur le capuchon
+            p.set(FACE_CX, y, 14)
+        for x in range(FACE_CX - 2, FACE_CX + 3):
+            p.set(x, 5, 14)
+    elif cls == 6:                                    # magicien
+        draw_shoulders(p, (5, 6))
+        draw_hair(p, [1, 1, 2, 3, 4], jaw=0.36, hairline=0.02,
+                  drop=0.80, volume=1.34, base=0.12)
+        draw_face(p, SKIN, jaw=0.36)
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=5, brow=2)
+        draw_beard(p, [1, 1, 2, 3, 4], length=7, moustache=True)
+        for x in (FACE_CX - 4, FACE_CX + 4):                    # rides du front
+            p.set(x, EYE_Y - 6, 9)
+            p.set(x, EYE_Y - 5, 9)
+    else:                                             # ensorceleur
+        draw_shoulders(p, (11, 7))
+        draw_hair(p, [5, 5, 6, 7], jaw=0.42, hairline=-0.20, drop=0.66,
+                  volume=1.26, base=0.12, sweep=-0.26)
+        draw_face(p, SKIN, jaw=0.42, rx=FACE_RX * 0.96)
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=14, brow=7)
+        for k in range(4):                            # une meche libre
+            p.set(FACE_CX - 5 + k, EYE_Y - 4 + k, 6)
     return p
 
 
@@ -575,7 +849,7 @@ def build_art():
     ART_INDEX["ART_NICHE"] = len(pieces)
     pieces += [make_niche()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
-    pieces += [make_portrait(c) for c in range(4)]
+    pieces += [make_portrait(c) for c in range(NCLASSPORTRAIT)]
     ART_INDEX["ART_ICON"] = len(pieces)
     pieces += [make_icon(k) for k in range(5)]
 

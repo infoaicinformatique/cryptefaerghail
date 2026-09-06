@@ -9,6 +9,7 @@ verifie qu'un menu deborde de son cadre.
     python3 tools/shot68k.py
 """
 import os
+import re
 import sys
 import zlib
 import struct
@@ -19,10 +20,25 @@ import test_game as T
 
 SCRW, SCRH, SCRBPL, DEPTH = 320, 256, 40, 4
 PLANESIZE = SCRBPL * SCRH
-PALETTE = [(0, 0, 0), (150, 140, 120), (90, 80, 70), (200, 60, 40),
-           (60, 60, 90), (110, 110, 130), (160, 120, 60), (70, 100, 70),
-           (200, 180, 120), (120, 40, 40), (40, 80, 120), (180, 180, 190),
-           (230, 200, 90), (245, 230, 170), (255, 220, 60), (255, 255, 255)]
+
+
+def read_palette():
+    """La palette du jeu, lue dans src/dgnpal.i : deux mots par couleur,
+    quartets hauts puis quartets bas. La deviner menait a des captures
+    aux couleurs fausses -- les portraits en particulier."""
+    out = []
+    for line in open(os.path.join(ROOT, "src", "dgnpal.i")):
+        m = re.match(r"\s*dc\.w\s+\$([0-9a-f]{4}),\$([0-9a-f]{4})", line)
+        if not m:
+            continue
+        hi, lo = int(m.group(1), 16), int(m.group(2), 16)
+        out.append(tuple(((hi >> s) & 0xf) << 4 | ((lo >> s) & 0xf)
+                         for s in (8, 4, 0)))
+    assert len(out) == 16, f"{len(out)} couleurs lues"
+    return out
+
+
+PALETTE = read_palette()
 
 
 def grab(g, buf="ShowBuf"):

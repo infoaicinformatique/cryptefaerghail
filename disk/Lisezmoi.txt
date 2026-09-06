@@ -37,6 +37,13 @@ COMMANDES
 
   En combat :  A attaquer   S lancer un sort   F fuir   I sac
 
+LES PORTRAITS
+  Un visage par classe, dessine en trente-deux pixels de cote : le
+  volume vient d'un eclairage venu d'en haut a gauche, les yeux, le nez
+  et la bouche sont poses au pixel. La palette de pierre n'avait aucune
+  teinte de peau : les quatre bruns du bois et du sol servent aussi de
+  carnation.
+
 LA CARTE
   M ouvre le releve du niveau. Seules apparaissent les cases que le
   groupe a longees. Les couleurs : sol parcouru en gris, murs en bleu

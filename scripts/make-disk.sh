@@ -22,8 +22,9 @@ cp "$ROOT/disk/Lisezmoi.txt" "$STAGE/"
 cp "$ROOT/disk/S/Startup-Sequence" "$STAGE/S/"
 cp "$ROOT/bin/AGADemo" "$ROOT/bin/AGAScroll" "$ROOT/bin/AGACrawl" "$STAGE/"
 cp "$ROOT"/src/*.s "$ROOT"/src/*.i "$STAGE/Src/"
-cp "$ROOT/data/music.mod" "$ROOT/data/dgnart.bin" "$ROOT/data/dgnmap.bin" \
-	"$STAGE/Src/data/"
+cp "$ROOT/data/music.mod" "$ROOT/data/crawlmus.mod" \
+	"$ROOT/data/dgnart.bin" "$ROOT/data/dgnmap.bin" \
+	"$ROOT/data/sfx.bin" "$STAGE/Src/data/"
 
 rm -f "$ADF"
 xdftool "$ADF" create + format "AGADemos" \

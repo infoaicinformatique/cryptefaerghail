@@ -120,6 +120,7 @@ class Harness:
         self.icr = 0
         self.custom = {}
         self.bad_blits = []
+        self.audio = []
         self.finished = False
         self.setup_hw()
         self.setup_os()
@@ -156,9 +157,13 @@ class Harness:
                 return (hi << 16) | lo
             return (r_custom(addr) << 16) | r_custom(addr + 2)
 
+        AUDIO = set(range(0xa0, 0xe0)) | {0x96}       # Paula et DMACON
+
         def w_custom(addr, val, *a):
             off = addr - CUSTOM
             self.custom[off] = val
+            if off in AUDIO:                         # journal pour les tests
+                self.audio.append((off, val))
             if off == 0x58:                          # BLTSIZE : demarre le blit
                 self.blit(val)
 
@@ -166,6 +171,8 @@ class Harness:
             off = addr - CUSTOM
             self.custom[off] = (val >> 16) & 0xffff
             self.custom[off + 2] = val & 0xffff
+            if off in AUDIO:
+                self.audio.append((off, val))
 
         def r_cia(addr, *a):
             if addr == 0xbfed01:                     # ICR : lecture = effacement
@@ -285,6 +292,35 @@ class Harness:
         self.cpu.w_reg(15, STACK)                    # a7
         self.cpu.w_pc(self.segs[0][0])
         self.mem.w32(STACK, 0xdeadbeef)              # adresse de retour
+
+    # --- appel direct d'une routine du jeu -------------------------
+    RETURN = 0x0000e000                  # sous la pile, en RAM valide
+
+    REGS = "d0 d1 d2 d3 d4 d5 d6 d7 a0 a1 a2 a3 a4 a5 a6 a7".split()
+
+    def call(self, addr, **regs):
+        """Execute une routine comme un bsr, puis rend la main.
+
+        Le contexte est remis en place ensuite : sans cela chaque appel
+        laisserait la pile du jeu soixante octets plus bas et la boucle
+        principale finirait par travailler sur un cadre errant.
+        """
+        ctx = self.cpu.get_cpu_context()
+        self.mem.w16(self.RETURN, 0x60fe)    # bra.s * : on s'arrete la
+        sp = (self.cpu.r_reg(15) - 256) & ~1
+        self.mem.w32(sp, self.RETURN)
+        self.cpu.w_reg(15, sp)
+        for name, val in regs.items():
+            self.cpu.w_reg(self.REGS.index(name), val & 0xffffffff)
+        self.cpu.w_pc(addr)
+        done = False
+        for _ in range(80):
+            self.machine.execute(100000)
+            if self.cpu.r_pc() == self.RETURN:
+                done = True
+                break
+        self.cpu.set_cpu_context(ctx)
+        return done
 
     # --- clavier ---------------------------------------------------
     def press(self, code):

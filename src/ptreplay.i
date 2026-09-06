@@ -587,7 +587,11 @@ PT_PeriodTable:
 ;======================================================================
 
 PT_ModuleData:
+	ifd	PT_SCORE		; le jeu a sa propre partition ;
+	incbin	"data/crawlmus.mod"	; les demos gardent la leur
+	else
 	incbin	"data/music.mod"
+	endif
 	even
 
 ;======================================================================

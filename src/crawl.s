@@ -161,8 +161,12 @@ UI_SHEET	= 1
 UI_INV		= 2
 UI_SPELL	= 3
 UI_RIDDLE	= 4
+UI_MAP		= 5
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
+MAP_X		= 2			; carte : colonne octet du coin
+MAP_Y		= 28			; et ligne du coin
+MAP_CH		= 4			; hauteur d'une case, en lignes
 SPELLMENU	= 10			; entrees du menu : touches 1 a 9 et 0
 
 ; --- codes clavier bruts ---
@@ -186,6 +190,8 @@ KEY_I		= $17
 KEY_P		= $19
 KEY_R		= $13
 KEY_S		= $21
+KEY_M_QW	= $37			; M sur un clavier anglais
+KEY_M_AZ	= $29			; M sur un clavier francais
 KEY_U		= $16
 
 ; --- disposition de l'ecran ---
@@ -1058,6 +1064,11 @@ DrawScene:
 	bsr	DrawRiddle
 	bra	.done
 .notRiddle:
+	cmp.w	#UI_MAP,d0
+	bne.s	.notMap
+	bsr	DrawMap
+	bra	.done
+.notMap:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1219,6 +1230,10 @@ DrawScene:
 ;----------------------------------------------------------------------
 Redraw:
 	movem.l	d0-d7/a0-a6,-(sp)
+	tst.w	Phase			; le releve suit le groupe
+	beq.s	.noMark
+	bsr	MarkSeen
+.noMark:
 	move.w	#PANEL_X,d0
 	moveq	#8,d1
 	move.w	#PANEL_W,d2
@@ -1434,8 +1449,13 @@ DrawStatus:
 	bra.s	.help
 .helpRiddle:
 	cmp.w	#UI_RIDDLE,d0
-	bne.s	.helpOther
+	bne.s	.helpMap
 	lea	TxtHelpRiddle,a0
+	bra.s	.help
+.helpMap:
+	cmp.w	#UI_MAP,d0
+	bne.s	.helpOther
+	lea	TxtHelpMap,a0
 	bra.s	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
@@ -2001,30 +2021,25 @@ DrawSpellMenu:
 	moveq	#0,d7
 .loop:
 	move.w	(a3,d7.w*2),d4		; numero reel du sort
-	lea	TmpStr,a1
-	move.w	d7,d0
-	addq.w	#1,d0
+	lea	TmpStr,a1		; "n-NOM DU SORT" : les noms longs
+	move.w	d7,d0			; iraient hors du cadre avec des
+	addq.w	#1,d0			; espaces autour du tiret
 	cmp.w	#10,d0			; la dixieme entree, c'est la touche 0
 	blt.s	.num
 	moveq	#0,d0
 .num:
 	bsr	StrNum
-	lea	TxtDash,a0
+	lea	TxtHyphen,a0
 	bsr	StrCopy
 	move.w	d4,d0
 	bsr	SpellPtr
 	move.l	a0,a2
 	bsr	StrCopy
-	lea	TxtSpLevel,a0
-	bsr	StrCopy
-	move.w	sp_Level(a2),d0
-	bsr	StrNum
 	clr.b	(a1)
-	lea	TmpStr,a0
-	moveq	#3,d0
 	move.w	d7,d1
 	mulu.w	#11,d1
 	add.w	#40,d1
+	move.w	d1,d5			; ligne retenue pour le niveau
 	moveq	#13,d2
 	move.w	sp_Level(a2),d3		; reste-t-il un emplacement ?
 	add.w	d3,d3
@@ -2032,6 +2047,18 @@ DrawSpellMenu:
 	bne.s	.draw
 	moveq	#4,d2			; connu mais plus d'emplacement
 .draw:
+	lea	TmpStr,a0
+	moveq	#3,d0
+	bsr	DrawText
+	lea	TmpStr,a1		; le niveau du sort, colle a droite
+	lea	TxtNivShort,a0
+	bsr	StrCopy
+	move.w	sp_Level(a2),d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	move.w	#24,d0
+	move.w	d5,d1
 	bsr	DrawText
 	addq.w	#1,d7
 	cmp.w	SpellCount,d7
@@ -2570,7 +2597,46 @@ LoadLevel:
 .copyP:
 	move.b	(a0)+,(a1)+
 	dbf	d2,.copyP
+	lea	MapSeen,a1		; on ne connait rien de cet etage
+	move.w	#MAPBYTES-1,d2
+.clearSeen:
+	clr.b	(a1)+
+	dbf	d2,.clearSeen
+	bsr	MarkSeen
 	movem.l	(sp)+,d0-d3/a0-a1
+	rts
+
+; MarkSeen : le groupe voit sa case et les huit qui l'entourent
+MarkSeen:
+	movem.l	d0-d4/a0,-(sp)
+	move.w	PosY,d3
+	subq.w	#1,d3
+	moveq	#2,d4
+.rowLoop:
+	tst.w	d3
+	bmi.s	.rowNext
+	cmp.w	#MAPH,d3
+	bge.s	.rowNext
+	move.w	PosX,d2
+	subq.w	#1,d2
+	moveq	#2,d1
+.colLoop:
+	tst.w	d2
+	bmi.s	.colNext
+	cmp.w	#MAPW,d2
+	bge.s	.colNext
+	move.w	d3,d0
+	mulu.w	#MAPW,d0
+	add.w	d2,d0
+	lea	MapSeen,a0
+	move.b	#1,(a0,d0.w)
+.colNext:
+	addq.w	#1,d2
+	dbf	d1,.colLoop
+.rowNext:
+	addq.w	#1,d3
+	dbf	d4,.rowLoop
+	movem.l	(sp)+,d0-d4/a0
 	rts
 
 ;----------------------------------------------------------------------
@@ -2855,6 +2921,180 @@ DoAction:
 	move.w	#UI_RIDDLE,UiMode
 .done:
 	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Carte du niveau : une case du donjon par bloc de huit pixels sur
+; quatre. On ne montre que ce que le groupe a longe -- MapSeen -- pour
+; que le releve se dessine au fur et a mesure de l'exploration.
+;----------------------------------------------------------------------
+; MapBlock : d0 = colonne octet, d1 = ligne, d2 = hauteur, d3 = couleur
+MapBlock:
+	movem.l	d0-d7/a0-a1,-(sp)
+	tst.w	d3
+	beq.s	.done			; couleur zero : le fond suffit
+	move.l	DrawBuf,a0
+	move.w	d1,d5
+	mulu.w	#SCRBPL,d5
+	add.w	d0,d5
+	add.l	d5,a0
+	moveq	#0,d6
+.plane:
+	btst	d6,d3
+	beq.s	.next
+	move.l	a0,a1
+	move.w	d2,d7
+	subq.w	#1,d7
+.rows:
+	move.b	#$ff,(a1)
+	lea	SCRBPL(a1),a1
+	dbf	d7,.rows
+.next:
+	lea	PLANESIZE(a0),a0
+	addq.w	#1,d6
+	cmp.w	#DEPTH,d6
+	blt.s	.plane
+.done:
+	movem.l	(sp)+,d0-d7/a0-a1
+	rts
+
+; MapColour : d1 = case, d6 = x, d7 = y -> d0 = couleur
+MapColour:
+	movem.l	d1-d3,-(sp)
+	cmp.w	PosX,d6
+	bne.s	.notHere
+	cmp.w	PosY,d7
+	bne.s	.notHere
+	moveq	#15,d0			; le groupe, en blanc
+	bra	.done
+.notHere:
+	move.w	d1,d2
+	and.w	#$000f,d2		; terrain
+	move.w	d1,d3
+	and.w	#C_MASK,d3		; ce que la case contient
+	cmp.w	#T_STAIRS,d2
+	bne.s	.notStairs
+	moveq	#14,d0
+	bra	.done
+.notStairs:
+	cmp.w	#T_DOOR,d2
+	bne.s	.notDoor
+	moveq	#6,d0
+	bra	.done
+.notDoor:
+	cmp.w	#T_LOCKED,d2
+	bne.s	.notLocked
+	moveq	#9,d0
+	bra.s	.done
+.notLocked:
+	cmp.w	#T_RUNE,d2
+	bne.s	.notRune
+	moveq	#10,d0
+	bra.s	.done
+.notRune:
+	cmp.w	#T_NICHE,d2
+	bne.s	.notNiche
+	moveq	#5,d0
+	bra.s	.done
+.notNiche:
+	cmp.w	#T_WALL,d2
+	bne.s	.floor
+	moveq	#4,d0			; mur reconnu : bleu sombre
+	bra.s	.done
+.floor:
+	cmp.w	#C_MONSTER,d3
+	bne.s	.notMon
+	moveq	#3,d0
+	bra.s	.done
+.notMon:
+	cmp.w	#C_CHEST,d3
+	bne.s	.notChest
+	moveq	#12,d0
+	bra.s	.done
+.notChest:
+	cmp.w	#C_ITEM,d3
+	bne.s	.plain
+	moveq	#11,d0
+	bra.s	.done
+.plain:
+	moveq	#1,d0			; sol parcouru
+.done:
+	movem.l	(sp)+,d1-d3
+	rts
+
+DrawMap:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	moveq	#0,d4
+	bsr	FillRect
+
+	lea	TmpStr,a1		; CARTE NIVEAU n - direction
+	lea	TxtMapTitle,a0
+	bsr	StrCopy
+	move.w	Level,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	lea	TxtDash2,a0
+	bsr	StrCopy
+	move.w	Dir,d0
+	lsl.w	#2,d0
+	lea	DirNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#18,d1
+	moveq	#14,d2
+	bsr	DrawText
+
+	moveq	#0,d7			; ligne de la carte
+.rowLoop:
+	moveq	#0,d6			; colonne
+.colLoop:
+	move.w	d7,d0
+	mulu.w	#MAPW,d0
+	add.w	d6,d0
+	lea	MapSeen,a0
+	tst.b	(a0,d0.w)
+	beq.s	.cellNext		; jamais longee : noir
+	lea	MapTerrain,a0
+	moveq	#0,d1
+	move.b	(a0,d0.w),d1
+	bsr	MapColour
+	move.w	d0,d3
+	move.w	d6,d0
+	add.w	#MAP_X,d0
+	move.w	d7,d1
+	mulu.w	#MAP_CH,d1
+	add.w	#MAP_Y,d1
+	moveq	#MAP_CH,d2
+	bsr	MapBlock
+.cellNext:
+	addq.w	#1,d6
+	cmp.w	#MAPW,d6
+	blt	.colLoop
+	addq.w	#1,d7
+	cmp.w	#MAPH,d7
+	blt	.rowLoop
+
+	lea	LegendTab,a2		; la legende, chacun dans sa couleur
+	moveq	#5,d7
+.legLoop:
+	move.l	(a2)+,a0
+	moveq	#0,d0
+	move.b	(a2)+,d0
+	moveq	#0,d1
+	move.b	(a2)+,d1
+	moveq	#0,d2
+	move.b	(a2)+,d2
+	addq.l	#1,a2
+	bsr	DrawText
+	dbf	d7,.legLoop
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -4064,6 +4304,20 @@ HandleKey:
 	move.w	#UI_INV,UiMode
 	bra	.redraw
 .notInv:
+	cmp.w	#KEY_M_QW,d0		; carte du niveau
+	beq.s	.mapKey
+	cmp.w	#KEY_M_AZ,d0
+	bne.s	.notMapKey
+.mapKey:
+	move.w	#UI_MAP,d1
+	cmp.w	UiMode,d1
+	bne.s	.openMap
+	clr.w	UiMode
+	bra	.redraw
+.openMap:
+	move.w	#UI_MAP,UiMode
+	bra	.redraw
+.notMapKey:
 	move.w	UiMode,d1
 	cmp.w	#UI_INV,d1
 	beq	.invKeys
@@ -4184,6 +4438,7 @@ HandleKey:
 	rts
 
 ; --- replayer ProTracker, dans la meme section de code ---
+PT_SCORE	= 1			; musique heroique du donjon
 	include	"ptreplay.i"
 
 ;======================================================================
@@ -4208,6 +4463,24 @@ DirTable:
 	dc.w	1,0
 	dc.w	0,1
 	dc.w	-1,0
+
+DirNames:
+	dc.l	TxtNord,TxtEst,TxtSud,TxtOuest
+
+; legende de la carte : texte, colonne, ligne, couleur, remplissage
+LegendTab:
+	dc.l	TxtLegDoor
+	dc.b	3,130,6,0
+	dc.l	TxtLegRune
+	dc.b	9,130,10,0
+	dc.l	TxtLegShut
+	dc.b	14,130,9,0
+	dc.l	TxtLegYou
+	dc.b	21,130,15,0
+	dc.l	TxtLegStairs
+	dc.b	3,140,14,0
+	dc.l	TxtLegMonster
+	dc.b	12,140,3,0
 
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
@@ -4248,6 +4521,8 @@ TxtEmptySlot:	dc.b	"-----",0
 TxtHero:	dc.b	"HEROS ",0
 TxtOn4:		dc.b	" SUR 4",0
 TxtDash:	dc.b	" - ",0
+TxtHyphen:	dc.b	"-",0
+TxtNivShort:	dc.b	"N",0
 TxtPickClass:	dc.b	"FLECHES, ENTREE OU 1-8",0
 TxtRoll:	dc.b	"R RELANCER  ENTREE OK",0
 TxtName:	dc.b	"NOM : ",0
@@ -4352,16 +4627,29 @@ TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
 TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR REPONDRE  ESC",0
 TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTREE OK  ESC",0
-TxtHelpMove:	dc.b	"FLECHES ESPACE C FICHE I SAC S SORT",0
+TxtHelpMove:	dc.b	"FLECHES ESPACE C FICHE I SAC M CARTE",0
 TxtRaised:	dc.b	" SE RELEVE.",0
 TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
 TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
+TxtMapTitle:	dc.b	"CARTE NIVEAU ",0
+TxtDash2:	dc.b	" - ",0
+TxtNord:	dc.b	"NORD",0
+TxtEst:		dc.b	"EST",0
+TxtSud:		dc.b	"SUD",0
+TxtOuest:	dc.b	"OUEST",0
+TxtLegDoor:	dc.b	"PORTE",0
+TxtLegRune:	dc.b	"RUNE",0
+TxtLegShut:	dc.b	"FERMEE",0
+TxtLegYou:	dc.b	"VOUS",0
+TxtLegStairs:	dc.b	"ESCALIER",0
+TxtLegMonster:	dc.b	"MONSTRE",0
+TxtHelpMap:	dc.b	"M OU ESC POUR REFERMER LA CARTE",0
 TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
 TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
 TxtHelpInv:	dc.b	"E EQUIPER U UTILISER D JETER 1-4",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
-TxtHelpSheet:	dc.b	"1-4 HEROS  I SAC  C FERMER  ESC",0
+TxtHelpSheet:	dc.b	"1-4 HEROS I SAC S SORT M CARTE",0
 	even
 
 ;======================================================================
@@ -4447,6 +4735,7 @@ Inventory:	ds.b	INVSIZE
 	even
 MapTerrain:	ds.b	MAPBYTES
 MapParam:	ds.b	MAPBYTES
+MapSeen:	ds.b	MAPBYTES
 LogBuf:		ds.b	LOGLINES*(LOGWIDTH+2)
 TmpStr:		ds.b	96
 NumBuf:		ds.b	14

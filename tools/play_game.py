@@ -113,6 +113,12 @@ def exercise_ui(g, fails, stats):
         g.key(T.K_E)                      # equiper
         g.key(T.K_U)                      # utiliser
         g.key(T.K_I)
+        g.key(0x37)                       # carte du niveau
+        if g.w("UiMode") != 5:
+            fails.append("la carte ne s'ouvre pas (M)")
+        g.key(0x37)
+        if g.w("UiMode"):
+            fails.append("la carte ne se referme pas")
         g.key(T.K_S)                      # sorts hors combat
         if g.w("UiMode") == 3:  # noqa: E501
             stats["menus"] += 1

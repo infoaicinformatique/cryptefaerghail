@@ -129,6 +129,9 @@ tools/run68k.py      banc 68020 : charge l'exécutable, émule chipset et clavie
 tools/test_game.py   fait tourner le jeu et contrôle ses invariants
 tools/play_game.py   pilote le jeu vers les monstres, les objets, l'escalier
 tools/shot68k.py     photographie les écrans dessinés par le processeur émulé
+tools/test_sfx.py    vérifie les bruitages aux registres de Paula
+tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
+tools/gen_score.py   générateur de la musique du jeu (data/crawlmus.mod)
 disk/                fichiers écrits à la main pour la disquette
 scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink

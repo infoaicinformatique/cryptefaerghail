@@ -26,6 +26,7 @@ DBG = "/tmp/AGACrawl.dbg"
 
 K_1, K_RET, K_ESC, K_SPACE, K_TAB = 0x01, 0x44, 0x45, 0x40, 0x42
 K_UP, K_DOWN, K_RIGHT, K_LEFT = 0x4c, 0x4d, 0x4e, 0x4f
+K_M_QW, K_M_AZ = 0x37, 0x29
 K_A, K_S, K_F, K_I, K_C, K_E, K_U, K_D = 0x20, 0x21, 0x23, 0x17, 0x33, 0x12, 0x16, 0x22
 
 hr_SIZEOF = 46 + 8                       # relu ci-dessous depuis le source
@@ -221,11 +222,12 @@ if __name__ == "__main__":
 
     print("--- fuzzing clavier ---")
     allkeys = [K_UP, K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_A, K_S, K_F, K_I,
-               K_C, K_E, K_U, K_D, K_TAB, K_RET] + [K_1 + i for i in range(8)]
+               K_C, K_E, K_U, K_D, K_TAB, K_RET, K_M_QW, K_M_AZ] \
+        + [K_1 + i for i in range(8)]
     for n in range(800):
         g.key(random.choice(allkeys))
         ui, phase = g.w("UiMode"), g.w("Phase")
-        if not check(ui <= 4, f"UiMode={ui}", fails):
+        if not check(ui <= 5, f"UiMode={ui}", fails):
             break
         if not check(phase <= 1, f"Phase={phase}", fails):
             break

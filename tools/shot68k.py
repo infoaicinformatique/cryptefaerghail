@@ -92,3 +92,18 @@ if __name__ == "__main__":
     shoot(g, "combat")
     g.key(T.K_S)
     shoot(g, "combat-sorts")
+    g.key(T.K_ESC)
+    while g.w("InCombat") and not g.w("GameOver"):
+        g.key(T.K_A)
+    for want in (lambda c: c & 0x30 == 0x30,          # explorer un peu
+                 lambda c: c & 0x0f == 2,
+                 lambda c: c & 0x30 == 0x10):
+        path = P.bfs(P.terrain(g), (g.w("PosX"), g.w("PosY")), want)
+        for cell in (path or [])[1:]:
+            if not P.step_to(g, cell, []):
+                break
+            while g.w("InCombat") and not g.w("GameOver"):
+                g.key(T.K_A)
+    g.key(0x37)                           # M : la carte du niveau
+    shoot(g, "carte")
+    g.key(0x37)

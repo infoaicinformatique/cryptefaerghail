@@ -10,14 +10,19 @@ Dungeon crawler en vue subjective, dans l'esprit de Black Crypt, avec
 des regles inspirees de D&D 3.5.
 
 CREATION DU GROUPE
-  Quatre aventuriers, chacun d'une classe :
-    GUERRIER   de de vie 10, attaque a chaque niveau, epee et cotte
-    BARBARE    de de vie 12, tres resistant, hache
-    ECLAIREUR  arc, fuite bien plus sure, un peu de magie
-    CLERC      soins et sorts, potions plus efficaces
-  Les six caracteristiques sont tirees a 4d6 en gardant les trois
-  meilleurs des ; R relance le jet, ENTREE valide. Le nom se tape au
-  clavier (TAB bascule AZERTY / QWERTY) ou se choisit aux fleches.
+  Quatre aventuriers, chacun d'une des huit classes :
+    GUERRIER    de de vie 10, attaque a chaque niveau, epee et cotte
+    BARBARE     de de vie 12, tres resistant, hache
+    ROUBLARD    agile, la fuite lui reussit bien mieux
+    RODEUR      arc et quelques sorts des bois
+    PALADIN     la lame et la foi, bonnes sauvegardes
+    CLERC       soins et sorts divins, potions plus efficaces
+    MAGICIEN    fragile, mais l'eventail de sorts le plus large
+    ENSORCELEUR magie innee
+  Les fleches deplacent le curseur, ENTREE ou le chiffre choisit. Les
+  six caracteristiques sont tirees a 4d6 en gardant les trois meilleurs
+  des ; R relance le jet, ENTREE valide. Le nom se tape au clavier (TAB
+  bascule AZERTY / QWERTY) ou se choisit aux fleches.
 
 COMMANDES
   Fleches haut/bas      avancer, reculer
@@ -25,10 +30,19 @@ COMMANDES
   ESPACE                ouvrir une porte, fouiller une niche
   C                     fiche d'aventure du heros courant
   I                     sac a dos
+  M                     carte du niveau, telle que vous l'avez parcouru
+  S                     lancer un sort (soins, protections) hors combat
   1 a 4                 choisir le heros courant
-  ESC                   fermer un ecran, puis quitter
+  ESC                   fermer un ecran ; deux fois de suite, quitter
 
   En combat :  A attaquer   S lancer un sort   F fuir   I sac
+
+LA CARTE
+  M ouvre le releve du niveau. Seules apparaissent les cases que le
+  groupe a longees. Les couleurs : sol parcouru en gris, murs en bleu
+  sombre, porte en brun, porte a runes en bleu, porte verrouillee en
+  rouge sombre, escalier en jaune, monstre en rouge, objet en clair,
+  et le groupe en blanc. Le titre rappelle l'etage et la direction.
 
 DANS LE SAC
   E equipe l'objet sous le curseur au heros courant, U l'utilise
@@ -61,6 +75,13 @@ LE DONJON
   portes ordinaires et portes verrouillees qui demandent une cle.
   Onze armes, cinq protections, potions, parchemins et tresors.
   Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
+
+MUSIQUE ET BRUITAGES
+  Le jeu a sa propre partition, un module ProTracker quatre voies en re
+  mineur : cuivres, choeur, cordes et timbales. La quatrieme voie est
+  pretee aux bruitages -- coup d'epee, hache, corde d'arc, impact,
+  grincement de porte, coffre, potion, sort, grognement, montee de
+  niveau, pas et rale -- puis rendue a la musique.
 
 AGASCROLL et AGADEMO : deux demonstrations AGA (playfield 8 bitplanes
 en scrolling materiel, scroller sinusoidal sur barres copper, degrade

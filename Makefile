@@ -77,6 +77,7 @@ check:
 # Fait tourner le jeu dans un 68020 emule et verifie son comportement.
 test:
 	python3 tools/test_game.py
+	python3 tools/test_combat.py
 	python3 tools/test_sfx.py
 	python3 tools/test_replay.py
 	python3 tools/test_copper.py

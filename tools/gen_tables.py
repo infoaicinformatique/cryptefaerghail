@@ -62,35 +62,54 @@ SPELLS = [
 # Les creatures "Product Identity" (beholder, flagelleur mental, etc.) ne
 # sont pas dans le SRD : elles ne figurent donc pas ici.
 #
+# Capacites particulieres, en champ de bits. Vingt-cinq creatures qui se
+# battaient toutes de la meme facon -- un jet, des dagats -- ne valaient
+# que par leurs nombres : une goule et un orc, c'etait le meme combat.
+SP_POISON = 0x01                         # Vigueur, ou la force s'en va
+SP_PARALYSE = 0x02                       # Vigueur, ou le heros perd un tour
+SP_DRAIN = 0x04                          # Volonte, ou des PV pour de bon
+SP_FEAR = 0x08                           # Volonte, ou il n'ose pas frapper
+SP_REGEN = 0x10                          # la creature se referme
+SP_DR = 0x20                             # sa peau encaisse les coups
+SP_MULTI = 0x40                          # elle frappe deux fois
+
 # nom, des de vie, faces, bonus PV, CA, attaque, des degats, faces, bonus
 # degats, marge critique (19 = 19-20), multiplicateur, Vig, Ref, Vol, FP,
-# or, silhouette (0 bete, 1 mort-vivant, 2 humanoide, 3 monstre aile)
+# or, silhouette (0 bete, 1 mort-vivant, 2 humanoide, 3 monstre aile),
+# capacites
 MONSTERS = [
-    ("KOBOLD", 1, 8, 0, 15, 1, 1, 6, -1, 20, 2, 2, 2, 0, 0.25, 4, 2),
-    ("GOBELIN", 1, 8, 1, 15, 2, 1, 6, 0, 20, 2, 3, 1, -1, 0.33, 6, 2),
-    ("RAT SANGUIN", 1, 8, 1, 15, 4, 1, 4, 0, 20, 2, 3, 3, 3, 0.33, 0, 0),
-    ("SQUELETTE", 1, 12, 0, 15, 1, 1, 6, 1, 18, 2, 0, 1, 2, 0.33, 0, 1),
-    ("ORC", 1, 8, 1, 15, 4, 2, 4, 4, 18, 2, 3, 0, -2, 0.5, 10, 3),
-    ("HOBGOBELIN", 1, 8, 2, 15, 2, 1, 8, 1, 19, 2, 4, 1, -1, 0.5, 12, 2),
-    ("ZOMBI", 2, 12, 3, 11, 2, 1, 6, 1, 20, 2, 0, -1, 3, 0.5, 0, 1),
-    ("LOUP", 2, 8, 4, 14, 3, 1, 6, 1, 20, 2, 5, 5, 1, 1.0, 0, 0),
-    ("GNOLL", 2, 8, 2, 15, 3, 1, 8, 2, 20, 3, 4, 0, 0, 1.0, 14, 3),
-    ("GOULE", 2, 12, 0, 14, 2, 1, 6, 1, 20, 2, 0, 2, 5, 1.0, 0, 1),
-    ("BUGBEAR", 3, 8, 3, 17, 5, 1, 8, 2, 20, 2, 4, 3, 1, 2.0, 22, 3),
-    ("WORG", 4, 10, 8, 14, 7, 1, 6, 4, 20, 2, 6, 6, 3, 2.0, 0, 0),
-    ("OMBRE", 3, 12, 0, 13, 3, 1, 6, 0, 20, 2, 1, 3, 4, 3.0, 0, 5),
-    ("OGRE", 4, 8, 11, 16, 8, 2, 8, 7, 20, 2, 6, 0, 1, 3.0, 45, 4),
-    ("HOMME-LEZARD", 2, 8, 2, 15, 3, 1, 8, 1, 20, 2, 3, 3, 0, 1.0, 12, 3),
-    ("GARGOUILLE", 4, 8, 19, 16, 6, 1, 4, 2, 20, 2, 5, 6, 4, 4.0, 30, 7),
-    ("OMBRE BLEME", 4, 12, 0, 15, 3, 1, 4, 1, 20, 2, 1, 2, 5, 3.0, 25, 5),
-    ("OURSALOUP", 5, 10, 25, 15, 9, 1, 6, 5, 20, 2, 9, 5, 2, 4.0, 0, 0),
-    ("HARPIE", 7, 8, 0, 15, 7, 1, 6, 0, 20, 2, 2, 7, 6, 4.0, 40, 7),
-    ("MINOTAURE", 6, 8, 12, 15, 9, 3, 6, 6, 20, 3, 6, 5, 5, 4.0, 60, 4),
-    ("TROLL", 6, 8, 36, 16, 9, 1, 6, 6, 20, 2, 11, 4, 3, 5.0, 55, 4),
-    ("SPECTRE", 7, 12, 0, 15, 6, 1, 8, 0, 20, 2, 2, 5, 7, 7.0, 70, 5),
-    ("MOMIE", 8, 12, 3, 20, 11, 1, 6, 10, 20, 2, 4, 2, 8, 5.0, 90, 6),
-    ("HYDRE", 5, 10, 28, 15, 6, 1, 10, 3, 20, 2, 9, 5, 3, 5.0, 80, 8),
-    ("GEANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4),
+    ("KOBOLD", 1, 8, 0, 15, 1, 1, 6, -1, 20, 2, 2, 2, 0, 0.25, 4, 2, 0),
+    ("GOBELIN", 1, 8, 1, 15, 2, 1, 6, 0, 20, 2, 3, 1, -1, 0.33, 6, 2, 0),
+    ("RAT SANGUIN", 1, 8, 1, 15, 4, 1, 4, 0, 20, 2, 3, 3, 3, 0.33, 0, 0, SP_POISON),
+    ("SQUELETTE", 1, 12, 0, 15, 1, 1, 6, 1, 18, 2, 0, 1, 2, 0.33, 0, 1, 0),
+    ("ORC", 1, 8, 1, 15, 4, 2, 4, 4, 18, 2, 3, 0, -2, 0.5, 10, 3, 0),
+    ("HOBGOBELIN", 1, 8, 2, 15, 2, 1, 8, 1, 19, 2, 4, 1, -1, 0.5, 12, 2, 0),
+    ("ZOMBI", 2, 12, 3, 11, 2, 1, 6, 1, 20, 2, 0, -1, 3, 0.5, 0, 1, SP_DR),
+    ("LOUP", 2, 8, 4, 14, 3, 1, 6, 1, 20, 2, 5, 5, 1, 1.0, 0, 0, SP_MULTI),
+    ("GNOLL", 2, 8, 2, 15, 3, 1, 8, 2, 20, 3, 4, 0, 0, 1.0, 14, 3, 0),
+    ("GOULE", 2, 12, 0, 14, 2, 1, 6, 1, 20, 2, 0, 2, 5, 1.0, 0, 1, SP_PARALYSE),
+    ("BUGBEAR", 3, 8, 3, 17, 5, 1, 8, 2, 20, 2, 4, 3, 1, 2.0, 22, 3, 0),
+    ("WORG", 4, 10, 8, 14, 7, 1, 6, 4, 20, 2, 6, 6, 3, 2.0, 0, 0, SP_MULTI),
+    ("OMBRE", 3, 12, 0, 13, 3, 1, 6, 0, 20, 2, 1, 3, 4, 3.0, 0, 5, SP_DRAIN),
+    ("OGRE", 4, 8, 11, 16, 8, 2, 8, 7, 20, 2, 6, 0, 1, 3.0, 45, 4, 0),
+    ("HOMME-LEZARD", 2, 8, 2, 15, 3, 1, 8, 1, 20, 2, 3, 3, 0, 1.0, 12, 3, 0),
+    ("GARGOUILLE", 4, 8, 19, 16, 6, 1, 4, 2, 20, 2, 5, 6, 4, 4.0, 30, 7, SP_DR),
+    ("OMBRE BLEME", 4, 12, 0, 15, 3, 1, 4, 1, 20, 2, 1, 2, 5, 3.0, 25, 5, SP_DRAIN | SP_FEAR),
+    ("OURSALOUP", 5, 10, 25, 15, 9, 1, 6, 5, 20, 2, 9, 5, 2, 4.0, 0, 0, SP_MULTI),
+    ("HARPIE", 7, 8, 0, 15, 7, 1, 6, 0, 20, 2, 2, 7, 6, 4.0, 40, 7, SP_FEAR),
+    ("MINOTAURE", 6, 8, 12, 15, 9, 3, 6, 6, 20, 3, 6, 5, 5, 4.0, 60, 4, SP_MULTI),
+    ("TROLL", 6, 8, 36, 16, 9, 1, 6, 6, 20, 2, 11, 4, 3, 5.0, 55, 4, SP_REGEN | SP_MULTI),
+    ("SPECTRE", 7, 12, 0, 15, 6, 1, 8, 0, 20, 2, 2, 5, 7, 7.0, 70, 5, SP_DRAIN | SP_FEAR),
+    ("MOMIE", 8, 12, 3, 20, 11, 1, 6, 10, 20, 2, 4, 2, 8, 5.0, 90, 6, SP_FEAR | SP_DR),
+    ("HYDRE", 5, 10, 28, 15, 6, 1, 10, 3, 20, 2, 9, 5, 3, 5.0, 80, 8, SP_MULTI),
+    ("GEANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4, 0),
+    # Le gardien du dernier escalier. Ses nombres ne sont pas choisis au
+    # jugé : tools/test_combat.py fait s'affronter un groupe de niveau
+    # sept sans potion ni sort et exige qu'il l'emporte souvent, mais
+    # pas toujours. Avec CA 22, 2d8+12 et une peau epaisse en plus de sa
+    # regeneration, il gagnait dix-sept fois sur dix-huit.
+    ("LE GARDIEN", 14, 12, 60, 18, 14, 1, 10, 6, 19, 3, 14, 8, 12, 12.0, 400, 5,
+     SP_MULTI | SP_REGEN | SP_FEAR),
 ]
 
 # Ce que rapporte une victoire, selon le facteur de puissance (FP) :
@@ -211,15 +230,18 @@ with open(OUT, "w") as f:
 
     f.write("\n; nom (16), des de vie, faces, bonus PV, CA, attaque, des,\n")
     f.write("; faces, bonus degats, marge critique, multiplicateur,\n")
-    f.write("; Vigueur, Reflexes, Volonte, PX, or, silhouette\n")
+    f.write("; Vigueur, Reflexes, Volonte, PX, or, silhouette,\n")
+    f.write("; capacites particulieres\n")
     f.write("MonTypes:\n")
     for (name, hd, hdf, hpb, ac, atk, dice, faces, dmg, crit, mult,
-         fort, ref, will, cr, gold, art) in MONSTERS:
+         fort, ref, will, cr, gold, art, spec) in MONSTERS:
         f.write(pad(name, 16))
         f.write(f"\tdc.w\t{hd},{hdf},{hpb},{ac},{atk},{dice},{faces},{dmg},"
                 f"{crit},{mult},{fort},{ref},{will},{monster_xp(cr)},"
-                f"{gold},{art}\n")
+                f"{gold},{art},{spec}\n")
     f.write(f"NMONSTERS\t= {len(MONSTERS)}\n")
+    f.write(f"MON_BOSS\t= {len(MONSTERS) - 1}"
+            f"\t; le gardien, au bout du dernier etage\n")
 
     f.write("\n; rencontres par niveau de donjon : numeros de monstres\n")
     tiers = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],

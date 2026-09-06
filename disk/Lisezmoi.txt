@@ -65,6 +65,25 @@ LEVIERS ET HERSES
   la herse retombe. La carte montre les herses fermees en gris de fer
   et les leviers en laiton.
 
+CE QUE LES CREATURES SAVENT FAIRE
+  Elles ne se contentent plus de frapper. Le rat sanguin empoisonne et
+  la force s'en va -- le repos la rend. La goule paralyse. L'ombre et
+  le spectre emportent des points de vie pour de bon. La harpie et la
+  momie terrifient. Le troll se referme entre deux coups. Le zombi, la
+  gargouille et la momie encaissent une partie de chaque coup. Le loup,
+  le minotaure et l'hydre frappent deux fois par tour.
+
+  Chaque fois, une sauvegarde peut vous en tirer : Vigueur contre ce qui
+  attaque le corps, Volonte contre ce qui attaque l'esprit.
+
+LE GARDIEN
+  L'escalier du dernier etage ne mene pas dehors tout seul. Quelque
+  chose y veille : quatorze des de vie, deux attaques par tour, une
+  chair qui se referme, et de quoi vous glacer. Il faut le battre pour
+  revoir le jour.
+
+  Reposez-vous avant d'y aller, et gardez vos potions.
+
 LA SOURIS
   Le pointeur est un sprite du materiel : il ne coute rien et ne laisse
   aucune trace. Dans la vue, l'ecran fait office de rose des vents --

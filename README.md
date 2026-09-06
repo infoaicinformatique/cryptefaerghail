@@ -198,6 +198,33 @@ Guerrier, barbare, roublard, rôdeur, paladin, clerc, magicien, ensorceleur —
 chacune avec son dé de vie, sa progression d'attaque, ses sauvegardes fortes
 et son type de lanceur (profane sur l'Intelligence, divin sur la Sagesse).
 
+### Les créatures, et ce qui les distingue
+
+Vingt-cinq monstres se battaient tous de la même façon : un jet, des dégâts.
+Une goule et un orc, c'était le même combat à un chiffre près. Chacun porte
+maintenant un champ de capacités, joué sur les sauvegardes du SRD — Vigueur
+contre ce qui attaque le corps, Volonté contre ce qui attaque l'esprit, avec
+un DD de 10 + la moitié des dés de vie.
+
+| Capacité | Effet | Qui |
+|---|---|---|
+| **Poison** | Vigueur, ou 1d3 de Force ; jamais sous 3, rendue au repos | rat sanguin |
+| **Paralysie** | Vigueur, ou 1 à 2 tours perdus | goule |
+| **Énergie drainée** | Volonté, ou 1d4 points de vie **maximaux**, pour de bon | ombre, ombre blême, spectre |
+| **Effroi** | Volonté, ou il n'ose pas frapper ce tour | harpie, momie, spectre |
+| **Régénération** | la chair se referme de 4 points par tour | troll, gardien |
+| **Peau épaisse** | chaque coup est retenu de 3 points | zombi, gargouille, momie |
+| **Seconde attaque** | elle frappe deux fois par tour | loup, worg, minotaure, hydre, oursaloup |
+
+**Le gardien.** L'escalier du dernier étage ne menait dehors qu'en y montant.
+Il est désormais gardé : 14 dés de vie, deux attaques par tour, régénération,
+effroi. Ses nombres ne sont pas choisis au jugé — `tools/test_combat.py` fait
+s'affronter un groupe de niveau sept sans potion ni sort et exige qu'il
+l'emporte souvent, sans que ce soit acquis. Avec ses nombres d'origine (CA 22,
+2d8+12, peau épaisse **en plus** de sa régénération) il gagnait dix-sept fois
+sur dix-huit : le donjon était infinissable et rien ne le disait. Il en gagne
+maintenant quatre sur dix-huit, en six rounds et demi.
+
 ### Le bestiaire
 
 25 créatures du SRD, avec leurs statistiques d'origine : kobold, gobelin, rat

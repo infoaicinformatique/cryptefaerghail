@@ -85,7 +85,9 @@ hr_Shield	= 40
 hr_Spells	= 42			; masque des sorts connus
 hr_AcTemp	= 44			; bonus temporaire de CA
 hr_Slots	= 46			; emplacements de sorts, niveaux 0 a 3
-hr_SIZEOF	= 54
+hr_Stun		= 54			; tours a passer : paralysie ou effroi
+hr_StrLoss	= 56			; force perdue au poison, rendue au repos
+hr_SIZEOF	= 58
 NHEROES		= 4
 NAMELEN		= 9
 
@@ -141,7 +143,21 @@ mt_Will		= 40
 mt_Xp		= 42
 mt_Gold		= 44
 mt_Art		= 46
-mt_SIZEOF	= 48
+mt_Special	= 48			; champ de bits, cf. gen_tables.py
+mt_SIZEOF	= 50
+
+; Ce qu'une creature sait faire en plus de frapper. Vingt-cinq monstres
+; qui se battaient tous de la meme facon ne valaient que par leurs
+; nombres : une goule et un orc, c'etait le meme combat.
+SP_POISON	= $01			; Vigueur, ou la force s'en va
+SP_PARALYSE	= $02			; Vigueur, ou le heros perd un tour
+SP_DRAIN	= $04			; Volonte, ou des PV pour de bon
+SP_FEAR		= $08			; Volonte, ou il n'ose pas frapper
+SP_REGEN	= $10			; la creature se referme
+SP_DR		= $20			; sa peau encaisse les coups
+SP_MULTI	= $40			; elle frappe deux fois
+MON_DR		= 3			; ce qu'une peau epaisse retient
+MON_REGEN	= 4			; ce qu'une chair qui se referme reprend
 
 ; --- classes ---
 cl_Name		= 0			; 12 octets
@@ -178,7 +194,7 @@ PHASE_PLAY	= 1
 PHASE_TITLE	= 2			; l'ecran d'accueil
 TITLEH		= 176			; hauteur de l'illustration
 SAVEMAGIC	= $46414552		; "FAER"
-SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP
+SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP+2
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -3926,6 +3942,7 @@ NewGame:
 	clr.w	InCombat
 	clr.w	Quit
 	clr.w	GameOver
+	clr.w	BossDead
 	clr.w	UiMode
 	clr.w	SelHero
 	clr.w	InvCursor
@@ -5322,7 +5339,17 @@ Descend:
 	move.w	Level,d0
 	addq.w	#1,d0
 	cmp.w	#LEVELS,d0
-	blt.s	.next
+	blt	.next
+	tst.w	BossDead		; la sortie se merite : le gardien
+	bne.s	.out			; veille au pied de l'escalier
+	moveq	#SFX_GROWL,d0
+	bsr	SfxPlay
+	lea	TxtGuardian,a0
+	bsr	LogAdd
+	move.w	#MON_BOSS,MonKind
+	bsr	StartCombat
+	bra	.done
+.out:
 	move.w	#1,GameOver
 	moveq	#SFX_LEVEL,d0
 	bsr	SfxPlay
@@ -5396,6 +5423,12 @@ PartyRest:
 	bne.s	.heal
 	moveq	#1,d0
 .heal:
+	move.w	hr_StrLoss(a6),d1	; le poison se dissipe
+	beq.s	.noPoison
+	add.w	d1,hr_Str(a6)
+	clr.w	hr_StrLoss(a6)
+.noPoison:
+	clr.w	hr_Stun(a6)
 	add.w	d0,hr_Hp(a6)
 	move.w	hr_HpMax(a6),d0
 	cmp.w	hr_Hp(a6),d0
@@ -5433,6 +5466,7 @@ StartCombat:
 	moveq	#1,d0
 .hpOk:
 	move.w	d0,MonHp
+	move.w	d0,MonHpMax
 	move.w	mt_Art(a2),MonArt
 	clr.w	PartyBless
 	moveq	#SFX_GROWL,d0
@@ -5453,6 +5487,20 @@ StartCombat:
 ; HeroAttack : a6 = heros, a2 = monstre -> d0 = degats (0 si rate)
 HeroAttack:
 	movem.l	d1-d7/a0/a3,-(sp)
+	tst.w	hr_Stun(a6)		; paralyse, ou trop effraye pour
+	beq.s	.able			; lever son arme
+	subq.w	#1,hr_Stun(a6)
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtStunned,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	moveq	#0,d7
+	bra	.leave
+.able:
 	moveq	#0,d7			; degats
 	move.w	hr_Weapon(a6),d0
 	beq.s	.bare
@@ -5536,6 +5584,15 @@ HeroAttack:
 	cmp.w	#4,d2			; quatre attaques au maximum
 	blt	.attackLoop
 .done:
+	move.l	MonPtr,a0		; une peau epaisse retient chaque coup
+	btst	#5,mt_Special+1(a0)	; SP_DR
+	beq.s	.leave
+	tst.w	d7
+	beq.s	.leave
+	sub.w	#MON_DR,d7
+	bpl.s	.leave
+	moveq	#0,d7
+.leave:
 	move.w	d7,d0
 	movem.l	(sp)+,d1-d7/a0/a3
 	rts
@@ -5604,14 +5661,42 @@ CombatRound:
 	rts
 
 MonsterTurn:
+	movem.l	d0-d1/a0-a2,-(sp)
+	move.l	MonPtr,a2
+	btst	#4,mt_Special+1(a2)	; SP_REGEN : la chair se referme
+	beq.s	.noRegen
+	move.w	MonHpMax,d0
+	cmp.w	MonHp,d0
+	ble.s	.noRegen
+	add.w	#MON_REGEN,MonHp
+	cmp.w	MonHp,d0
+	bge.s	.capped
+	move.w	d0,MonHp
+.capped:
+	lea	TmpStr,a1
+	move.l	a2,a0
+	bsr	StrCopy
+	lea	TxtRegen,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+.noRegen:
 	tst.w	MonStun
 	beq.s	.attack
 	clr.w	MonStun
 	lea	TxtMonStunned,a0
 	bsr	LogAdd
-	rts
+	bra.s	.done
 .attack:
 	bsr	MonsterAttack
+	btst	#6,mt_Special+1(a2)	; SP_MULTI : elle frappe deux fois
+	beq.s	.done
+	tst.w	GameOver
+	bne.s	.done
+	bsr	MonsterAttack
+.done:
+	movem.l	(sp)+,d0-d1/a0-a2
 	rts
 
 MonsterAttack:
@@ -5683,6 +5768,7 @@ MonsterAttack:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	bsr	MonsterSpecial		; poison, paralysie, effroi, energie
 	tst.w	hr_Hp(a6)
 	bne.s	.checkParty
 	moveq	#SFX_DEATH,d0
@@ -5699,6 +5785,134 @@ MonsterAttack:
 	bsr	CheckWipe
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; MonsterSpecial : ce que la creature fait en plus de blesser
+;   a2 = descripteur du monstre, a6 = le heros touche
+;
+; Chaque capacite se joue sur une sauvegarde du SRD : Vigueur contre ce
+; qui attaque le corps, Volonte contre ce qui attaque l'esprit. Le
+; degre suit les des de vie de la creature, comme dans les regles.
+;----------------------------------------------------------------------
+MonsterSpecial:
+	movem.l	d0-d5/a0-a1,-(sp)
+	tst.w	hr_Hp(a6)		; un heros a terre ne subit plus rien
+	beq	.done
+	move.w	mt_Special(a2),d5
+	beq	.done
+	move.w	mt_Hd(a2),d0		; DD = 10 + la moitie des des de vie
+	lsr.w	#1,d0
+	add.w	#10,d0
+	move.w	d0,d4
+
+	btst	#0,d5			; SP_POISON
+	beq.s	.notPoison
+	moveq	#0,d0			; Vigueur
+	bsr	SpecialSave
+	bne.s	.notPoison
+	moveq	#1,d0
+	moveq	#3,d1
+	bsr	RollDice
+	move.w	d0,d3
+	move.w	hr_Str(a6),d2		; on ne descend jamais sous trois
+	subq.w	#3,d2
+	bpl.s	.floorOk
+	moveq	#0,d2
+.floorOk:
+	cmp.w	d2,d3
+	ble.s	.poisonOk
+	move.w	d2,d3
+.poisonOk:
+	tst.w	d3
+	beq.s	.notPoison
+	sub.w	d3,hr_Str(a6)
+	add.w	d3,hr_StrLoss(a6)
+	lea	TxtPoisoned,a0
+	bsr	SpecialLog
+.notPoison:
+	btst	#1,d5			; SP_PARALYSE
+	beq.s	.notParalyse
+	moveq	#0,d0			; Vigueur
+	bsr	SpecialSave
+	bne.s	.notParalyse
+	moveq	#1,d1
+	bsr	RndMod
+	addq.w	#1,d0
+	add.w	d0,hr_Stun(a6)
+	lea	TxtParalysed,a0
+	bsr	SpecialLog
+.notParalyse:
+	btst	#2,d5			; SP_DRAIN
+	beq.s	.notDrain
+	moveq	#2,d0			; Volonte
+	bsr	SpecialSave
+	bne.s	.notDrain
+	moveq	#1,d0
+	moveq	#4,d1
+	bsr	RollDice
+	move.w	d0,d3
+	move.w	hr_HpMax(a6),d0		; on ne descend pas sous un point
+	subq.w	#1,d0
+	cmp.w	d0,d3
+	ble.s	.drainOk
+	move.w	d0,d3
+.drainOk:
+	sub.w	d3,hr_HpMax(a6)
+	move.w	hr_HpMax(a6),d0
+	cmp.w	hr_Hp(a6),d0
+	bge.s	.hpOk
+	move.w	d0,hr_Hp(a6)
+.hpOk:
+	lea	TxtDrained,a0
+	bsr	SpecialLog
+.notDrain:
+	btst	#3,d5			; SP_FEAR
+	beq.s	.done
+	tst.w	hr_Stun(a6)		; deja fige : rien a ajouter
+	bne.s	.done
+	moveq	#2,d0			; Volonte
+	bsr	SpecialSave
+	bne.s	.done
+	move.w	#1,hr_Stun(a6)
+	lea	TxtAfraid,a0
+	bsr	SpecialLog
+.done:
+	movem.l	(sp)+,d0-d5/a0-a1
+	rts
+
+; SpecialSave : d0 = type de sauvegarde, d4 = degre, a6 = heros
+;            -> Z = 1 si le heros echoue
+SpecialSave:
+	movem.l	d1-d3,-(sp)
+	bsr	HeroSave
+	move.w	d0,d3
+	bsr	D20
+	add.w	d3,d0
+	cmp.w	d4,d0
+	movem.l	(sp)+,d1-d3
+	bge.s	.made
+	moveq	#0,d0			; rate : Z = 1
+	tst.w	d0
+	rts
+.made:
+	moveq	#1,d0
+	tst.w	d0
+	rts
+
+; SpecialLog : a0 = ce qui arrive, a6 = a qui
+SpecialLog:
+	movem.l	d0/a0-a1,-(sp)
+	move.l	a0,-(sp)
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	move.l	(sp)+,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	movem.l	(sp)+,d0/a0-a1
 	rts
 
 CheckWipe:
@@ -5733,6 +5947,14 @@ MonsterDies:
 	clr.w	InCombat
 	moveq	#SFX_DEATH,d0
 	bsr	SfxPlay
+	cmp.w	#MON_BOSS,MonKind	; le gardien ne tombe qu'une fois
+	bne.s	.ordinary
+	move.w	#1,BossDead
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtGuardDown,a0
+	bsr	LogAdd
+.ordinary:
 	move.w	mt_Gold(a2),d0
 	add.w	d0,Gold
 	lea	TmpStr,a1
@@ -6691,6 +6913,7 @@ SaveList:
 	dc.l	MapParam,MAPBYTES
 	dc.l	MapSeen,MAPBYTES
 	dc.l	ShopStock,NSHOP
+	dc.l	BossDead,2
 	dc.l	0,0
 
 	include	"surfgrad.i"
@@ -6808,6 +7031,15 @@ TxtCasts:	dc.b	" LANCE ",0
 TxtSpellHit:	dc.b	"LE SORT INFLIGE ",0
 TxtHealed:	dc.b	" RECUPERE ",0
 TxtPvSuffix:	dc.b	" PV.",0
+TxtStunned:	dc.b	" NE PEUT PAS BOUGER.",0
+TxtPoisoned:	dc.b	" EST EMPOISONNE.",0
+TxtParalysed:	dc.b	" EST PARALYSE !",0
+TxtDrained:	dc.b	" SENT SA VIE S'EN ALLER.",0
+TxtAfraid:	dc.b	" RECULE, TERRIFIE.",0
+TxtRegen:	dc.b	" SE REFERME.",0
+TxtGuardian:	dc.b	"UNE PRESENCE BARRE LA SORTIE.",0
+TxtGuardDown:	dc.b	"LE GARDIEN TOMBE. LA VOIE EST LIBRE.",0
+TxtCured:	dc.b	"LE REPOS CHASSE LE POISON.",0
 TxtShopSeen:	dc.b	"UNE ECHOPPE ! ESPACE POUR ENTRER.",0
 TxtShopHello:	dc.b	"BIENVENUE, DIT LE MARCHAND.",0
 TxtShopTitle:	dc.b	"ECHOPPE",0
@@ -7008,6 +7240,8 @@ MonKind:	ds.w	1
 MonArt:		ds.w	1
 PartyBless:	ds.w	1
 MonHp:		ds.w	1
+MonHpMax:	ds.w	1
+BossDead:	ds.w	1
 MonStun:	ds.w	1
 AtkMax:		ds.w	1
 QuitArm:	ds.w	1

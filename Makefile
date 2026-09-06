@@ -5,7 +5,8 @@
 #   make             assemble bin/AGADemo et bin/AGAScroll (hunks Amiga)
 #   make data        regenere les .i de donnees (Python 3)
 #   make music       regenere data/music.mod (module ProTracker)
-#   make dungeon     regenere les donnees du jeu (art, cartes, police 8x8)
+#   make dungeon     regenere toutes les donnees du jeu (art, cartes,
+#                    police, tables d'objets et de sorts, bruitages)
 #   make wav         rend la musique en WAV pour l'ecouter sans Amiga
 #   make check       verifie l'arithmetique du scroll et de la copperlist
 #   make preview     rend une image de AGAScroll dans docs/preview.png
@@ -41,7 +42,8 @@ build/AGAScroll.o: src/scroll.s $(INCS)
 	$(VASM) $(CPU) -Fhunk -I src -I . -o $@ src/scroll.s
 
 build/AGACrawl.o: src/crawl.s src/hardware.i src/ptreplay.i src/dgnpal.i \
-                  src/font8.i data/dgnart.bin data/dgnmap.bin data/music.mod
+                  src/font8.i src/tables.i data/dgnart.bin data/dgnmap.bin \
+                  data/sfx.bin data/music.mod
 	@mkdir -p build
 	$(VASM) $(CPU) -Fhunk -I src -I . -o $@ src/crawl.s
 
@@ -53,6 +55,8 @@ music:
 
 dungeon:
 	python3 tools/gen_dungeon.py
+	python3 tools/gen_tables.py
+	python3 tools/gen_sfx.py
 
 wav:
 	python3 tools/render_mod.py 30 music.wav

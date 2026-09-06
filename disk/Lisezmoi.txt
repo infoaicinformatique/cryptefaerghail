@@ -1,40 +1,61 @@
-LES CAVES DE FAERGHAIL - ET DEUX DEMOS AGA
+LA CRYPTE DE FAERGHAIL - ET DEUX DEMOS AGA
 ==========================================
 
 A lancer depuis le Shell (pas depuis le Workbench : ces programmes ne
 gerent pas le message WBStartup).
 
-  AGACrawl   Dungeon crawler en vue subjective, dans l'esprit des jeux
-             de role Amiga de 1990. Groupe de quatre heros, trois
-             niveaux de donjon, combats au tour par tour, coffres,
-             portes, escaliers, musique ProTracker.
+AGACRAWL - LA CRYPTE DE FAERGHAIL
+---------------------------------
+Dungeon crawler en vue subjective, dans l'esprit de Black Crypt, avec
+des regles inspirees de D&D 3.5.
 
-               Fleches haut / bas   avancer, reculer
-               Fleches gauche/droite tourner
-               Espace               ouvrir une porte
-               A                    attaquer (en combat)
-               F                    fuir (en combat)
-               P                    boire une potion
-               ESC                  quitter
+CREATION DU GROUPE
+  Quatre aventuriers, chacun d'une classe :
+    GUERRIER   de de vie 10, attaque a chaque niveau, epee et cotte
+    BARBARE    de de vie 12, tres resistant, hache
+    ECLAIREUR  arc, fuite bien plus sure, un peu de magie
+    CLERC      soins et sorts, potions plus efficaces
+  Les six caracteristiques sont tirees a 4d6 en gardant les trois
+  meilleurs des ; R relance le jet, ENTREE valide. Le nom se tape au
+  clavier (TAB bascule AZERTY / QWERTY) ou se choisit aux fleches.
 
-             Le but : trouver l'escalier de chaque niveau et ressortir
-             vivant du troisieme. Les coffres donnent de l'or et parfois
-             une potion ; les monstres donnent de l'experience, et le
-             groupe monte de niveau.
+COMMANDES
+  Fleches haut/bas      avancer, reculer
+  Fleches gauche/droite tourner
+  ESPACE                ouvrir une porte, fouiller une niche
+  C                     fiche d'aventure du heros courant
+  I                     sac a dos
+  1 a 4                 choisir le heros courant
+  ESC                   fermer un ecran, puis quitter
 
-  AGAScroll  Demonstration : playfield 8 bitplanes (256 couleurs 24
-             bits) en scrolling materiel, sprite, scroller de texte
-             sinusoidal sur barres copper, musique ProTracker.
+  En combat :  A attaquer   S lancer un sort   F fuir   I sac
 
-  AGADemo    Demonstration : degrade plein ecran genere ligne par ligne
-             par le copper en 24 bits, sprite materiel.
+DANS LE SAC
+  E equipe l'objet sous le curseur au heros courant, U l'utilise
+  (potion, ou parchemin pour apprendre un sort), D le jette.
 
-Configuration : Amiga 1200 ou 4000 (chipset AGA), 68020 minimum,
-Kickstart 3.0 / 3.1, environ 1 Mo de Chip RAM libre.
+REGLES
+  Attaque : 1d20 + bonus de base + modificateur de Force contre la
+  classe d'armure du monstre ; un 20 naturel touche toujours et double
+  les degats. Degats : des de l'arme + modificateur de Force. A l'arc,
+  c'est la Dexterite qui compte. Classe d'armure : 10 + modificateur de
+  Dexterite + armure + bouclier.
+  Six sorts, appris sur des parchemins, payes en points de magie :
+  trait magique, soins legers, mains brulantes, armure de mage, effroi,
+  eclair.
 
-Le tiroir Src contient tout le source assembleur, l'include du replayer
-ProTracker et le module. Le tout s'assemble avec vasm et se lie avec
-vlink (Frank Wille).
+LE DONJON
+  Trois niveaux. Coffres, objets au sol, niches creusees dans les murs,
+  portes ordinaires et portes verrouillees qui demandent une cle.
+  Onze armes, cinq protections, potions, parchemins et tresors.
+  Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
 
-Graphismes, cartes et musique sont generes par programme : rien n'est
-emprunte a une production existante.
+AGASCROLL et AGADEMO : deux demonstrations AGA (playfield 8 bitplanes
+en scrolling materiel, scroller sinusoidal sur barres copper, degrade
+copper 24 bits, musique ProTracker).
+
+Configuration : Amiga 1200 ou 4000 (AGA), 68020 minimum, Kickstart 3.0
+ou 3.1, environ 1 Mo de Chip RAM libre.
+
+Le tiroir Src contient tout le source. Graphismes, cartes, musique et
+bruitages sont generes par programme : rien n'est emprunte.

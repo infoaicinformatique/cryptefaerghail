@@ -6,7 +6,7 @@ en assembleur Motorola pour `vasm`, liés en exécutables *hunk* Amiga par
 
 | Programme | Contenu |
 |---|---|
-| `bin/AGACrawl` | **Les Caves de Faerghail** — dungeon crawler en vue subjective : groupe de quatre héros, trois niveaux, combats au tour par tour, coffres, portes |
+| `bin/AGACrawl` | **La Crypte de Faerghail** — dungeon crawler façon Black Crypt : création de groupe et règles inspirées de D&D 3.5, inventaire, magie, objets, niches, monstres animés, bruitages |
 | `bin/AGADemo` | dégradé plein écran généré **ligne par ligne par le copper en 24 bits réels**, plus une boule en **sprite matériel** |
 | `bin/AGAScroll` | playfield **8 bitplanes (256 couleurs 24 bits)** de 640×384 pixels en **scrolling 100 % matériel**, plus un **scroller de texte sinusoïdal** au blitter dans une bande séparée |
 
@@ -107,7 +107,9 @@ src/sine.i       table sinus 256 entrées                    (généré)
 src/sprite.i     boule 16×16, 2 plans                       (généré)
 src/palette.i    256 couleurs 24 bits (hauts / bas)         (généré)
 src/font.i       police 16x16 pour le scrolltext             (généré)
-src/crawl.s      le jeu : moteur, rendu, combats, interface
+src/crawl.s      le jeu : moteur, rendu, combats, magie, interface
+src/tables.i     objets, sorts, monstres, classes, noms          (généré)
+data/sfx.bin     bruitages synthétisés                           (généré)
 src/dgnpal.i     palette 16 couleurs du donjon               (généré)
 src/font8.i      police 8x8 de l'interface                   (généré)
 data/dgnart.bin  décors en perspective et monstres           (généré)
@@ -117,6 +119,8 @@ data/music.mod   module ProTracker, samples et partition     (généré)
 tools/gen_data.py    générateur des quatre .i de données
 tools/gen_module.py  générateur du module ProTracker
 tools/gen_dungeon.py générateur des décors, des cartes et de la police 8x8
+tools/gen_tables.py  générateur des tables du jeu
+tools/gen_sfx.py     générateur des bruitages
 tools/dungeon_preview.py rend un écran du jeu en PNG et contrôle les données
 tools/render_mod.py  rejoue le module en Python et écrit un WAV
 tools/preview.py     modèle Python du pipeline de scroll.s : contrôles + aperçu
@@ -128,48 +132,78 @@ scripts/get-toolchain.sh  installation de vasm + vlink
 
 ## Le jeu — `AGACrawl`
 
-Un crawler dans l'esprit des jeux de rôle Amiga de 1990 : on avance case par
-case, on tourne de 90°, et le donjon est dessiné en vue subjective.
+Un crawler dans l'esprit de Black Crypt : on avance case par case, on tourne
+de 90°, et le donjon est dessiné en vue subjective.
+
+### Création du groupe
+
+Quatre aventuriers, chacun d'une classe (guerrier, barbare, éclaireur, clerc)
+qui décide du dé de vie, de la progression à l'attaque et de l'accès à la
+magie. Les six caractéristiques sont tirées **à 4d6 en gardant les trois
+meilleurs dés**, comme il se doit ; `R` relance, `ENTRÉE` valide. Le nom se
+tape au clavier — et comme le CIA rend des **positions de touches**, pas des
+caractères, `TAB` bascule entre AZERTY et QWERTY.
+
+### Règles
+
+Inspirées de D&D 3.5, avec ce que cela implique de vraies décisions :
+
+- **Modificateurs** : `(carac − 10) / 2`, arrondi vers le bas.
+- **Classe d'armure** : `10 + mod. Dextérité + armure + bouclier`.
+- **Attaque** : `1d20 + bonus de base + mod. Force` contre la CA du monstre.
+  Le bonus de base suit le niveau chez les guerriers, les trois quarts
+  ailleurs. Un 20 naturel touche toujours et **double les dégâts**.
+- **Dégâts** : dés de l'arme + bonus magique + mod. Force. À l'arc, c'est la
+  Dextérité qui sert à toucher.
+- **Points de vie** : dé de classe + mod. Constitution, à chaque niveau.
+- **Magie** : six sorts (trait magique, soins légers, mains brûlantes, armure
+  de mage, effroi, éclair) appris sur des **parchemins** et payés en points de
+  magie. Un clerc soigne mieux ; un éclaireur améliore les chances de fuite.
+
+### Commandes
 
 | Touche | Effet |
 |---|---|
-| Flèches haut / bas | avancer, reculer |
-| Flèches gauche / droite | tourner |
-| Espace | ouvrir la porte devant soi |
-| A / F | attaquer, fuir (en combat) |
-| P | boire une potion |
-| ESC | quitter |
+| Flèches | avancer, reculer, tourner |
+| Espace | ouvrir une porte, fouiller une niche |
+| C / I | fiche d'aventure, sac à dos |
+| 1 à 4 | choisir le héros courant |
+| A / S / F | attaquer, lancer un sort, fuir (en combat) |
+| E / U / D | équiper, utiliser, jeter (dans le sac) |
+| ESC | fermer un écran, puis quitter |
 
-**Ce qui est implémenté** : trois niveaux de labyrinthe (24×24, générés puis
-figés dans `data/dgnmap.bin`), quatre héros avec points de vie, attaque,
-défense, expérience et montée de niveau ; quatre monstres ; combats au tour par
-tour avec fuite et potions ; coffres donnant or et potions ; portes à ouvrir ;
-escaliers menant au niveau suivant ; victoire à la sortie du troisième, fin de
-partie si le groupe tombe.
+### Contenu
 
-**Ce qui n'y est pas** — Faerghail avait dix ans d'avance sur cette tranche :
-pas de création de personnage, pas de sortilèges, pas d'inventaire ni de
-boutiques, pas de sauvegarde, pas de PNJ ni de dialogue, et un seul monstre à
-la fois plutôt qu'un groupe.
+Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
+clés, trésors), 4 monstres animés sur deux poses, coffres, objets au sol,
+niches creusées dans les murs, portes ordinaires et portes verrouillées.
 
-**Rendu de la vue.** Aucun calcul 3D à l'exécution : les murs sont
-pré-calculés en perspective par `tools/gen_dungeon.py`, un morceau par
-position (mur de face aux distances 1 à 4, murs latéraux aux profondeurs 0 à 3,
-portes, monstres) et posés au blitter du plus loin au plus proche. Comme la
-géométrie est fixe, chaque morceau tombe toujours au même endroit, calé sur un
-mot : le blit se fait **sans décalage**, en cookie-cut (minterme `$CA`,
-`D = A ET B` là où le masque est à un, `C` ailleurs). Les murs latéraux se
-projettent en droites passant par le point de fuite, ce qui donne un placage de
-texture exact : à la colonne `x`, la distance vaut `64 / |96 - x|`.
+### Rendu
 
-**Écran** : 320×256 en 4 bitplanes (16 couleurs, chargées en 24 bits par le
-copper), double tampon. L'affichage n'est refait qu'après une action — un jeu
-au tour par tour n'a pas besoin de 50 images par seconde.
+Aucun calcul 3D à l'exécution : les murs sont pré-calculés en perspective par
+`tools/gen_dungeon.py` — un morceau par position, y compris le fond et le mur
+extérieur des passages latéraux — et posés au blitter du plus loin au plus
+proche, en cookie-cut (minterme `$CA`) et **sans décalage**, puisque la
+géométrie est fixe et chaque morceau calé sur un mot. Les murs latéraux se
+projettent en droites passant par le point de fuite : à la colonne `x`, la
+distance vaut `64/|96−x|`, ce qui donne un placage de texture exact. Les
+dalles du sol et du plafond suivent la même règle. La pierre a son grain, ses
+fissures et sa mousse, tirés d'un bruit stable.
 
-**Clavier** : lu directement sur le CIA-A, sans l'OS. Le code arrive en série,
-inversé et décalé d'un bit (`not` puis `ror.b #1`), et il faut renvoyer une
-poignée de main en passant le port série en sortie une centaine de
-microsecondes.
+Écran 320×256 en 4 bitplanes, palette chargée en 24 bits par le copper, double
+tampon ; l'affichage n'est refait qu'après une action.
+
+### Son
+
+Le module ProTracker tourne sur trois voies ; la quatrième est **empruntée**
+le temps d'un bruitage (épée, hache, arc, impact, esquive, porte, coffre,
+potion, sort, rugissement, montée de niveau, pas, mort), le replayer laissant
+le canal tranquille pendant la durée indiquée dans la table.
+
+Le module perdait des tics pendant les déplacements : un redessin complet dure
+plus qu'une image, et le tic n'était appelé qu'une fois par tour de boucle.
+`MusicPoll`, semé dans les traitements longs, rejoue un tic dès qu'une image
+s'est écoulée — le tempo tient désormais pendant le rendu.
 
 ## Points techniques — `AGADemo`
 

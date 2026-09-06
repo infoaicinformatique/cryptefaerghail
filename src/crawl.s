@@ -1,22 +1,26 @@
 ;----------------------------------------------------------------------
-; crawl.s - LES CAVES DE FAERGHAIL, dungeon crawler en vue subjective
+; crawl.s - LA CRYPTE DE FAERGHAIL
 ;
-; Cible  : Amiga 1200 (AGA), AmigaOS 3.1+, 68020+
-; Ecran  : PAL lores 320x256, 4 bitplanes (16 couleurs 24 bits), double
-;          tampon ; l'affichage n'est refait qu'apres une action.
-; Vue    : grille de cases, murs pre-calcules en perspective et poses au
-;          blitter du plus loin au plus proche (comme les crawlers de
-;          l'epoque : aucun calcul 3D a l'execution).
-; Entree : clavier lu directement sur le CIA-A, sans l'OS.
-; Son    : le replayer ProTracker de ptreplay.i.
+; Dungeon crawler en vue subjective pour Amiga 1200 (AGA), 68020+,
+; AmigaOS 3.1. Dans l'esprit de Black Crypt et des jeux de role Amiga
+; de 1990, avec des regles inspirees de D&D 3.5 : six caracteristiques,
+; modificateurs, classe d'armure, jets d'attaque au d20, des de degats
+; par arme, sorts a points de magie appris sur des parchemins.
+;
+; Ecran  : 320x256, 4 bitplanes, palette 24 bits, double tampon.
+; Vue    : murs pre-calcules en perspective, poses au blitter du plus
+;          loin au plus proche. Aucun calcul 3D a l'execution.
+; Entree : clavier lu directement sur le CIA-A (AZERTY ou QWERTY).
+; Son    : module ProTracker sur trois voies, bruitages sur la
+;          quatrieme, empruntee le temps de l'effet.
 ;----------------------------------------------------------------------
 
 	include	"hardware.i"
 
 SCRW		= 320
 SCRH		= 256
-SCRBPL		= 40			; octets par ligne et par plan
-DEPTH		= 4			; bitplanes
+SCRBPL		= 40
+DEPTH		= 4
 PLANESIZE	= SCRBPL*SCRH
 SCRSIZE		= PLANESIZE*DEPTH
 
@@ -24,65 +28,134 @@ MAPW		= 24
 MAPH		= 24
 MAPBYTES	= MAPW*MAPH
 LEVELS		= 3
-LEVELSIZE	= 4+MAPBYTES
+LEVELSIZE	= 4+MAPBYTES*2		; entete, terrain, parametres
 
-; --- cases ---
-CELL_FLOOR	= 0
-CELL_WALL	= 1
-CELL_DOOR	= 2
-CELL_STAIRS	= 3
-CONT_CHEST	= $10			; quartet haut : contenu
-CONT_MONSTER	= $20
-CONT_MASK	= $30
+; --- terrain ---
+T_FLOOR		= 0
+T_WALL		= 1
+T_DOOR		= 2
+T_STAIRS	= 3
+T_LOCKED	= 4
+T_NICHE		= 5
+; --- contenu, quartet haut ---
+C_CHEST		= $10
+C_MONSTER	= $20
+C_ITEM		= $30
+C_MASK		= $30
 
-; --- morceaux de decor, dans l'ordre de data/dgnart.bin ---
+; --- morceaux de decor (ordre de data/dgnart.bin) ---
 ART_BG		= 0
 ART_FRONT	= 1			; distances 1 a 4
 ART_LEFT	= 5			; profondeurs 0 a 3
 ART_RIGHT	= 9
 ART_DOOR	= 13			; distances 1 a 3
-ART_MONSTER	= 16			; 4 monstres
-ART_FRONTL	= 20			; fond d'un passage a gauche, dist. 1 a 4
-ART_FRONTR	= 24			; idem a droite
-ART_OUTERL	= 28			; mur exterieur d'un passage, prof. 2 et 3
-ART_OUTERR	= 30
+ART_MONSTER	= 16			; 4 monstres x 2 poses
+ART_FRONTL	= 24			; fond d'un passage a gauche
+ART_FRONTR	= 28
+ART_OUTERL	= 32			; mur exterieur, profondeurs 2 et 3
+ART_OUTERR	= 34
+ART_NICHE	= 36
+ART_PORTRAIT	= 37			; 4 classes
+ART_ICON	= 41			; arme, armure, potion, parchemin, cle
 
-; --- structure d'un heros ---
-hr_Name		= 0			; 8 octets
-hr_Level	= 8
-hr_Xp		= 10
-hr_Hp		= 12
-hr_HpMax	= 14
-hr_Atk		= 16
-hr_Def		= 18
-hr_Class	= 20
-hr_SIZEOF	= 22
+; --- heros ---
+hr_Name		= 0			; 10 octets
+hr_Class	= 10
+hr_Level	= 12
+hr_Xp		= 14
+hr_Hp		= 16
+hr_HpMax	= 18
+hr_Mp		= 20
+hr_MpMax	= 22
+hr_Str		= 24
+hr_Dex		= 26
+hr_Con		= 28
+hr_Int		= 30
+hr_Wis		= 32
+hr_Cha		= 34
+hr_Weapon	= 36			; numero d'objet equipe
+hr_Armor	= 38
+hr_Shield	= 40
+hr_Spells	= 42			; masque des sorts connus
+hr_AcTemp	= 44			; bonus temporaire de CA
+hr_SIZEOF	= 46
 NHEROES		= 4
+NAMELEN		= 9
 
-; --- type de monstre ---
+; --- objets ---
+it_Name		= 0			; 18 octets
+it_Type		= 18
+it_Dice		= 20			; arme : nombre de des ; armure : CA
+it_Faces	= 22
+it_Bonus	= 24
+it_Value	= 26
+it_Sfx		= 28
+it_SIZEOF	= 30
+IT_WEAPON	= 0
+IT_ARMOR	= 1
+IT_SHIELD	= 2
+IT_POTION	= 3
+IT_SCROLL	= 4
+IT_KEY		= 5
+IT_TREASURE	= 6
+NITEMS		= 28
+INVSIZE		= 24
+
+; --- sorts ---
+sp_Name		= 0			; 20 octets
+sp_Cost		= 20
+sp_Kind		= 22			; 0 degats, 1 soin, 2 armure, 3 effroi
+sp_Dice		= 24
+sp_Faces	= 26
+sp_Plus		= 28
+sp_SIZEOF	= 30
+NSPELLS		= 6
+
+; --- monstres ---
 mt_Name		= 0			; 12 octets
 mt_Hp		= 12
-mt_Atk		= 14
-mt_Def		= 16
-mt_Xp		= 18
-mt_Gold		= 20
-mt_SIZEOF	= 22
+mt_Ac		= 14
+mt_Atk		= 16
+mt_Dice		= 18
+mt_Faces	= 20
+mt_Xp		= 22
+mt_Gold		= 24
+mt_SIZEOF	= 26
 
 ; --- classes ---
 cl_Name		= 0			; 12 octets
-cl_Hp		= 12
-cl_Atk		= 14
-cl_Def		= 16
+cl_Hd		= 12			; de de vie
+cl_Mp		= 14			; points de magie de base
+cl_Fast		= 16			; 1 = attaque a la vitesse d'un guerrier
 cl_SIZEOF	= 18
 NCLASSES	= 4
+CLS_GUERRIER	= 0
+CLS_BARBARE	= 1
 CLS_ECLAIREUR	= 2
 CLS_CLERC	= 3
-NNAMES		= 16
-NAMELEN		= 8
 
-; --- phases de jeu ---
+; --- effets sonores ---
+SFX_SWORD	= 0
+SFX_AXE		= 1
+SFX_BOW		= 2
+SFX_HIT		= 3
+SFX_MISS	= 4
+SFX_DOOR	= 5
+SFX_CHEST	= 6
+SFX_POTION	= 7
+SFX_SPELL	= 8
+SFX_GROWL	= 9
+SFX_LEVEL	= 10
+SFX_STEP	= 11
+SFX_DEATH	= 12
+
+; --- phases et ecrans ---
 PHASE_CREATE	= 0
 PHASE_PLAY	= 1
+UI_VIEW		= 0
+UI_SHEET	= 1
+UI_INV		= 2
+UI_SPELL	= 3
 
 ; --- codes clavier bruts ---
 KEY_UP		= $4c
@@ -91,25 +164,29 @@ KEY_RIGHT	= $4e
 KEY_LEFT	= $4f
 KEY_SPACE	= $40
 KEY_ESC		= $45
-KEY_A		= $20
-KEY_F		= $23
-KEY_P		= $19
-KEY_Q		= $10
-KEY_E		= $12
-KEY_R		= $13
-KEY_1		= $01
 KEY_RETURN	= $44
 KEY_BACKSP	= $41
 KEY_TAB		= $42
+KEY_1		= $01
+KEY_A_QW	= $20			; A en QWERTY, Q en AZERTY
+KEY_A_AZ	= $10			; A en AZERTY, Q en QWERTY
+KEY_C		= $33
+KEY_D		= $22
+KEY_E		= $12
+KEY_F		= $23
+KEY_I		= $17
+KEY_P		= $19
+KEY_R		= $13
+KEY_S		= $21
+KEY_U		= $16
 
 ; --- disposition de l'ecran ---
-PANEL_X		= 224			; en pixels, cale sur un mot
+PANEL_X		= 224
 PANEL_W		= 96
 LOG_Y		= 160
 LOG_H		= 96
 LOGLINES	= 4
 LOGWIDTH	= 36
-
 COPSIZE		= 512
 
 ;======================================================================
@@ -152,22 +229,37 @@ Start:
 	bsr	PT_Init
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 
-	bsr	Redraw			; les deux tampons, pour demarrer propre
+	bsr	Redraw
 	bsr	SwapBuffers
 	bsr	Redraw
 
 ;----------------------------------------------------------------------
-; Boucle principale : une image = un tick de musique et une touche au plus
+; Boucle principale
+;
+; MusicPoll est appele aussi pendant les longs redessins : sans cela le
+; module perd des tics des qu'on se deplace, puisqu'un redessin complet
+; depasse la duree d'une image.
 ;----------------------------------------------------------------------
 MainLoop:
 	bsr	WaitVBlank
-	bsr	PT_Tick
+	bsr	MusicTick
 
-	tst.w	DrawReady		; un affichage vient d'etre prepare ?
+	tst.w	DrawReady
 	beq.s	.noSwap
 	clr.w	DrawReady
 	bsr	SwapBuffers
 .noSwap:
+	tst.w	InCombat		; les monstres respirent
+	beq.s	.noAnim
+	addq.w	#1,AnimCount
+	move.w	AnimCount,d0
+	and.w	#7,d0
+	bne.s	.noAnim
+	move.w	AnimFrame,d0
+	eor.w	#1,d0
+	move.w	d0,AnimFrame
+	move.w	#1,NeedRedraw
+.noAnim:
 	bsr	PollKey
 	tst.w	d0
 	bmi.s	.noKey
@@ -218,7 +310,79 @@ RestoreSystem:
 	rts
 
 ;----------------------------------------------------------------------
-; InitScreen : copperlist, palette 24 bits, tampons
+; MusicTick : un tic de module, cadence sur le balayage
+; MusicPoll : meme chose, mais seulement si une image s'est ecoulee ;
+; a semer dans les traitements longs pour que le son ne decroche pas
+;----------------------------------------------------------------------
+MusicTick:
+	bsr	PT_Tick
+	move.w	#1,MusicDone
+	rts
+
+MusicPoll:
+	movem.l	d0/a5,-(sp)
+	lea	CUSTOM,a5
+	move.l	VPOSR(a5),d0
+	and.l	#$0001ff00,d0
+	lsr.l	#8,d0
+	cmp.w	#300,d0			; on vient d'entrer dans le retour trame
+	blt.s	.notYet
+	tst.w	MusicDone
+	bne.s	.done
+	bsr	PT_Tick
+	move.w	#1,MusicDone
+	bra.s	.done
+.notYet:
+	clr.w	MusicDone
+.done:
+	movem.l	(sp)+,d0/a5
+	rts
+
+;----------------------------------------------------------------------
+; SfxPlay : d0 = numero d'effet, joue sur le canal 3
+;
+; Paula exige la meme sequence que pour une note : DMA coupe, registres
+; charges, attente, DMA relance. Le replayer laisse le canal tranquille
+; pendant le nombre de tics indique dans la table.
+;----------------------------------------------------------------------
+SfxPlay:
+	movem.l	d0-d3/a0-a2/a6,-(sp)
+	lea	SfxData,a0
+	move.w	d0,d1
+	mulu.w	#12,d1
+	lea	2(a0,d1.w),a1
+	move.l	(a1),d2
+	add.l	a0,d2			; adresse de l'echantillon
+	lea	CUSTOM,a6
+	lea	CUSTOM+$d0,a2		; canal 3
+	move.w	#$0008,DMACON(a6)	; DMA coupe
+	move.l	d2,(a2)
+	move.w	4(a1),4(a2)		; longueur
+	move.w	6(a1),6(a2)		; periode
+	move.w	8(a1),8(a2)		; volume
+	bsr	RasterWait
+	move.w	#$8008,DMACON(a6)	; relance
+	move.l	#SfxSilence,(a2)	; puis boucle sur du silence
+	move.w	#1,4(a2)
+	move.w	10(a1),PT_SfxLock
+	movem.l	(sp)+,d0-d3/a0-a2/a6
+	rts
+
+RasterWait:				; environ deux lignes
+	movem.l	d0-d1/a6,-(sp)
+	lea	CUSTOM,a6
+	moveq	#1,d1
+.line:
+	move.b	VHPOSR(a6),d0
+.wait:
+	cmp.b	VHPOSR(a6),d0
+	beq.s	.wait
+	dbf	d1,.line
+	movem.l	(sp)+,d0-d1/a6
+	rts
+
+;----------------------------------------------------------------------
+; Ecran : copperlist, palette 24 bits, double tampon
 ;----------------------------------------------------------------------
 InitScreen:
 	lea	ScreenA,a0
@@ -252,7 +416,7 @@ InitScreen:
 	move.w	#BPL2MOD,(a2)+
 	move.w	#$0000,(a2)+
 
-	move.l	a2,CopBplPtrs		; les 8 MOVE de pointeurs de plans
+	move.l	a2,CopBplPtrs
 	move.w	#BPL1PTH,d1
 	moveq	#DEPTH-1,d2
 .bplLoop:
@@ -264,7 +428,7 @@ InitScreen:
 	addq.w	#2,d1
 	dbf	d2,.bplLoop
 
-	lea	DgnPalette,a3		; 16 couleurs, quartets hauts puis bas
+	lea	DgnPalette,a3
 	move.w	#BPLCON3,(a2)+
 	move.w	#$0000,(a2)+
 	move.w	#COLOR00,d1
@@ -296,7 +460,6 @@ InitScreen:
 	move.w	d0,COPJMP1(a5)
 	rts
 
-; Ecrit dans la copperlist les pointeurs du tampon affiche
 SetBplPtrs:
 	movem.l	d0-d2/a0-a1,-(sp)
 	move.l	CopBplPtrs,a1
@@ -340,37 +503,37 @@ WaitBlit:
 	rts
 
 ;----------------------------------------------------------------------
-; BlitPiece : pose un morceau de decor dans le tampon de dessin
-;   d0 = numero du morceau, d1 = 0 avec masque, sinon copie simple
-;
-; Les morceaux sont cales sur des mots et toujours a la meme place :
-; aucun decalage a faire, le blitter n'a qu'a recopier a travers le
-; masque (minterme $CA : D = A ET B, ou C la ou le masque est a zero).
+; BlitPiece  : d0 = morceau, d1 = 0 avec masque sinon copie simple
+; BlitPieceAt: idem, mais d2 impose la destination (portraits, icones)
 ;----------------------------------------------------------------------
 BlitPiece:
+	moveq	#-1,d2
+BlitPieceAt:
 	movem.l	d0-d7/a0-a6,-(sp)
 	lea	CUSTOM,a6
 	lea	DgnArt,a0
-	move.w	d0,d2
-	mulu.w	#12,d2
-	lea	2(a0,d2.w),a1		; descripteur
+	move.w	d0,d3
+	mulu.w	#12,d3
+	lea	2(a0,d3.w),a1
 	move.l	(a1),d3
-	add.l	a0,d3			; adresse des donnees
+	add.l	a0,d3
 	moveq	#0,d4
 	move.w	4(a1),d4		; largeur en mots
 	moveq	#0,d5
 	move.w	6(a1),d5		; hauteur
-	moveq	#0,d6
-	move.w	8(a1),d6		; offset dans un plan
-
-	move.l	d4,d7			; taille d'un plan du morceau
+	tst.l	d2
+	bpl.s	.haveDst
+	moveq	#0,d2
+	move.w	8(a1),d2		; destination par defaut
+.haveDst:
+	move.l	d4,d7
 	add.l	d7,d7
-	mulu.w	d5,d7
+	mulu.w	d5,d7			; octets par plan du morceau
 
 	move.l	DrawBuf,a2
-	add.l	d6,a2			; destination, plan 0
+	add.l	d2,a2
 	move.l	d3,a3			; masque
-	add.l	d7,d3			; plan 0 du morceau
+	add.l	d7,d3			; premier plan
 
 	move.w	d4,d6
 	add.w	d6,d6
@@ -408,18 +571,16 @@ BlitPiece:
 	move.w	d5,d2
 	lsl.w	#6,d2
 	or.w	d4,d2
-	move.w	d2,BLTSIZE(a6)		; lance le blit
-
-	add.l	d7,d3			; plan suivant du morceau
+	move.w	d2,BLTSIZE(a6)
+	add.l	d7,d3
 	lea	PLANESIZE(a2),a2
 	dbf	d0,.planeLoop
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
 ;----------------------------------------------------------------------
-; FillRect : remplit un rectangle d'une couleur
-;   d0 = x (multiple de 16), d1 = y, d2 = largeur (multiple de 16),
-;   d3 = hauteur, d4 = couleur
+; FillRect : d0 = x (mult. de 16), d1 = y, d2 = largeur, d3 = hauteur,
+;            d4 = couleur
 ;----------------------------------------------------------------------
 FillRect:
 	movem.l	d0-d7/a0-a6,-(sp)
@@ -430,23 +591,21 @@ FillRect:
 	move.w	d0,d6
 	lsr.w	#3,d6
 	add.w	d6,d5
-	add.l	d5,a2			; coin, plan 0
-
-	lsr.w	#4,d2			; largeur en mots
+	add.l	d5,a2
+	lsr.w	#4,d2
 	move.w	d2,d6
 	add.w	d6,d6
 	neg.w	d6
-	add.w	#SCRBPL,d6		; modulo
-
-	moveq	#0,d5			; numero de plan
+	add.w	#SCRBPL,d6
+	moveq	#0,d5
 .planeLoop:
 	bsr	WaitBlit
 	btst	d5,d4
 	beq.s	.zero
-	move.w	#BLT_USED|$00ff,BLTCON0(a6)	; minterme 1 : que des uns
+	move.w	#BLT_USED|$00ff,BLTCON0(a6)
 	bra.s	.set
 .zero:
-	move.w	#BLT_USED,BLTCON0(a6)		; minterme 0 : que des zeros
+	move.w	#BLT_USED,BLTCON0(a6)
 .set:
 	clr.w	BLTCON1(a6)
 	move.w	d6,BLTDMOD(a6)
@@ -462,11 +621,7 @@ FillRect:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-;----------------------------------------------------------------------
-; HLine / VLine : traits d'encadrement
-;   HLine : d0 = x (multiple de 8), d1 = y, d2 = longueur (mult. de 8),
-;           d3 = couleur
-;----------------------------------------------------------------------
+; HLine : d0 = x (mult. de 8), d1 = y, d2 = longueur, d3 = couleur
 HLine:
 	movem.l	d0-d7/a0-a2,-(sp)
 	bsr	WaitBlit
@@ -477,7 +632,7 @@ HLine:
 	lsr.w	#3,d5
 	add.w	d5,d4
 	add.l	d4,a2
-	lsr.w	#3,d2			; longueur en octets
+	lsr.w	#3,d2
 	moveq	#0,d5
 .planeLoop:
 	move.l	a2,a0
@@ -513,7 +668,7 @@ VLine:
 	add.l	d4,a2
 	move.w	d0,d7
 	and.w	#7,d7
-	eor.w	#7,d7			; numero de bit dans l'octet
+	eor.w	#7,d7
 	moveq	#0,d5
 .planeLoop:
 	move.l	a2,a0
@@ -542,7 +697,7 @@ VLine:
 DrawBox:
 	movem.l	d0-d4,-(sp)
 	move.l	d4,d5
-	exg	d3,d5			; HLine attend la couleur en d3
+	exg	d3,d5
 	bsr	HLine
 	movem.l	(sp),d0-d4
 	add.w	d3,d1
@@ -564,8 +719,7 @@ DrawBox:
 	rts
 
 ;----------------------------------------------------------------------
-; DrawText : a0 = chaine (0 final), d0 = colonne (x/8), d1 = ligne,
-;            d2 = couleur
+; DrawText : a0 = chaine, d0 = colonne, d1 = ligne, d2 = couleur
 ;----------------------------------------------------------------------
 DrawText:
 	movem.l	d0-d7/a0-a6,-(sp)
@@ -615,10 +769,7 @@ DrawText:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-;----------------------------------------------------------------------
-; Chaines : copie et conversion decimale dans TmpStr
-;----------------------------------------------------------------------
-; StrCopy : a0 = source, a1 = destination ; a1 pointe le zero final
+; StrCopy : a0 = source, a1 = destination (laisse a1 sur le zero final)
 StrCopy:
 	move.b	(a0)+,(a1)
 	beq.s	.done
@@ -627,16 +778,16 @@ StrCopy:
 .done:
 	rts
 
-; StrNum : d0 = valeur (0..65535), a1 = destination
+; StrNum : d0 = valeur, a1 = destination
 StrNum:
-	movem.l	d0-d3/a2,-(sp)
-	lea	NumBuf+8,a2
+	movem.l	d0-d3/a0/a2,-(sp)
+	lea	NumBuf+10,a2
 	clr.b	-(a2)
 	and.l	#$0000ffff,d0
 .digit:
 	divu.w	#10,d0
 	move.l	d0,d1
-	swap	d1			; reste
+	swap	d1
 	add.b	#'0',d1
 	move.b	d1,-(a2)
 	and.l	#$0000ffff,d0
@@ -649,28 +800,40 @@ StrNum:
 	addq.l	#1,a1
 	bra.s	.copy
 .done:
-	movem.l	(sp)+,d0-d3/a2
+	movem.l	(sp)+,d0-d3/a0/a2
+	rts
+
+; StrSigned : d0 = valeur signee, a1 = destination ("+3" ou "-1")
+StrSigned:
+	movem.l	d0,-(sp)
+	tst.w	d0
+	bmi.s	.neg
+	move.b	#'+',(a1)+
+	bra.s	.num
+.neg:
+	move.b	#'-',(a1)+
+	neg.w	d0
+.num:
+	and.l	#$0000ffff,d0
+	bsr	StrNum
+	movem.l	(sp)+,d0
 	rts
 
 ;----------------------------------------------------------------------
-; PollKey : renvoie d0 = code brut d'une touche enfoncee, ou -1
-;
-; Le clavier arrive en serie sur le CIA-A : le code est inverse et
-; decale d'un bit, et il faut renvoyer une poignee de main en passant
-; le port serie en sortie pendant une centaine de microsecondes.
+; Clavier : le CIA donne des codes de position, pas des caracteres
 ;----------------------------------------------------------------------
 PollKey:
-	move.b	CIAAICR,d1		; la lecture efface les drapeaux
-	btst	#3,d1			; SP : un octet est arrive
+	move.b	CIAAICR,d1
+	btst	#3,d1
 	beq.s	.none
 	moveq	#0,d0
 	move.b	CIAASDR,d0
 	not.b	d0
 	ror.b	#1,d0
-	bset	#6,CIAACRA		; poignee de main
-	bsr	KeyDelay
+	bset	#6,CIAACRA
+	bsr	RasterWait
 	bclr	#6,CIAACRA
-	btst	#7,d0			; bit 7 : relachement
+	btst	#7,d0
 	bne.s	.none
 	and.w	#$007f,d0
 	rts
@@ -678,21 +841,8 @@ PollKey:
 	moveq	#-1,d0
 	rts
 
-KeyDelay:				; environ deux lignes raster
-	movem.l	d0-d1/a6,-(sp)
-	lea	CUSTOM,a6
-	moveq	#1,d1
-.line:
-	move.b	VHPOSR(a6),d0
-.wait:
-	cmp.b	VHPOSR(a6),d0
-	beq.s	.wait
-	dbf	d1,.line
-	movem.l	(sp)+,d0-d1/a6
-	rts
-
 ;----------------------------------------------------------------------
-; Rnd : xorshift 32 bits ; RndMod renvoie d0 = Rnd modulo d1
+; Hasard et des
 ;----------------------------------------------------------------------
 Rnd:
 	move.l	RngSeed,d0
@@ -711,21 +861,51 @@ Rnd:
 	move.l	d0,RngSeed
 	rts
 
-RndMod:					; d1 = borne, resultat dans d0
+RndMod:					; d1 = borne -> d0 = 0..d1-1
 	movem.l	d1-d2,-(sp)
 	move.l	d1,d2
 	bsr	Rnd
 	and.l	#$00007fff,d0
 	divu.w	d2,d0
 	clr.w	d0
-	swap	d0			; reste
+	swap	d0
 	movem.l	(sp)+,d1-d2
 	rts
 
+; RollDice : d0 = nombre de des, d1 = faces -> d0 = total
+RollDice:
+	movem.l	d1-d3,-(sp)
+	move.w	d0,d3
+	moveq	#0,d2
+.loop:
+	tst.w	d3
+	beq.s	.done
+	bsr	RndMod
+	addq.w	#1,d0
+	add.w	d0,d2
+	subq.w	#1,d3
+	bra.s	.loop
+.done:
+	move.w	d2,d0
+	movem.l	(sp)+,d1-d3
+	rts
+
+D20:
+	moveq	#20,d1
+	bsr	RndMod
+	addq.w	#1,d0
+	rts
+
+; StatMod : d0 = caracteristique -> d0 = modificateur (D&D 3.5)
+StatMod:
+	sub.w	#10,d0
+	asr.w	#1,d0
+	rts
+
 ;----------------------------------------------------------------------
-; Carte : MapCell renvoie d0 = octet de la case (d0 = x, d1 = y)
+; Carte : terrain et parametre, deux plans de MAPBYTES octets
 ;----------------------------------------------------------------------
-MapCell:
+MapCell:				; d0 = x, d1 = y -> d0 = terrain
 	cmp.w	#0,d0
 	blt.s	.wall
 	cmp.w	#MAPW,d0
@@ -735,7 +915,7 @@ MapCell:
 	cmp.w	#MAPH,d1
 	bge.s	.wall
 	movem.l	d1-d2/a0,-(sp)
-	move.l	MapBase,a0
+	lea	MapTerrain,a0
 	move.w	d1,d2
 	mulu.w	#MAPW,d2
 	add.w	d0,d2
@@ -744,13 +924,23 @@ MapCell:
 	movem.l	(sp)+,d1-d2/a0
 	rts
 .wall:
-	moveq	#CELL_WALL,d0
+	moveq	#T_WALL,d0
 	rts
 
-; MapSet : d0 = x, d1 = y, d2 = nouvelle valeur
-MapSet:
+MapGetParam:				; d0 = x, d1 = y -> d0 = parametre
+	movem.l	d1-d2/a0,-(sp)
+	lea	MapParam,a0
+	move.w	d1,d2
+	mulu.w	#MAPW,d2
+	add.w	d0,d2
+	moveq	#0,d0
+	move.b	(a0,d2.w),d0
+	movem.l	(sp)+,d1-d2/a0
+	rts
+
+MapSet:					; d0 = x, d1 = y, d2 = terrain
 	movem.l	d0-d3/a0,-(sp)
-	move.l	MapBase,a0
+	lea	MapTerrain,a0
 	move.w	d1,d3
 	mulu.w	#MAPW,d3
 	add.w	d0,d3
@@ -758,13 +948,26 @@ MapSet:
 	movem.l	(sp)+,d0-d3/a0
 	rts
 
-; IsSolid : d0 = octet de case -> Z=0 si le mur bloque la vue
-IsSolid:
+MapSetParam:				; d0 = x, d1 = y, d2 = parametre
+	movem.l	d0-d3/a0,-(sp)
+	lea	MapParam,a0
+	move.w	d1,d3
+	mulu.w	#MAPW,d3
+	add.w	d0,d3
+	move.b	d2,(a0,d3.w)
+	movem.l	(sp)+,d0-d3/a0
+	rts
+
+IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	move.w	d0,d2
 	and.w	#$000f,d2
-	cmp.w	#CELL_WALL,d2
+	cmp.w	#T_WALL,d2
 	beq.s	.yes
-	cmp.w	#CELL_DOOR,d2
+	cmp.w	#T_DOOR,d2
+	beq.s	.yes
+	cmp.w	#T_LOCKED,d2
+	beq.s	.yes
+	cmp.w	#T_NICHE,d2
 	beq.s	.yes
 	moveq	#0,d2
 	rts
@@ -772,35 +975,87 @@ IsSolid:
 	moveq	#1,d2
 	rts
 
+; CellAt : d2 = profondeur, d3 = decalage lateral -> d0,d1 = case
+CellAt:
+	movem.l	d2-d5/a0,-(sp)
+	lea	DirTable,a0
+	move.w	Dir,d4
+	lsl.w	#2,d4
+	move.w	(a0,d4.w),d5
+	muls.w	d2,d5
+	move.w	PosX,d0
+	add.w	d5,d0
+	move.w	2(a0,d4.w),d5
+	muls.w	d2,d5
+	move.w	PosY,d1
+	add.w	d5,d1
+	move.w	Dir,d4
+	addq.w	#1,d4
+	and.w	#3,d4
+	lsl.w	#2,d4
+	move.w	(a0,d4.w),d5
+	muls.w	d3,d5
+	add.w	d5,d0
+	move.w	2(a0,d4.w),d5
+	muls.w	d3,d5
+	add.w	d5,d1
+	movem.l	(sp)+,d2-d5/a0
+	rts
+
+CellAhead:				; d2 = distance -> d0,d1
+	movem.l	d3,-(sp)
+	moveq	#0,d3
+	bsr	CellAt
+	movem.l	(sp)+,d3
+	rts
+
 ;----------------------------------------------------------------------
-; DrawScene : la vue subjective, ou le monstre pendant un combat
+; DrawScene : la vue, le combat, ou un ecran d'interface
 ;----------------------------------------------------------------------
 DrawScene:
 	movem.l	d0-d7/a0-a6,-(sp)
-	tst.w	Phase			; creation du groupe : pas de donjon
+	tst.w	Phase
 	bne.s	.inGame
 	bsr	DrawCreate
 	bra	.done
 .inGame:
-	moveq	#ART_BG,d0		; sol et plafond
+	move.w	UiMode,d0
+	beq.s	.world
+	cmp.w	#UI_SHEET,d0
+	bne.s	.notSheet
+	bsr	DrawSheet
+	bra	.done
+.notSheet:
+	cmp.w	#UI_INV,d0
+	bne.s	.notInv
+	bsr	DrawInventory
+	bra	.done
+.notInv:
+	bsr	DrawSpellMenu
+	bra	.done
+
+.world:
+	moveq	#ART_BG,d0
 	moveq	#1,d1
 	bsr	BlitPiece
+	bsr	MusicPoll
 
 	tst.w	InCombat
 	beq.s	.dungeon
 	move.w	MonKind,d0
+	add.w	d0,d0
+	add.w	AnimFrame,d0
 	add.w	#ART_MONSTER,d0
 	moveq	#0,d1
 	bsr	BlitPiece
 	bra	.done
 
 .dungeon:
-	; --- premier mur rencontre devant soi ---
-	moveq	#0,d7			; distance du mur, 0 = aucun
+	moveq	#0,d7			; distance du premier mur
 	moveq	#1,d6
 .scan:
 	move.w	d6,d2
-	bsr	CellAhead		; d0,d1 = case a la distance d6
+	bsr	CellAhead
 	bsr	MapCell
 	bsr	IsSolid
 	tst.w	d2
@@ -813,13 +1068,17 @@ DrawScene:
 	blt.s	.scan
 .scanDone:
 	tst.w	d7
-	beq.s	.noFront
-	move.w	d7,d2			; le mur : porte ou pierre ?
+	beq	.noFront
+	move.w	d7,d2
 	bsr	CellAhead
 	bsr	MapCell
-	and.w	#$000f,d0
-	cmp.w	#CELL_DOOR,d0
+	move.w	d0,d4			; terrain du mur
+	and.w	#$000f,d4
+	cmp.w	#T_DOOR,d4
+	beq.s	.asDoor
+	cmp.w	#T_LOCKED,d4
 	bne.s	.stone
+.asDoor:
 	cmp.w	#4,d7
 	bge.s	.stone
 	move.w	d7,d0
@@ -831,10 +1090,17 @@ DrawScene:
 .blitFront:
 	moveq	#0,d1
 	bsr	BlitPiece
+	cmp.w	#T_NICHE,d4		; une niche se voit de pres
+	bne.s	.noFront
+	cmp.w	#1,d7
+	bne.s	.noFront
+	moveq	#ART_NICHE,d0
+	moveq	#0,d1
+	bsr	BlitPiece
 .noFront:
-	; --- murs lateraux, du plus loin au plus proche ---
+	bsr	MusicPoll
 	move.w	d7,d6
-	subq.w	#1,d6			; derniere profondeur visible
+	subq.w	#1,d6
 	tst.w	d7
 	bne.s	.haveMax
 	moveq	#3,d6
@@ -846,16 +1112,16 @@ DrawScene:
 	tst.w	d6
 	bmi	.done
 .sideLoop:
-	moveq	#-1,d5			; cote gauche, puis cote droit
+	moveq	#-1,d5
 .sideEach:
-	move.w	d6,d2			; la case voisine est-elle pleine ?
+	move.w	d6,d2
 	move.w	d5,d3
 	bsr	CellAt
 	bsr	MapCell
 	bsr	IsSolid
 	tst.w	d2
 	beq.s	.open
-	move.w	d6,d0			; oui : mur du couloir
+	move.w	d6,d0
 	tst.w	d5
 	bmi.s	.leftWall
 	add.w	#ART_RIGHT,d0
@@ -866,11 +1132,8 @@ DrawScene:
 	moveq	#0,d1
 	bsr	BlitPiece
 	bra	.sideNext
-
 .open:
-	; passage ouvert : on voit le fond du passage, une case plus loin,
-	; puis son mur exterieur -- sans quoi l'ouverture est un trou noir
-	move.w	d6,d2
+	move.w	d6,d2			; fond du passage
 	addq.w	#1,d2
 	move.w	d5,d3
 	bsr	CellAt
@@ -889,11 +1152,11 @@ DrawScene:
 	moveq	#0,d1
 	bsr	BlitPiece
 .noBack:
-	cmp.w	#2,d6			; le mur exterieur n'entre dans le
-	blt.s	.sideNext		; champ qu'a partir de la profondeur 2
-	move.w	d6,d2
+	cmp.w	#2,d6
+	blt.s	.sideNext
+	move.w	d6,d2			; mur exterieur du passage
 	move.w	d5,d3
-	add.w	d3,d3			; deux cases sur le cote
+	add.w	d3,d3
 	bsr	CellAt
 	bsr	MapCell
 	bsr	IsSolid
@@ -910,74 +1173,16 @@ DrawScene:
 .blitOuter:
 	moveq	#0,d1
 	bsr	BlitPiece
-
 .sideNext:
 	tst.w	d5
 	bpl.s	.sideDone
-	moveq	#1,d5			; on repasse pour le cote droit
+	moveq	#1,d5
 	bra	.sideEach
 .sideDone:
+	bsr	MusicPoll
 	dbf	d6,.sideLoop
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
-	rts
-
-; CellAt : d2 = profondeur, d3 = decalage lateral -> d0,d1 = case visee
-CellAt:
-	movem.l	d2-d5/a0,-(sp)
-	lea	DirTable,a0
-	move.w	Dir,d4
-	lsl.w	#2,d4
-	move.w	(a0,d4.w),d5		; avancee
-	muls.w	d2,d5
-	move.w	PosX,d0
-	add.w	d5,d0
-	move.w	2(a0,d4.w),d5
-	muls.w	d2,d5
-	move.w	PosY,d1
-	add.w	d5,d1
-	move.w	Dir,d4			; decalage vers la droite
-	addq.w	#1,d4
-	and.w	#3,d4
-	lsl.w	#2,d4
-	move.w	(a0,d4.w),d5
-	muls.w	d3,d5
-	add.w	d5,d0
-	move.w	2(a0,d4.w),d5
-	muls.w	d3,d5
-	add.w	d5,d1
-	movem.l	(sp)+,d2-d5/a0
-	rts
-
-; CellAhead : d2 = distance -> d0,d1 = coordonnees de la case visee
-CellAhead:
-	movem.l	d2-d4/a0,-(sp)
-	lea	DirTable,a0
-	move.w	Dir,d3
-	lsl.w	#2,d3
-	move.w	(a0,d3.w),d4		; dx
-	muls.w	d2,d4
-	move.w	PosX,d0
-	add.w	d4,d0
-	move.w	2(a0,d3.w),d4		; dy
-	muls.w	d2,d4
-	move.w	PosY,d1
-	add.w	d4,d1
-	movem.l	(sp)+,d2-d4/a0
-	rts
-
-; CellSide : d0,d1 = case, d2 = -1 gauche / +1 droite -> case voisine
-CellSide:
-	movem.l	d2-d4/a0,-(sp)
-	lea	DirTable,a0
-	move.w	Dir,d3
-	add.w	d2,d3
-	add.w	#4,d3
-	and.w	#3,d3
-	lsl.w	#2,d3
-	add.w	(a0,d3.w),d0
-	add.w	2(a0,d3.w),d1
-	movem.l	(sp)+,d2-d4/a0
 	rts
 
 ;----------------------------------------------------------------------
@@ -985,7 +1190,7 @@ CellSide:
 ;----------------------------------------------------------------------
 Redraw:
 	movem.l	d0-d7/a0-a6,-(sp)
-	move.w	#PANEL_X,d0		; nettoyage du panneau et du journal
+	move.w	#PANEL_X,d0
 	moveq	#8,d1
 	move.w	#PANEL_W,d2
 	move.w	#152,d3
@@ -999,8 +1204,9 @@ Redraw:
 	bsr	FillRect
 
 	bsr	DrawScene
+	bsr	MusicPoll
 
-	moveq	#8,d0			; encadrements
+	moveq	#8,d0
 	moveq	#8,d1
 	move.w	#208,d2
 	move.w	#152,d3
@@ -1020,21 +1226,25 @@ Redraw:
 	bsr	DrawBox
 
 	bsr	DrawParty
+	bsr	MusicPoll
 	bsr	DrawLog
 	bsr	DrawStatus
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+;----------------------------------------------------------------------
+; DrawParty : portrait, nom, points de vie et de magie
+;----------------------------------------------------------------------
 DrawParty:
 	movem.l	d0-d7/a0-a6,-(sp)
 	lea	Heroes,a6
-	moveq	#0,d7			; numero de heros
+	moveq	#0,d7
 .heroLoop:
 	move.w	d7,d5
 	mulu.w	#36,d5
-	add.w	#16,d5			; ligne de depart
+	add.w	#14,d5			; ligne du bloc
 
-	tst.w	hr_HpMax(a6)		; place encore vide
+	tst.w	hr_HpMax(a6)
 	bne.s	.exists
 	lea	TxtEmptySlot,a0
 	move.w	#29,d0
@@ -1043,17 +1253,29 @@ DrawParty:
 	bsr	DrawText
 	bra	.heroNext
 .exists:
+	move.w	hr_Class(a6),d0		; portrait
+	add.w	#ART_PORTRAIT,d0
+	moveq	#0,d1
+	move.w	d5,d2
+	mulu.w	#SCRBPL,d2
+	add.w	#28,d2
+	bsr	BlitPieceAt
+
 	move.l	a6,a0			; nom
-	move.w	#29,d0
+	move.w	#32,d0
 	move.w	d5,d1
 	moveq	#13,d2
 	tst.w	hr_Hp(a6)
 	bne.s	.alive
-	moveq	#5,d2			; mort : en gris
+	moveq	#5,d2
 .alive:
+	cmp.w	SelHero,d7
+	bne.s	.notSel
+	moveq	#14,d2			; heros selectionne : en or
+.notSel:
 	bsr	DrawText
 
-	lea	TmpStr,a1		; "PV xx/yy"
+	lea	TmpStr,a1		; points de vie
 	lea	TxtPv,a0
 	bsr	StrCopy
 	move.w	hr_Hp(a6),d0
@@ -1063,7 +1285,7 @@ DrawParty:
 	bsr	StrNum
 	clr.b	(a1)
 	lea	TmpStr,a0
-	move.w	#29,d0
+	move.w	#32,d0
 	move.w	d5,d1
 	add.w	#10,d1
 	moveq	#12,d2
@@ -1071,23 +1293,41 @@ DrawParty:
 	add.w	d3,d3
 	cmp.w	hr_HpMax(a6),d3
 	bge.s	.hpOk
-	moveq	#15,d2			; sous la moitie : en rouge
+	moveq	#15,d2
 .hpOk:
 	bsr	DrawText
 
-	lea	TmpStr,a1		; "NIV n"
+	tst.w	hr_MpMax(a6)		; points de magie, si la classe en a
+	beq.s	.noMp
+	lea	TmpStr,a1
+	lea	TxtPm,a0
+	bsr	StrCopy
+	move.w	hr_Mp(a6),d0
+	bsr	StrNum
+	move.b	#'/',(a1)+
+	move.w	hr_MpMax(a6),d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	move.w	#32,d0
+	move.w	d5,d1
+	add.w	#20,d1
+	moveq	#9,d2
+	bsr	DrawText
+	bra.s	.heroNext
+.noMp:
+	lea	TmpStr,a1
 	lea	TxtNiv,a0
 	bsr	StrCopy
 	move.w	hr_Level(a6),d0
 	bsr	StrNum
 	clr.b	(a1)
 	lea	TmpStr,a0
-	move.w	#29,d0
+	move.w	#32,d0
 	move.w	d5,d1
 	add.w	#20,d1
 	moveq	#2,d2
 	bsr	DrawText
-
 .heroNext:
 	lea	hr_SIZEOF(a6),a6
 	addq.w	#1,d7
@@ -1109,7 +1349,7 @@ DrawLog:
 	moveq	#2,d2
 	cmp.w	#LOGLINES-1,d7
 	bne.s	.old
-	moveq	#13,d2			; la derniere ligne en blanc
+	moveq	#13,d2
 .old:
 	bsr	DrawText
 	lea	LOGWIDTH+2(a6),a6
@@ -1129,13 +1369,9 @@ DrawStatus:
 	moveq	#14,d2
 	bsr	DrawText
 	lea	TxtHelpCreate,a0
-	move.w	#2,d0
-	move.w	#238,d1
-	moveq	#4,d2
-	bsr	DrawText
-	bra	.exit
+	bra	.help
 .playing:
-	lea	TmpStr,a1		; "NIVEAU n  OR nnn  POTIONS n"
+	lea	TmpStr,a1
 	lea	TxtNiveau,a0
 	bsr	StrCopy
 	move.w	Level,d0
@@ -1145,9 +1381,9 @@ DrawStatus:
 	bsr	StrCopy
 	move.w	Gold,d0
 	bsr	StrNum
-	lea	TxtPot,a0
+	lea	TxtKeys,a0
 	bsr	StrCopy
-	move.w	Potions,d0
+	move.w	KeyCount,d0
 	bsr	StrNum
 	clr.b	(a1)
 	lea	TmpStr,a0
@@ -1156,24 +1392,32 @@ DrawStatus:
 	moveq	#14,d2
 	bsr	DrawText
 
-	tst.w	InCombat		; rappel des commandes
-	beq.s	.explore
+	move.w	UiMode,d0
+	beq.s	.helpView
+	cmp.w	#UI_INV,d0
+	bne.s	.helpOther
+	lea	TxtHelpInv,a0
+	bra.s	.help
+.helpOther:
+	lea	TxtHelpSheet,a0
+	bra.s	.help
+.helpView:
+	tst.w	InCombat
+	beq.s	.helpMove
 	lea	TxtHelpFight,a0
 	bra.s	.help
-.explore:
+.helpMove:
 	lea	TxtHelpMove,a0
 .help:
 	move.w	#2,d0
 	move.w	#238,d1
 	moveq	#4,d2
 	bsr	DrawText
-.exit:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
 ;----------------------------------------------------------------------
-; Journal : LogAdd fait remonter les lignes et ecrit la nouvelle
-;   a0 = chaine
+; Journal
 ;----------------------------------------------------------------------
 LogAdd:
 	movem.l	d0-d3/a0-a2,-(sp)
@@ -1181,195 +1425,492 @@ LogAdd:
 	lea	LogBuf+LOGWIDTH+2,a2
 	moveq	#LOGLINES-2,d3
 .shift:
-	move.w	#LOGWIDTH+1,d2		; un emplacement entier
+	move.w	#LOGWIDTH+1,d2
 .copy:
 	move.b	(a2)+,(a1)+
 	dbf	d2,.copy
 	dbf	d3,.shift
-	move.w	#LOGWIDTH-1,d2		; derniere ligne = la nouvelle
+	move.w	#LOGWIDTH-1,d2
 .write:
 	move.b	(a0),(a1)+
 	beq.s	.done
 	addq.l	#1,a0
 	dbf	d2,.write
-	clr.b	(a1)			; texte trop long : on le ferme
+	clr.b	(a1)
 .done:
 	movem.l	(sp)+,d0-d3/a0-a2
 	rts
 
 ;----------------------------------------------------------------------
-; Nouvelle partie
+; Acces aux tables
 ;----------------------------------------------------------------------
-NewGame:
+HeroPtr:				; d0 = numero -> a6
+	movem.l	d0,-(sp)
+	mulu.w	#hr_SIZEOF,d0
+	lea	Heroes,a6
+	add.l	d0,a6
+	movem.l	(sp)+,d0
+	rts
+
+ItemPtr:				; d0 = objet -> a0
+	movem.l	d1,-(sp)
+	move.w	d0,d1
+	subq.w	#1,d1
+	mulu.w	#it_SIZEOF,d1
+	lea	ItemTable,a0
+	add.l	d1,a0
+	movem.l	(sp)+,d1
+	rts
+
+SpellPtr:				; d0 = sort (0..5) -> a0
+	movem.l	d1,-(sp)
+	move.w	d0,d1
+	mulu.w	#sp_SIZEOF,d1
+	lea	SpellTable,a0
+	add.l	d1,a0
+	movem.l	(sp)+,d1
+	rts
+
+; HeroAc : a6 = heros -> d0 = classe d'armure
+HeroAc:
+	movem.l	d1-d2/a0,-(sp)
+	move.w	hr_Dex(a6),d0
+	bsr	StatMod
+	add.w	#10,d0
+	move.w	d0,d2
+	move.w	hr_Armor(a6),d0
+	beq.s	.noArmor
+	bsr	ItemPtr
+	add.w	it_Dice(a0),d2
+	add.w	it_Bonus(a0),d2
+.noArmor:
+	move.w	hr_Shield(a6),d0
+	beq.s	.noShield
+	bsr	ItemPtr
+	add.w	it_Dice(a0),d2
+.noShield:
+	add.w	hr_AcTemp(a6),d2
+	move.w	d2,d0
+	movem.l	(sp)+,d1-d2/a0
+	rts
+
+; HeroBab : a6 = heros -> d0 = bonus de base a l'attaque
+HeroBab:
+	movem.l	d1/a0,-(sp)
+	move.w	hr_Class(a6),d0
+	mulu.w	#cl_SIZEOF,d0
+	lea	ClassTable,a0
+	add.l	d0,a0
+	move.w	hr_Level(a6),d0
+	tst.w	cl_Fast(a0)
+	bne.s	.done			; guerriers : un par niveau
+	move.w	d0,d1
+	mulu.w	#3,d1
+	lsr.w	#2,d1			; les autres : trois quarts
+	move.w	d1,d0
+.done:
+	movem.l	(sp)+,d1/a0
+	rts
+
+;----------------------------------------------------------------------
+; Fiche d'aventure du heros selectionne
+;----------------------------------------------------------------------
+DrawSheet:
 	movem.l	d0-d7/a0-a6,-(sp)
-	move.l	#$1234abcd,RngSeed
-	clr.w	Level
-	clr.w	InCombat
-	clr.w	Quit
-	clr.w	GameOver
-	move.w	#40,Gold
-	move.w	#3,Potions
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	moveq	#0,d4
+	bsr	FillRect
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_HpMax(a6)
+	bne.s	.ok
+	lea	TxtNoHero,a0
+	moveq	#3,d0
+	moveq	#60,d1
+	moveq	#5,d2
+	bsr	DrawText
+	bra	.done
+.ok:
+	lea	TmpStr,a1		; nom et classe
+	move.l	a6,a0
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	move.w	hr_Class(a6),d0
+	mulu.w	#cl_SIZEOF,d0
+	lea	ClassTable,a0
+	add.l	d0,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	moveq	#14,d2
+	bsr	DrawText
 
-	lea	Heroes,a1		; aucun heros pour l'instant
-	move.w	#NHEROES*hr_SIZEOF-1,d0
-.clrHero:
-	clr.b	(a1)+
-	dbf	d0,.clrHero
+	lea	TmpStr,a1		; niveau et experience
+	lea	TxtNiv,a0
+	bsr	StrCopy
+	move.w	hr_Level(a6),d0
+	bsr	StrNum
+	lea	TxtSpPx,a0
+	bsr	StrCopy
+	move.w	hr_Xp(a6),d0
+	bsr	StrNum
+	lea	TxtSpPv,a0
+	bsr	StrCopy
+	move.w	hr_Hp(a6),d0
+	bsr	StrNum
+	move.b	#'/',(a1)+
+	move.w	hr_HpMax(a6),d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#32,d1
+	moveq	#13,d2
+	bsr	DrawText
 
-	lea	LogBuf,a0		; journal vide
-	move.w	#LOGLINES*(LOGWIDTH+2)-1,d0
-.clr:
-	clr.b	(a0)+
-	dbf	d0,.clr
+	moveq	#0,d7			; les six caracteristiques
+.statLoop:
+	lea	TmpStr,a1
+	move.w	d7,d0
+	lsl.w	#2,d0
+	lea	StatNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.w	d7,d0
+	add.w	d0,d0
+	lea	StatOffsets,a0
+	move.w	(a0,d0.w),d1
+	move.w	0(a6,d1.w),d0
+	move.w	d0,d3
+	bsr	StrNum
+	move.b	#' ',(a1)+
+	move.w	d3,d0
+	bsr	StatMod
+	bsr	StrSigned
+	clr.b	(a1)
+	lea	TmpStr,a0
+	move.w	d7,d1
+	moveq	#3,d0
+	btst	#0,d1
+	beq.s	.leftCol
+	moveq	#14,d0			; deuxieme colonne
+.leftCol:
+	move.w	d7,d1
+	lsr.w	#1,d1
+	mulu.w	#11,d1
+	add.w	#48,d1
+	moveq	#2,d2
+	bsr	DrawText
+	addq.w	#1,d7
+	cmp.w	#6,d7
+	blt	.statLoop
 
-	move.w	#PHASE_CREATE,Phase
-	clr.w	CreIndex
-	clr.w	CreStep
-	clr.w	KbLayout		; 0 = AZERTY
-	lea	TxtCreate1,a0
-	bsr	LogAdd
-	lea	TxtCreate2,a0
-	bsr	LogAdd
-	move.w	#1,NeedRedraw
+	lea	TmpStr,a1		; defense et attaque
+	lea	TxtCa,a0
+	bsr	StrCopy
+	bsr	HeroAc
+	bsr	StrNum
+	lea	TxtAtt,a0
+	bsr	StrCopy
+	bsr	HeroBab
+	move.w	d0,d3
+	move.w	hr_Str(a6),d0
+	bsr	StatMod
+	add.w	d3,d0
+	bsr	StrSigned
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#88,d1
+	moveq	#12,d2
+	bsr	DrawText
+
+	lea	TmpStr,a1		; arme portee
+	lea	TxtWeapon,a0
+	bsr	StrCopy
+	move.w	hr_Weapon(a6),d0
+	beq.s	.bare
+	bsr	ItemPtr
+	bsr	StrCopy
+	bra.s	.weaponDone
+.bare:
+	lea	TxtBare,a0
+	bsr	StrCopy
+.weaponDone:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#100,d1
+	moveq	#1,d2
+	bsr	DrawText
+
+	lea	TmpStr,a1		; armure
+	lea	TxtArmorLbl,a0
+	bsr	StrCopy
+	move.w	hr_Armor(a6),d0
+	beq.s	.noArm
+	bsr	ItemPtr
+	bsr	StrCopy
+	bra.s	.armDone
+.noArm:
+	lea	TxtNone,a0
+	bsr	StrCopy
+.armDone:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#110,d1
+	moveq	#1,d2
+	bsr	DrawText
+
+	lea	TmpStr,a1		; sorts connus
+	lea	TxtSpells,a0
+	bsr	StrCopy
+	moveq	#0,d7
+	moveq	#0,d6
+.spellLoop:
+	move.w	hr_Spells(a6),d0
+	btst	d7,d0
+	beq.s	.spellNext
+	move.w	d7,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	move.b	#' ',(a1)+
+	moveq	#1,d6
+.spellNext:
+	addq.w	#1,d7
+	cmp.w	#NSPELLS,d7
+	blt.s	.spellLoop
+	tst.w	d6
+	bne.s	.spellsDone
+	lea	TxtNone,a0
+	bsr	StrCopy
+.spellsDone:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#120,d1
+	moveq	#9,d2
+	bsr	DrawText
+.done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-; LoadLevel : recopie le niveau courant dans la carte de travail
-LoadLevel:
-	movem.l	d0-d3/a0-a1,-(sp)
-	lea	DgnMap,a0
-	move.w	Level,d0
-	mulu.w	#LEVELSIZE,d0
-	add.l	d0,a0
+;----------------------------------------------------------------------
+; Sac a dos
+;----------------------------------------------------------------------
+DrawInventory:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	moveq	#0,d4
+	bsr	FillRect
+	lea	TxtBag,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	moveq	#14,d2
+	bsr	DrawText
+
+	moveq	#0,d7			; huit lignes visibles
+.itemLoop:
+	move.w	InvTop,d6
+	add.w	d7,d6
+	cmp.w	#INVSIZE,d6
+	bge	.listDone
+	lea	Inventory,a0
+	moveq	#0,d0
+	move.b	(a0,d6.w),d0
+	beq	.itemNext
+	move.w	d0,d5			; numero d'objet
+
+	lea	TmpStr,a1
+	cmp.w	InvCursor,d6
+	bne.s	.noCursor
+	move.b	#'>',(a1)+
+	move.b	#' ',(a1)+
+	bra.s	.name
+.noCursor:
+	move.b	#' ',(a1)+
+	move.b	#' ',(a1)+
+.name:
+	move.w	d5,d0
+	bsr	ItemPtr
+	move.l	a0,a2
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#5,d0
+	move.w	d7,d1
+	mulu.w	#11,d1
+	add.w	#34,d1
+	moveq	#1,d2
+	cmp.w	InvCursor,d6
+	bne.s	.dim
+	moveq	#13,d2
+.dim:
+	bsr	DrawText
+
+	move.w	it_Type(a2),d0		; icone du type
+	cmp.w	#IT_SHIELD,d0
+	bne.s	.icon
+	moveq	#IT_ARMOR,d0
+.icon:
+	cmp.w	#5,d0
+	blt.s	.iconOk
+	moveq	#4,d0
+.iconOk:
+	add.w	#ART_ICON,d0
 	moveq	#0,d1
-	move.b	(a0)+,d1
-	move.w	d1,PosX
-	move.b	(a0)+,d1
-	move.w	d1,PosY
-	move.b	(a0)+,d1
-	move.w	d1,Dir
-	addq.l	#1,a0
-	lea	MapWork,a1
-	move.l	a1,MapBase
-	move.w	#MAPBYTES-1,d2
-.copy:
-	move.b	(a0)+,(a1)+
-	dbf	d2,.copy
-	movem.l	(sp)+,d0-d3/a0-a1
+	move.w	d7,d2
+	mulu.w	#11,d2
+	add.w	#32,d2
+	mulu.w	#SCRBPL,d2
+	addq.w	#2,d2			; colle a gauche, sur un mot
+	bsr	BlitPieceAt
+.itemNext:
+	addq.w	#1,d7
+	cmp.w	#8,d7
+	blt	.itemLoop
+.listDone:
+	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
 ;----------------------------------------------------------------------
-; Creation du groupe : classe, jets de caracteristiques, nom
-;
-; Le clavier est lu sans l'OS : ce sont des codes de position, pas des
-; caracteres. On garde donc deux tables, AZERTY et QWERTY, permutables
-; par TAB pendant la saisie du nom.
+; Choix d'un sort, pendant un combat
 ;----------------------------------------------------------------------
-CreateKey:
-	movem.l	d1-d7/a0-a6,-(sp)
-	cmp.w	#KEY_ESC,d0
-	bne.s	.notEsc
-	move.w	#1,Quit
-	bra	.done
-.notEsc:
-	move.w	CreStep,d7
-	bne	.notClass
+DrawSpellMenu:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	moveq	#0,d4
+	bsr	FillRect
+	lea	TxtChooseSpell,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	moveq	#14,d2
+	bsr	DrawText
 
-	move.w	d0,d2			; --- choix de la classe : 1 a 4
-	sub.w	#KEY_1,d2
-	bmi	.done
-	cmp.w	#NCLASSES,d2
-	bge	.done
-	move.w	d2,CreClass
-	bsr	RollHero
-	move.w	#1,CreStep
-	bra	.redraw
-
-.notClass:
-	cmp.w	#1,d7
-	bne	.nameStep
-
-	cmp.w	#KEY_R,d0		; --- relancer les des
-	bne.s	.notReroll
-	bsr	RollHero
-	bra	.redraw
-.notReroll:
-	cmp.w	#KEY_RETURN,d0
-	bne	.done
-	move.w	CreIndex,d2		; nom propose par defaut
-	move.w	d2,CreNameIdx
-	bsr	PickName
-	move.w	#2,CreStep
-	bra	.redraw
-
-.nameStep:
-	cmp.w	#KEY_RETURN,d0
-	beq	.commit
-	cmp.w	#KEY_TAB,d0		; --- changer de disposition
-	bne.s	.notTab
-	move.w	KbLayout,d2
-	eor.w	#1,d2
-	move.w	d2,KbLayout
-	bra	.redraw
-.notTab:
-	cmp.w	#KEY_BACKSP,d0		; --- effacer
-	bne.s	.notBack
-	move.w	CreNameLen,d2
-	beq	.done
-	subq.w	#1,d2
-	move.w	d2,CreNameLen
-	lea	CreName,a0
-	clr.b	(a0,d2.w)
-	bra	.redraw
-.notBack:
-	cmp.w	#KEY_LEFT,d0		; --- proposition precedente
-	bne.s	.notPrev
-	move.w	CreNameIdx,d2
-	subq.w	#1,d2
-	bpl.s	.setName
-	move.w	#NNAMES-1,d2
-	bra.s	.setName
-.notPrev:
-	cmp.w	#KEY_RIGHT,d0		; --- proposition suivante
-	bne.s	.letter
-	move.w	CreNameIdx,d2
-	addq.w	#1,d2
-	cmp.w	#NNAMES,d2
-	blt.s	.setName
-	moveq	#0,d2
-.setName:
-	move.w	d2,CreNameIdx
-	bsr	PickName
-	bra	.redraw
-.letter:
-	cmp.w	#$40,d0			; au-dela, ce sont des touches speciales
-	bge	.done
-	move.w	CreNameLen,d2
-	cmp.w	#NAMELEN,d2
-	bge	.done
-	lea	KeyAzerty,a0
-	tst.w	KbLayout
-	beq.s	.haveMap
-	lea	KeyQwerty,a0
-.haveMap:
-	move.b	(a0,d0.w),d1
-	beq	.done
-	lea	CreName,a0
-	move.b	d1,(a0,d2.w)
-	addq.w	#1,d2
-	move.w	d2,CreNameLen
-	clr.b	(a0,d2.w)
-	bra.s	.redraw
-
-.commit:
-	bsr	CommitHero
-.redraw:
-	move.w	#1,NeedRedraw
-.done:
-	movem.l	(sp)+,d1-d7/a0-a6
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	moveq	#0,d7
+.loop:
+	lea	TmpStr,a1
+	move.w	d7,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	lea	TxtDash,a0
+	bsr	StrCopy
+	move.w	d7,d0
+	bsr	SpellPtr
+	move.l	a0,a2
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	move.w	sp_Cost(a2),d0
+	bsr	StrNum
+	lea	TxtPmSuffix,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#13,d1
+	add.w	#40,d1
+	moveq	#5,d2			; sort inconnu : en gris
+	move.w	hr_Spells(a6),d3
+	btst	d7,d3
+	beq.s	.dim
+	moveq	#13,d2
+	move.w	hr_Mp(a6),d3
+	cmp.w	sp_Cost(a2),d3
+	bge.s	.dim
+	moveq	#4,d2			; connu mais trop couteux
+.dim:
+	bsr	DrawText
+	addq.w	#1,d7
+	cmp.w	#NSPELLS,d7
+	blt	.loop
+	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-; PickName : recopie la proposition CreNameIdx dans CreName
+;----------------------------------------------------------------------
+; Creation du groupe : classe, jets 4d6 dont on garde les trois
+; meilleurs, puis le nom
+;----------------------------------------------------------------------
+Roll4d6:				; -> d0 = somme des trois meilleurs de
+	movem.l	d1-d5,-(sp)
+	moveq	#0,d4			; total
+	moveq	#7,d5			; plus petit de
+	moveq	#3,d3
+.loop:
+	moveq	#1,d0
+	moveq	#6,d1
+	bsr	RollDice
+	add.w	d0,d4
+	cmp.w	d5,d0
+	bge.s	.notMin
+	move.w	d0,d5
+.notMin:
+	dbf	d3,.loop
+	sub.w	d5,d4
+	move.w	d4,d0
+	movem.l	(sp)+,d1-d5
+	rts
+
+RollHero:
+	movem.l	d0-d5/a0-a2,-(sp)
+	lea	CreStr,a2		; six caracteristiques
+	moveq	#5,d5
+.stats:
+	bsr	Roll4d6
+	move.w	d0,(a2)+
+	dbf	d5,.stats
+
+	move.w	CreClass,d0
+	mulu.w	#cl_SIZEOF,d0
+	lea	ClassTable,a0
+	add.l	d0,a0
+	moveq	#1,d0			; points de vie : de de classe
+	move.w	cl_Hd(a0),d1
+	bsr	RollDice
+	move.w	d0,d2
+	move.w	CreCon,d0
+	bsr	StatMod
+	add.w	d0,d2
+	add.w	cl_Hd(a0),d2		; robustesse de depart
+	cmp.w	#6,d2
+	bge.s	.hpOk
+	moveq	#6,d2
+.hpOk:
+	move.w	d2,CreHp
+	move.w	cl_Mp(a0),d2		; points de magie
+	move.w	CreInt,d0
+	bsr	StatMod
+	move.w	d0,d3
+	move.w	CreWis,d0
+	bsr	StatMod
+	add.w	d3,d0
+	tst.w	d0
+	bpl.s	.mpOk
+	moveq	#0,d0
+.mpOk:
+	add.w	d0,d2
+	tst.w	cl_Mp(a0)
+	bne.s	.hasMagic
+	moveq	#0,d2			; guerriers et barbares : aucun sort
+.hasMagic:
+	move.w	d2,CreMp
+	movem.l	(sp)+,d0-d5/a0-a2
+	rts
+
 PickName:
 	movem.l	d0-d2/a0-a1,-(sp)
 	lea	CreName,a1
@@ -1378,7 +1919,7 @@ PickName:
 	clr.b	(a1)+
 	dbf	d2,.clear
 	move.w	CreNameIdx,d0
-	mulu.w	#NAMELEN+1,d0
+	mulu.w	#NAMELEN,d0
 	lea	NameList,a0
 	add.l	d0,a0
 	lea	CreName,a1
@@ -1393,36 +1934,11 @@ PickName:
 	movem.l	(sp)+,d0-d2/a0-a1
 	rts
 
-; RollHero : caracteristiques tirees des bases de la classe
-RollHero:
-	movem.l	d0-d2/a2,-(sp)
-	move.w	CreClass,d0
-	mulu.w	#cl_SIZEOF,d0
-	lea	ClassTable,a2
-	add.l	d0,a2
-	moveq	#7,d1
-	bsr	RndMod
-	add.w	cl_Hp(a2),d0
-	move.w	d0,CreHp
-	moveq	#3,d1
-	bsr	RndMod
-	add.w	cl_Atk(a2),d0
-	move.w	d0,CreAtk
-	moveq	#3,d1
-	bsr	RndMod
-	add.w	cl_Def(a2),d0
-	move.w	d0,CreDef
-	movem.l	(sp)+,d0-d2/a2
-	rts
-
-; CommitHero : ecrit le heros et passe au suivant
 CommitHero:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	CreIndex,d0
-	mulu.w	#hr_SIZEOF,d0
-	lea	Heroes,a6
-	add.l	d0,a6
-	tst.w	CreNameLen		; nom laisse vide : on prend la proposition
+	bsr	HeroPtr
+	tst.w	CreNameLen
 	bne.s	.haveName
 	bsr	PickName
 .haveName:
@@ -1433,13 +1949,32 @@ CommitHero:
 	move.b	(a0)+,(a1)+
 	dbf	d1,.copyName
 	clr.b	(a1)
+
+	move.w	CreClass,hr_Class(a6)
 	move.w	#1,hr_Level(a6)
 	clr.w	hr_Xp(a6)
 	move.w	CreHp,hr_Hp(a6)
 	move.w	CreHp,hr_HpMax(a6)
-	move.w	CreAtk,hr_Atk(a6)
-	move.w	CreDef,hr_Def(a6)
-	move.w	CreClass,hr_Class(a6)
+	move.w	CreMp,hr_Mp(a6)
+	move.w	CreMp,hr_MpMax(a6)
+	lea	CreStr,a0
+	move.w	(a0)+,hr_Str(a6)
+	move.w	(a0)+,hr_Dex(a6)
+	move.w	(a0)+,hr_Con(a6)
+	move.w	(a0)+,hr_Int(a6)
+	move.w	(a0)+,hr_Wis(a6)
+	move.w	(a0)+,hr_Cha(a6)
+	clr.w	hr_Spells(a6)
+	clr.w	hr_AcTemp(a6)
+
+	move.w	CreClass,d0		; equipement de depart
+	mulu.w	#8,d0
+	lea	StartGear,a0
+	add.l	d0,a0
+	move.w	(a0)+,hr_Weapon(a6)
+	move.w	(a0)+,hr_Armor(a6)
+	move.w	(a0)+,hr_Shield(a6)
+	move.w	(a0),hr_Spells(a6)
 
 	addq.w	#1,CreIndex
 	clr.w	CreStep
@@ -1454,32 +1989,115 @@ CommitHero:
 
 StartAdventure:
 	move.w	#PHASE_PLAY,Phase
+	clr.w	SelHero
 	bsr	LoadLevel
+	moveq	#17,d0			; deux potions pour la route
+	bsr	AddItem
+	moveq	#17,d0
+	bsr	AddItem
 	lea	TxtIntro,a0
 	bsr	LogAdd
 	rts
 
-; CountClass : d0 = classe -> d1 = nombre de heros vivants de cette classe
-CountClass:
-	movem.l	d0/d2/a0,-(sp)
-	lea	Heroes,a0
-	moveq	#NHEROES-1,d2
-	moveq	#0,d1
-.loop:
-	tst.w	hr_Hp(a0)
-	beq.s	.next
-	cmp.w	hr_Class(a0),d0
-	bne.s	.next
-	addq.w	#1,d1
-.next:
-	lea	hr_SIZEOF(a0),a0
-	dbf	d2,.loop
-	movem.l	(sp)+,d0/d2/a0
+CreateKey:
+	movem.l	d1-d7/a0-a6,-(sp)
+	cmp.w	#KEY_ESC,d0
+	bne.s	.notEsc
+	move.w	#1,Quit
+	bra	.done
+.notEsc:
+	move.w	CreStep,d7
+	bne	.notClass
+	move.w	d0,d2
+	sub.w	#KEY_1,d2
+	bmi	.done
+	cmp.w	#NCLASSES,d2
+	bge	.done
+	move.w	d2,CreClass
+	bsr	RollHero
+	move.w	#1,CreStep
+	bra	.redraw
+.notClass:
+	cmp.w	#1,d7
+	bne	.nameStep
+	cmp.w	#KEY_R,d0
+	bne.s	.notReroll
+	bsr	RollHero
+	bra	.redraw
+.notReroll:
+	cmp.w	#KEY_RETURN,d0
+	bne	.done
+	move.w	CreIndex,d2
+	move.w	d2,CreNameIdx
+	bsr	PickName
+	move.w	#2,CreStep
+	bra	.redraw
+.nameStep:
+	cmp.w	#KEY_RETURN,d0
+	beq	.commit
+	cmp.w	#KEY_TAB,d0
+	bne.s	.notTab
+	move.w	KbLayout,d2
+	eor.w	#1,d2
+	move.w	d2,KbLayout
+	bra	.redraw
+.notTab:
+	cmp.w	#KEY_BACKSP,d0
+	bne.s	.notBack
+	move.w	CreNameLen,d2
+	beq	.done
+	subq.w	#1,d2
+	move.w	d2,CreNameLen
+	lea	CreName,a0
+	clr.b	(a0,d2.w)
+	bra	.redraw
+.notBack:
+	cmp.w	#KEY_LEFT,d0
+	bne.s	.notPrev
+	move.w	CreNameIdx,d2
+	subq.w	#1,d2
+	bpl.s	.setName
+	move.w	#NNAMES-1,d2
+	bra.s	.setName
+.notPrev:
+	cmp.w	#KEY_RIGHT,d0
+	bne.s	.letter
+	move.w	CreNameIdx,d2
+	addq.w	#1,d2
+	cmp.w	#NNAMES,d2
+	blt.s	.setName
+	moveq	#0,d2
+.setName:
+	move.w	d2,CreNameIdx
+	bsr	PickName
+	bra	.redraw
+.letter:
+	cmp.w	#$40,d0
+	bge	.done
+	move.w	CreNameLen,d2
+	cmp.w	#NAMELEN-2,d2
+	bge	.done
+	lea	KeyAzerty,a0
+	tst.w	KbLayout
+	beq.s	.haveMap
+	lea	KeyQwerty,a0
+.haveMap:
+	move.b	(a0,d0.w),d1
+	beq	.done
+	lea	CreName,a0
+	move.b	d1,(a0,d2.w)
+	addq.w	#1,d2
+	move.w	d2,CreNameLen
+	clr.b	(a0,d2.w)
+	bra.s	.redraw
+.commit:
+	bsr	CommitHero
+.redraw:
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
-;----------------------------------------------------------------------
-; DrawCreate : l'ecran de creation, dans la fenetre de vue
-;----------------------------------------------------------------------
 DrawCreate:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	#16,d0
@@ -1489,7 +2107,7 @@ DrawCreate:
 	moveq	#0,d4
 	bsr	FillRect
 
-	lea	TmpStr,a1		; "HEROS n SUR 4"
+	lea	TmpStr,a1
 	lea	TxtHero,a0
 	bsr	StrCopy
 	move.w	CreIndex,d0
@@ -1500,14 +2118,14 @@ DrawCreate:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
-	moveq	#24,d1
+	moveq	#22,d1
 	moveq	#14,d2
 	bsr	DrawText
 
 	move.w	CreStep,d7
 	bne	.chosen
 
-	lea	ClassTable,a6		; --- la liste des classes
+	lea	ClassTable,a6		; la liste des classes
 	lea	ClassDesc,a5
 	moveq	#0,d6
 .classLoop:
@@ -1523,8 +2141,8 @@ DrawCreate:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	d6,d1
-	mulu.w	#22,d1
-	add.w	#44,d1
+	mulu.w	#24,d1
+	add.w	#42,d1
 	moveq	#13,d2
 	bsr	DrawText
 	move.w	d6,d0
@@ -1532,7 +2150,7 @@ DrawCreate:
 	move.l	(a5,d0.w),a0
 	moveq	#4,d0
 	move.w	d6,d1
-	mulu.w	#22,d1
+	mulu.w	#24,d1
 	add.w	#54,d1
 	moveq	#2,d2
 	bsr	DrawText
@@ -1542,37 +2160,69 @@ DrawCreate:
 	blt	.classLoop
 	lea	TxtPickClass,a0
 	moveq	#3,d0
-	move.w	#136,d1
+	move.w	#140,d1
 	moveq	#12,d2
 	bsr	DrawText
 	bra	.done
 
 .chosen:
-	move.w	CreClass,d0		; --- classe et caracteristiques
+	move.w	CreClass,d0		; classe retenue
 	mulu.w	#cl_SIZEOF,d0
 	lea	ClassTable,a0
 	add.l	d0,a0
 	moveq	#3,d0
-	moveq	#48,d1
+	moveq	#38,d1
 	moveq	#13,d2
 	bsr	DrawText
+
+	lea	CreStr,a6		; les six jets
+	moveq	#0,d6
+.statLoop:
 	lea	TmpStr,a1
+	move.w	d6,d0
+	lsl.w	#2,d0
+	lea	StatNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	0(a6,d0.w),d0
+	move.w	d0,d3
+	bsr	StrNum
+	move.b	#' ',(a1)+
+	move.w	d3,d0
+	bsr	StatMod
+	bsr	StrSigned
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	btst	#0,d6
+	beq.s	.leftCol
+	moveq	#14,d0
+.leftCol:
+	move.w	d6,d1
+	lsr.w	#1,d1
+	mulu.w	#11,d1
+	add.w	#52,d1
+	moveq	#2,d2
+	bsr	DrawText
+	addq.w	#1,d6
+	cmp.w	#6,d6
+	blt	.statLoop
+
+	lea	TmpStr,a1		; vie et magie
 	lea	TxtPv,a0
 	bsr	StrCopy
 	move.w	CreHp,d0
 	bsr	StrNum
-	lea	TxtAtt,a0
+	lea	TxtSpPm,a0
 	bsr	StrCopy
-	move.w	CreAtk,d0
-	bsr	StrNum
-	lea	TxtDef,a0
-	bsr	StrCopy
-	move.w	CreDef,d0
+	move.w	CreMp,d0
 	bsr	StrNum
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
-	moveq	#64,d1
+	move.w	#90,d1
 	moveq	#12,d2
 	bsr	DrawText
 
@@ -1580,12 +2230,12 @@ DrawCreate:
 	bne.s	.nameUi
 	lea	TxtRoll,a0
 	moveq	#3,d0
-	move.w	#96,d1
+	move.w	#112,d1
 	moveq	#14,d2
 	bsr	DrawText
-	bra.s	.done
+	bra	.done
 .nameUi:
-	lea	TmpStr,a1		; "NOM : XXXX_"
+	lea	TmpStr,a1
 	lea	TxtName,a0
 	bsr	StrCopy
 	lea	CreName,a0
@@ -1594,12 +2244,12 @@ DrawCreate:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
-	move.w	#88,d1
+	move.w	#106,d1
 	moveq	#13,d2
 	bsr	DrawText
 	lea	TxtNameHelp,a0
 	moveq	#3,d0
-	move.w	#104,d1
+	move.w	#120,d1
 	moveq	#2,d2
 	bsr	DrawText
 	lea	TxtAzerty,a0
@@ -1608,143 +2258,187 @@ DrawCreate:
 	lea	TxtQwerty,a0
 .layout:
 	moveq	#3,d0
-	move.w	#116,d1
-	moveq	#4,d2
-	bsr	DrawText
-	lea	TxtNameOk,a0
-	moveq	#3,d0
 	move.w	#132,d1
-	moveq	#14,d2
+	moveq	#4,d2
 	bsr	DrawText
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
 ;----------------------------------------------------------------------
-; Touches
+; Partie et niveaux
 ;----------------------------------------------------------------------
-HandleKey:
-	movem.l	d1-d7/a0-a6,-(sp)
-	cmp.w	#KEY_ESC,d0
-	bne.s	.notEsc
-	move.w	#1,Quit
-	bra	.done
-.notEsc:
-	tst.w	GameOver
-	bne	.done
-	tst.w	InCombat
-	bne	.fight
-
-	cmp.w	#KEY_UP,d0
-	bne.s	.notUp
-	moveq	#1,d1
-	bsr	TryMove
-	bra	.done
-.notUp:
-	cmp.w	#KEY_DOWN,d0
-	bne.s	.notDown
-	moveq	#-1,d1
-	bsr	TryMove
-	bra	.done
-.notDown:
-	cmp.w	#KEY_LEFT,d0
-	bne.s	.notLeft
-	move.w	Dir,d1
-	subq.w	#1,d1
-	and.w	#3,d1
-	move.w	d1,Dir
+NewGame:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.l	#$1234abcd,RngSeed
+	clr.w	Level
+	clr.w	InCombat
+	clr.w	Quit
+	clr.w	GameOver
+	clr.w	UiMode
+	clr.w	SelHero
+	clr.w	InvCursor
+	clr.w	InvTop
+	clr.w	KeyCount
+	move.w	#20,Gold
+	lea	Heroes,a1
+	move.w	#NHEROES*hr_SIZEOF-1,d0
+.clrHero:
+	clr.b	(a1)+
+	dbf	d0,.clrHero
+	lea	Inventory,a1
+	moveq	#INVSIZE-1,d0
+.clrInv:
+	clr.b	(a1)+
+	dbf	d0,.clrInv
+	lea	LogBuf,a0
+	move.w	#LOGLINES*(LOGWIDTH+2)-1,d0
+.clrLog:
+	clr.b	(a0)+
+	dbf	d0,.clrLog
+	move.w	#PHASE_CREATE,Phase
+	clr.w	CreIndex
+	clr.w	CreStep
+	clr.w	KbLayout
+	lea	TxtCreate1,a0
+	bsr	LogAdd
+	lea	TxtCreate2,a0
+	bsr	LogAdd
 	move.w	#1,NeedRedraw
-	bra	.done
-.notLeft:
-	cmp.w	#KEY_RIGHT,d0
-	bne.s	.notRight
-	move.w	Dir,d1
-	addq.w	#1,d1
-	and.w	#3,d1
-	move.w	d1,Dir
-	move.w	#1,NeedRedraw
-	bra	.done
-.notRight:
-	cmp.w	#KEY_SPACE,d0
-	bne.s	.notSpace
-	bsr	OpenDoor
-	bra	.done
-.notSpace:
-	cmp.w	#KEY_P,d0
-	bne.s	.done
-	bsr	UsePotion
-	bra.s	.done
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
 
-.fight:
-	cmp.w	#KEY_A,d0		; A en QWERTY
-	beq.s	.attack
-	cmp.w	#KEY_Q,d0		; meme touche en AZERTY
-	beq.s	.attack
-	cmp.w	#KEY_SPACE,d0
-	beq.s	.attack
-	cmp.w	#KEY_F,d0
-	beq.s	.flee
-	cmp.w	#KEY_P,d0
-	bne.s	.done
-	bsr	UsePotion
-	bra.s	.done
-.attack:
-	bsr	CombatRound
-	bra.s	.done
-.flee:
-	bsr	CombatFlee
-.done:
-	movem.l	(sp)+,d1-d7/a0-a6
+LoadLevel:
+	movem.l	d0-d3/a0-a1,-(sp)
+	lea	DgnMap,a0
+	move.w	Level,d0
+	mulu.w	#LEVELSIZE,d0
+	add.l	d0,a0
+	moveq	#0,d1
+	move.b	(a0)+,d1
+	move.w	d1,PosX
+	move.b	(a0)+,d1
+	move.w	d1,PosY
+	move.b	(a0)+,d1
+	move.w	d1,Dir
+	addq.l	#1,a0
+	lea	MapTerrain,a1
+	move.w	#MAPBYTES-1,d2
+.copyT:
+	move.b	(a0)+,(a1)+
+	dbf	d2,.copyT
+	lea	MapParam,a1
+	move.w	#MAPBYTES-1,d2
+.copyP:
+	move.b	(a0)+,(a1)+
+	dbf	d2,.copyP
+	movem.l	(sp)+,d0-d3/a0-a1
 	rts
 
 ;----------------------------------------------------------------------
-; TryMove : d1 = +1 en avant, -1 en arriere
+; Sac a dos
 ;----------------------------------------------------------------------
-TryMove:
+AddItem:				; d0 = objet -> Z=1 si le sac est plein
+	movem.l	d1-d2/a0,-(sp)
+	lea	Inventory,a0
+	moveq	#INVSIZE-1,d1
+.find:
+	tst.b	(a0)
+	beq.s	.free
+	addq.l	#1,a0
+	dbf	d1,.find
+	lea	TxtBagFull,a0
+	bsr	LogAdd
+	moveq	#0,d0
+	bra.s	.done
+.free:
+	move.b	d0,(a0)
+	moveq	#1,d0
+.done:
+	movem.l	(sp)+,d1-d2/a0
+	rts
+
+; LogItem : d0 = objet, a0 = prefixe
+LogItem:
+	movem.l	d0-d1/a0-a2,-(sp)
+	move.l	a0,a2
+	lea	TmpStr,a1
+	move.l	a2,a0
+	bsr	StrCopy
+	move.w	d0,-(sp)
+	move.w	(sp)+,d0
+	bsr	ItemPtr
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	movem.l	(sp)+,d0-d1/a0-a2
+	rts
+
+;----------------------------------------------------------------------
+; Deplacement
+;----------------------------------------------------------------------
+TryMove:				; d1 = +1 en avant, -1 en arriere
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	d1,d2
-	bsr	CellAhead		; case visee
+	bsr	CellAhead
 	move.w	d0,d4
 	move.w	d1,d5
 	bsr	MapCell
-	move.w	d0,d3			; octet de la case
+	move.w	d0,d3
 	and.w	#$000f,d0
-	cmp.w	#CELL_WALL,d0
-	bne.s	.notWall
+	cmp.w	#T_WALL,d0
+	beq	.blocked
+	cmp.w	#T_NICHE,d0
+	beq	.blocked
+	cmp.w	#T_DOOR,d0
+	beq	.shut
+	cmp.w	#T_LOCKED,d0
+	beq	.locked
+
+	move.w	d4,PosX
+	move.w	d5,PosY
+	moveq	#SFX_STEP,d0
+	bsr	SfxPlay
+	move.w	d3,d6
+	and.w	#$000f,d6
+	cmp.w	#T_STAIRS,d6
+	beq	.stairs
+	move.w	d3,d6
+	and.w	#C_MASK,d6
+	cmp.w	#C_CHEST,d6
+	beq	.chest
+	cmp.w	#C_MONSTER,d6
+	beq	.monster
+	cmp.w	#C_ITEM,d6
+	beq	.item
+	bra	.redraw
+
+.blocked:
 	lea	TxtWall,a0
 	bsr	LogAdd
 	bra	.redraw
-.notWall:
-	cmp.w	#CELL_DOOR,d0
-	bne.s	.enter
+.shut:
 	lea	TxtDoorShut,a0
 	bsr	LogAdd
 	bra	.redraw
-.enter:
-	move.w	d4,PosX
-	move.w	d5,PosY
-	move.w	d3,d6
-	and.w	#$000f,d6
-	cmp.w	#CELL_STAIRS,d6
-	beq	.stairs
-
-	move.w	d3,d6			; contenu de la case
-	and.w	#CONT_MASK,d6
-	cmp.w	#CONT_CHEST,d6
-	beq.s	.chest
-	cmp.w	#CONT_MONSTER,d6
-	beq.s	.monster
+.locked:
+	lea	TxtLocked,a0
+	bsr	LogAdd
 	bra	.redraw
 
 .chest:
-	move.w	d3,d2			; le coffre est vide desormais
+	move.w	d3,d2			; le coffre se vide
 	and.w	#$000f,d2
 	move.w	d4,d0
 	move.w	d5,d1
 	bsr	MapSet
-	moveq	#40,d1
+	moveq	#SFX_CHEST,d0
+	bsr	SfxPlay
+	moveq	#60,d1
 	bsr	RndMod
-	add.w	#20,d0
+	add.w	#25,d0
 	add.w	d0,Gold
 	lea	TmpStr,a1
 	lea	TxtChest,a0
@@ -1755,23 +2449,52 @@ TryMove:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
-	moveq	#4,d1			; une fois sur quatre, une potion
-	bsr	RndMod
+	move.w	d4,d0			; et livre son objet
+	move.w	d5,d1
+	bsr	MapGetParam
 	tst.w	d0
-	bne.s	.redraw
-	addq.w	#1,Potions
-	lea	TxtPotionFound,a0
-	bsr	LogAdd
-	bra.s	.redraw
+	beq	.redraw
+	move.w	d0,d7
+	bsr	AddItem
+	tst.w	d0
+	beq	.redraw
+	move.w	d7,d0
+	lea	TxtFound,a0
+	bsr	LogItem
+	move.w	d7,d0
+	bsr	CheckKey
+	bra	.redraw
+
+.item:
+	move.w	d3,d2
+	and.w	#$000f,d2
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapSet
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam
+	move.w	d0,d7
+	bsr	AddItem
+	tst.w	d0
+	beq	.redraw
+	moveq	#SFX_CHEST,d0
+	bsr	SfxPlay
+	move.w	d7,d0
+	lea	TxtFound,a0
+	bsr	LogItem
+	move.w	d7,d0
+	bsr	CheckKey
+	bra	.redraw
 
 .monster:
-	move.w	d3,d0
-	lsr.w	#6,d0
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam
 	and.w	#3,d0
 	move.w	d0,MonKind
 	bsr	StartCombat
 	bra.s	.redraw
-
 .stairs:
 	bsr	Descend
 .redraw:
@@ -1779,10 +2502,20 @@ TryMove:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+CheckKey:				; d0 = objet : compter les cles
+	movem.l	d0/a0,-(sp)
+	bsr	ItemPtr
+	cmp.w	#IT_KEY,it_Type(a0)
+	bne.s	.done
+	addq.w	#1,KeyCount
+.done:
+	movem.l	(sp)+,d0/a0
+	rts
+
 ;----------------------------------------------------------------------
-; OpenDoor : ouvre la porte devant soi
+; Action : ouvrir une porte, fouiller une niche
 ;----------------------------------------------------------------------
-OpenDoor:
+DoAction:
 	movem.l	d0-d7/a0-a6,-(sp)
 	moveq	#1,d2
 	bsr	CellAhead
@@ -1791,27 +2524,78 @@ OpenDoor:
 	bsr	MapCell
 	move.w	d0,d3
 	and.w	#$000f,d0
-	cmp.w	#CELL_DOOR,d0
-	bne.s	.nothing
+	cmp.w	#T_DOOR,d0
+	beq.s	.door
+	cmp.w	#T_LOCKED,d0
+	beq	.lockedDoor
+	cmp.w	#T_NICHE,d0
+	beq	.niche
+	lea	TxtNothing,a0
+	bsr	LogAdd
+	bra	.done
+.door:
 	move.w	d3,d2
-	and.w	#$00f0,d2		; devient du sol
+	and.w	#$00f0,d2
 	move.w	d4,d0
 	move.w	d5,d1
 	bsr	MapSet
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
 	lea	TxtDoorOpen,a0
 	bsr	LogAdd
+	bra	.done
+.lockedDoor:
+	tst.w	KeyCount
+	beq.s	.noKey
+	subq.w	#1,KeyCount
+	move.w	d3,d2
+	and.w	#$00f0,d2
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapSet
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtUnlock,a0
+	bsr	LogAdd
 	bra.s	.done
-.nothing:
-	lea	TxtNothing,a0
+.noKey:
+	lea	TxtNeedKey,a0
+	bsr	LogAdd
+	bra.s	.done
+.niche:
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam
+	tst.w	d0
+	beq.s	.emptyNiche
+	move.w	d0,d7
+	bsr	AddItem
+	tst.w	d0
+	beq.s	.done
+	moveq	#SFX_CHEST,d0
+	bsr	SfxPlay
+	move.w	d4,d0			; la niche devient un mur ordinaire
+	move.w	d5,d1
+	moveq	#T_WALL,d2
+	bsr	MapSet
+	move.w	d4,d0
+	move.w	d5,d1
+	moveq	#0,d2
+	bsr	MapSetParam
+	move.w	d7,d0
+	lea	TxtNiche,a0
+	bsr	LogItem
+	move.w	d7,d0
+	bsr	CheckKey
+	bra.s	.done
+.emptyNiche:
+	lea	TxtNicheEmpty,a0
 	bsr	LogAdd
 .done:
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-;----------------------------------------------------------------------
-; Descend : niveau suivant, ou victoire
-;----------------------------------------------------------------------
 Descend:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	Level,d0
@@ -1819,12 +2603,16 @@ Descend:
 	cmp.w	#LEVELS,d0
 	blt.s	.next
 	move.w	#1,GameOver
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
 	lea	TxtWin,a0
 	bsr	LogAdd
 	bra.s	.done
 .next:
 	move.w	d0,Level
 	bsr	LoadLevel
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
 	lea	TxtDescend,a0
 	bsr	LogAdd
 .done:
@@ -1832,17 +2620,21 @@ Descend:
 	rts
 
 ;----------------------------------------------------------------------
-; Combat
+; Combat, avec des jets au d20 contre la classe d'armure
 ;----------------------------------------------------------------------
 StartCombat:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	#1,InCombat
+	clr.w	AnimFrame
+	clr.w	MonStun
 	move.w	MonKind,d0
 	mulu.w	#mt_SIZEOF,d0
 	lea	MonTypes,a2
 	add.l	d0,a2
 	move.l	a2,MonPtr
 	move.w	mt_Hp(a2),MonHp
+	moveq	#SFX_GROWL,d0
+	bsr	SfxPlay
 	lea	TmpStr,a1
 	lea	TxtAppears,a0
 	bsr	StrCopy
@@ -1856,28 +2648,96 @@ StartCombat:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+; HeroAttack : a6 = heros, a2 = monstre -> d0 = degats (0 si rate)
+HeroAttack:
+	movem.l	d1-d7/a0/a3,-(sp)
+	moveq	#0,d7			; degats
+	move.w	hr_Weapon(a6),d0
+	beq.s	.bare
+	bsr	ItemPtr
+	move.l	a0,a3
+	move.w	it_Sfx(a3),d0
+	cmp.w	#SFX_BOW,d0		; a l'arc, c'est la dexterite
+	bne.s	.melee
+	move.w	hr_Dex(a6),d0
+	bra.s	.haveMod
+.melee:
+	move.w	hr_Str(a6),d0
+	bra.s	.haveMod
+.bare:
+	lea	BareHands,a3
+	move.w	hr_Str(a6),d0
+.haveMod:
+	bsr	StatMod
+	move.w	d0,d6			; modificateur
+	bsr	HeroBab
+	add.w	d0,d6
+	bsr	D20
+	move.w	d0,d5			; le de brut
+	add.w	d6,d0
+	cmp.w	#20,d5
+	beq.s	.hit			; un 20 touche toujours
+	cmp.w	mt_Ac(a2),d0
+	blt	.miss
+.hit:
+	move.w	it_Dice(a3),d0
+	move.w	it_Faces(a3),d1
+	bsr	RollDice
+	add.w	it_Bonus(a3),d0
+	move.w	hr_Str(a6),d1
+	move.w	d0,d7
+	move.w	d1,d0
+	bsr	StatMod
+	add.w	d0,d7
+	cmp.w	#20,d5
+	bne.s	.noCrit
+	add.w	d7,d7			; coup critique
+.noCrit:
+	tst.w	d7
+	bgt.s	.done
+	moveq	#1,d7
+	bra.s	.done
+.miss:
+	moveq	#0,d7
+.done:
+	move.w	d7,d0
+	movem.l	(sp)+,d1-d7/a0/a3
+	rts
+
 CombatRound:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
 	moveq	#0,d7			; degats du groupe
+	moveq	#0,d4			; bruitage de la premiere arme
+	moveq	#0,d3			; un heros a-t-il frappe
 	lea	Heroes,a6
 	moveq	#NHEROES-1,d6
 .heroLoop:
 	tst.w	hr_Hp(a6)
 	beq.s	.heroNext
-	moveq	#6,d1
-	bsr	RndMod
-	add.w	hr_Atk(a6),d0
-	sub.w	mt_Def(a2),d0
-	tst.w	d0
-	bgt.s	.dmgOk
-	moveq	#1,d0
-.dmgOk:
+	tst.w	d3
+	bne.s	.haveSfx
+	moveq	#1,d3
+	move.w	hr_Weapon(a6),d0
+	beq.s	.bareSfx
+	bsr	ItemPtr
+	move.w	it_Sfx(a0),d4
+	bra.s	.haveSfx
+.bareSfx:
+	moveq	#SFX_SWORD,d4
+.haveSfx:
+	bsr	HeroAttack
 	add.w	d0,d7
 .heroNext:
 	lea	hr_SIZEOF(a6),a6
 	dbf	d6,.heroLoop
 
+	move.w	d4,d0
+	bsr	SfxPlay
+	tst.w	d7
+	beq.s	.allMissed
+	moveq	#SFX_HIT,d0
+	bsr	SfxPlay
 	sub.w	d7,MonHp
 	lea	TmpStr,a1
 	lea	TxtYouHit,a0
@@ -1889,30 +2749,45 @@ CombatRound:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
-
+	bra.s	.check
+.allMissed:
+	moveq	#SFX_MISS,d0
+	bsr	SfxPlay
+	lea	TxtAllMiss,a0
+	bsr	LogAdd
+.check:
 	tst.w	MonHp
 	bgt.s	.monsterTurn
 	bsr	MonsterDies
-	bra	.done
+	bra.s	.done
 .monsterTurn:
-	bsr	MonsterAttack
+	bsr	MonsterTurn
 .done:
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+MonsterTurn:
+	tst.w	MonStun
+	beq.s	.attack
+	clr.w	MonStun
+	lea	TxtMonStunned,a0
+	bsr	LogAdd
+	rts
+.attack:
+	bsr	MonsterAttack
+	rts
+
 MonsterAttack:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
-	moveq	#NHEROES,d1		; cible au hasard parmi les vivants
+	moveq	#NHEROES,d1
 	bsr	RndMod
 	move.w	d0,d5
 	moveq	#NHEROES-1,d6
 .find:
 	move.w	d5,d0
-	mulu.w	#hr_SIZEOF,d0
-	lea	Heroes,a6
-	add.l	d0,a6
+	bsr	HeroPtr
 	tst.w	hr_Hp(a6)
 	bne.s	.found
 	addq.w	#1,d5
@@ -1921,23 +2796,33 @@ MonsterAttack:
 	bsr	PartyWiped
 	bra	.done
 .found:
-	moveq	#4,d1
-	bsr	RndMod
+	bsr	D20
 	add.w	mt_Atk(a2),d0
-	sub.w	hr_Def(a6),d0
-	tst.w	d0
-	bgt.s	.hit
+	move.w	d0,d4
+	bsr	HeroAc
+	cmp.w	d0,d4
+	bge.s	.hit
+	moveq	#SFX_MISS,d0
+	bsr	SfxPlay
 	lea	TmpStr,a1
+	move.l	a2,a0
+	bsr	StrCopy
+	lea	TxtMissed,a0
+	bsr	StrCopy
 	move.l	a6,a0
 	bsr	StrCopy
-	lea	TxtParry,a0
-	bsr	StrCopy
+	move.b	#'.',(a1)+
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
-	bra.s	.done
+	bra	.done
 .hit:
+	move.w	mt_Dice(a2),d0
+	move.w	mt_Faces(a2),d1
+	bsr	RollDice
 	move.w	d0,d4
+	moveq	#SFX_HIT,d0
+	bsr	SfxPlay
 	sub.w	d4,hr_Hp(a6)
 	tst.w	hr_Hp(a6)
 	bgt.s	.alive
@@ -1950,7 +2835,7 @@ MonsterAttack:
 	bsr	StrCopy
 	move.l	a6,a0
 	bsr	StrCopy
-	lea	TxtFor,a0
+	lea	TxtFor2,a0
 	bsr	StrCopy
 	move.w	d4,d0
 	bsr	StrNum
@@ -1959,6 +2844,8 @@ MonsterAttack:
 	bsr	LogAdd
 	tst.w	hr_Hp(a6)
 	bne.s	.checkParty
+	moveq	#SFX_DEATH,d0
+	bsr	SfxPlay
 	lea	TmpStr,a1
 	move.l	a6,a0
 	bsr	StrCopy
@@ -2003,6 +2890,8 @@ MonsterDies:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
 	clr.w	InCombat
+	moveq	#SFX_DEATH,d0
+	bsr	SfxPlay
 	move.w	mt_Gold(a2),d0
 	add.w	d0,Gold
 	lea	TmpStr,a1
@@ -2031,13 +2920,14 @@ MonsterDies:
 	move.w	PosY,d1
 	bsr	MapSet
 
-	move.w	mt_Xp(a2),d5		; experience pour tout le monde
-	lea	Heroes,a6
+	lea	Heroes,a6		; experience et bonus de fin de combat
 	moveq	#NHEROES-1,d6
 .xpLoop:
 	tst.w	hr_Hp(a6)
 	beq.s	.xpNext
-	add.w	d5,hr_Xp(a6)
+	clr.w	hr_AcTemp(a6)
+	move.w	mt_Xp(a2),d0
+	add.w	d0,hr_Xp(a6)
 	bsr	CheckLevel
 .xpNext:
 	lea	hr_SIZEOF(a6),a6
@@ -2045,17 +2935,37 @@ MonsterDies:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-; CheckLevel : a6 = heros
-CheckLevel:
-	movem.l	d0-d2/a0-a1,-(sp)
+CheckLevel:				; a6 = heros
+	movem.l	d0-d3/a0-a1,-(sp)
 	move.w	hr_Level(a6),d0
-	mulu.w	#30,d0			; seuil : 30 points par niveau
+	mulu.w	#40,d0
 	cmp.w	hr_Xp(a6),d0
-	bgt.s	.done
+	bgt	.done
 	addq.w	#1,hr_Level(a6)
-	add.w	#6,hr_HpMax(a6)
+	move.w	hr_Class(a6),d0
+	mulu.w	#cl_SIZEOF,d0
+	lea	ClassTable,a0
+	add.l	d0,a0
+	moveq	#1,d0			; un de de vie de plus
+	move.w	cl_Hd(a0),d1
+	bsr	RollDice
+	move.w	d0,d3
+	move.w	hr_Con(a6),d0
+	bsr	StatMod
+	add.w	d0,d3
+	tst.w	d3
+	bgt.s	.hpOk
+	moveq	#1,d3
+.hpOk:
+	add.w	d3,hr_HpMax(a6)
 	move.w	hr_HpMax(a6),hr_Hp(a6)
-	addq.w	#1,hr_Atk(a6)
+	tst.w	hr_MpMax(a6)
+	beq.s	.noMagic
+	addq.w	#2,hr_MpMax(a6)
+	move.w	hr_MpMax(a6),hr_Mp(a6)
+.noMagic:
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
 	lea	TmpStr,a1
 	move.l	a6,a0
 	bsr	StrCopy
@@ -2065,12 +2975,12 @@ CheckLevel:
 	lea	TmpStr,a0
 	bsr	LogAdd
 .done:
-	movem.l	(sp)+,d0-d2/a0-a1
+	movem.l	(sp)+,d0-d3/a0-a1
 	rts
 
 CombatFlee:
 	movem.l	d0-d7/a0-a6,-(sp)
-	moveq	#CLS_ECLAIREUR,d0	; 50 %, plus 15 par eclaireur vivant
+	moveq	#CLS_ECLAIREUR,d0
 	bsr	CountClass
 	move.w	d1,d3
 	mulu.w	#15,d3
@@ -2086,63 +2996,174 @@ CombatFlee:
 	clr.w	InCombat
 	lea	TxtFlee,a0
 	bsr	LogAdd
-	moveq	#-1,d2			; on recule d'une case
+	moveq	#-1,d2
 	bsr	CellAhead
 	move.w	d0,d4
 	move.w	d1,d5
 	bsr	MapCell
 	bsr	IsSolid
 	tst.w	d2
-	bne.s	.stay
+	bne.s	.done
 	move.w	d4,PosX
 	move.w	d5,PosY
-.stay:
 	bra.s	.done
 .fail:
 	lea	TxtFleeFail,a0
 	bsr	LogAdd
-	bsr	MonsterAttack
+	bsr	MonsterTurn
 .done:
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-UsePotion:
+CountClass:				; d0 = classe -> d1 = combien en vie
+	movem.l	d0/d2/a0,-(sp)
+	lea	Heroes,a0
+	moveq	#NHEROES-1,d2
+	moveq	#0,d1
+.loop:
+	tst.w	hr_Hp(a0)
+	beq.s	.next
+	cmp.w	hr_Class(a0),d0
+	bne.s	.next
+	addq.w	#1,d1
+.next:
+	lea	hr_SIZEOF(a0),a0
+	dbf	d2,.loop
+	movem.l	(sp)+,d0/d2/a0
+	rts
+
+;----------------------------------------------------------------------
+; Sorts
+;----------------------------------------------------------------------
+CastSpell:				; d0 = sort
 	movem.l	d0-d7/a0-a6,-(sp)
-	tst.w	Potions
-	bne.s	.have
-	lea	TxtNoPotion,a0
+	move.w	d0,d7
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq	.cannot
+	move.w	hr_Spells(a6),d0
+	btst	d7,d0
+	beq	.unknown
+	move.w	d7,d0
+	bsr	SpellPtr
+	move.l	a0,a2
+	move.w	hr_Mp(a6),d0
+	cmp.w	sp_Cost(a2),d0
+	blt	.noMana
+
+	move.w	sp_Cost(a2),d0
+	sub.w	d0,hr_Mp(a6)
+	moveq	#SFX_SPELL,d0
+	bsr	SfxPlay
+	lea	TmpStr,a1		; "MYRA LANCE ECLAIR."
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtCasts,a0
+	bsr	StrCopy
+	move.l	a2,a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
 	bsr	LogAdd
-	bra	.done
-.have:
-	lea	Heroes,a6		; le plus mal en point, encore vivant
+
+	move.w	sp_Kind(a2),d6
+	bne.s	.notDamage
+	move.w	sp_Dice(a2),d0		; --- degats
+	move.w	sp_Faces(a2),d1
+	bsr	RollDice
+	add.w	sp_Plus(a2),d0
+	move.w	d0,d5
+	sub.w	d5,MonHp
+	lea	TmpStr,a1
+	lea	TxtSpellHit,a0
+	bsr	StrCopy
+	move.w	d5,d0
+	bsr	StrNum
+	lea	TxtDamage,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra.s	.after
+.notDamage:
+	cmp.w	#1,d6
+	bne.s	.notHeal
+	move.w	sp_Dice(a2),d0		; --- soin du plus blesse
+	move.w	sp_Faces(a2),d1
+	bsr	RollDice
+	add.w	sp_Plus(a2),d0
+	move.w	d0,d5
+	bsr	HealWeakest
+	bra.s	.after
+.notHeal:
+	cmp.w	#2,d6
+	bne.s	.notShield
+	lea	Heroes,a0		; --- armure de mage sur tout le groupe
+	moveq	#NHEROES-1,d1
+.shieldLoop:
+	move.w	sp_Plus(a2),d2
+	add.w	d2,hr_AcTemp(a0)
+	lea	hr_SIZEOF(a0),a0
+	dbf	d1,.shieldLoop
+	lea	TxtShieldUp,a0
+	bsr	LogAdd
+	bra.s	.after
+.notShield:
+	move.w	#1,MonStun		; --- effroi
+	lea	TxtFear,a0
+	bsr	LogAdd
+.after:
+	tst.w	MonHp
+	bgt.s	.monsterTurn
+	bsr	MonsterDies
+	bra.s	.done
+.monsterTurn:
+	bsr	MonsterTurn
+	bra.s	.done
+.unknown:
+	lea	TxtUnknownSpell,a0
+	bsr	LogAdd
+	bra.s	.done
+.noMana:
+	lea	TxtNoMana,a0
+	bsr	LogAdd
+	bra.s	.done
+.cannot:
+	lea	TxtHeroDown,a0
+	bsr	LogAdd
+.done:
+	clr.w	UiMode
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+HealWeakest:				; d5 = points rendus
+	movem.l	d0-d7/a0-a6,-(sp)
+	lea	Heroes,a6
 	moveq	#NHEROES-1,d6
-	moveq	#0,d7
 	move.l	a6,a5
-	move.w	#9999,d5
+	moveq	#-1,d4
+	moveq	#0,d7
 .pick:
 	tst.w	hr_Hp(a6)
-	beq.s	.pickNext
+	beq.s	.next
 	move.w	hr_HpMax(a6),d0
 	sub.w	hr_Hp(a6),d0
-	cmp.w	d5,d0
-	ble.s	.pickNext
-	move.w	d0,d5
+	cmp.w	d4,d0
+	ble.s	.next
+	move.w	d0,d4
 	move.l	a6,a5
 	moveq	#1,d7
-.pickNext:
+.next:
 	lea	hr_SIZEOF(a6),a6
 	dbf	d6,.pick
 	tst.w	d7
 	beq.s	.done
-	subq.w	#1,Potions
 	move.l	a5,a6
-	moveq	#CLS_CLERC,d0		; 15 points, plus 5 par clerc vivant
-	bsr	CountClass
-	move.w	d1,d2
-	mulu.w	#5,d2
-	add.w	#15,d2
-	add.w	d2,hr_Hp(a6)
+	add.w	d5,hr_Hp(a6)
 	move.w	hr_HpMax(a6),d0
 	cmp.w	hr_Hp(a6),d0
 	bge.s	.capped
@@ -2151,14 +3172,357 @@ UsePotion:
 	lea	TmpStr,a1
 	move.l	a6,a0
 	bsr	StrCopy
-	lea	TxtDrinks,a0
+	lea	TxtHealed,a0
+	bsr	StrCopy
+	move.w	d5,d0
+	bsr	StrNum
+	lea	TxtPvSuffix,a0
 	bsr	StrCopy
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
 .done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Actions du sac : equiper, utiliser, jeter
+;----------------------------------------------------------------------
+InvItem:				; -> d0 = objet sous le curseur, Z si vide
+	movem.l	d1/a0,-(sp)
+	lea	Inventory,a0
+	move.w	InvCursor,d1
+	moveq	#0,d0
+	move.b	(a0,d1.w),d0
+	movem.l	(sp)+,d1/a0
+	tst.w	d0
+	rts
+
+InvClear:				; vide la case sous le curseur
+	movem.l	d0-d1/a0,-(sp)
+	lea	Inventory,a0
+	move.w	InvCursor,d1
+	clr.b	(a0,d1.w)
+	movem.l	(sp)+,d0-d1/a0
+	rts
+
+EquipItem:
+	movem.l	d0-d7/a0-a6,-(sp)
+	bsr	InvItem
+	beq	.done
+	move.w	d0,d7
+	bsr	ItemPtr
+	move.l	a0,a2
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_HpMax(a6)
+	beq	.done
+	move.w	it_Type(a2),d0
+	bne.s	.notWeapon
+	move.w	hr_Weapon(a6),d6	; l'ancienne arme retourne au sac
+	move.w	d7,hr_Weapon(a6)
+	bra.s	.swap
+.notWeapon:
+	cmp.w	#IT_ARMOR,d0
+	bne.s	.notArmor
+	move.w	hr_Armor(a6),d6
+	move.w	d7,hr_Armor(a6)
+	bra.s	.swap
+.notArmor:
+	cmp.w	#IT_SHIELD,d0
+	bne	.cannot
+	move.w	hr_Shield(a6),d6
+	move.w	d7,hr_Shield(a6)
+.swap:
+	bsr	InvClear
+	tst.w	d6
+	beq.s	.noOld
+	move.w	d6,d0
+	bsr	AddItem
+.noOld:
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtEquips,a0
+	bsr	StrCopy
+	move.l	a2,a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra.s	.done
+.cannot:
+	lea	TxtCannotEquip,a0
+	bsr	LogAdd
+.done:
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+UseItem:
+	movem.l	d0-d7/a0-a6,-(sp)
+	bsr	InvItem
+	beq	.done
+	move.w	d0,d7
+	bsr	ItemPtr
+	move.l	a0,a2
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	move.w	it_Type(a2),d0
+	cmp.w	#IT_POTION,d0
+	beq.s	.potion
+	cmp.w	#IT_SCROLL,d0
+	beq	.scroll
+	lea	TxtCannotUse,a0
+	bsr	LogAdd
+	bra	.done
+.potion:
+	move.w	it_Dice(a2),d0
+	move.w	it_Faces(a2),d1
+	bsr	RollDice
+	add.w	it_Bonus(a2),d0
+	move.w	d0,d5
+	moveq	#CLS_CLERC,d0		; un clerc tire plus des potions
+	bsr	CountClass
+	move.w	d1,d0
+	mulu.w	#3,d0
+	add.w	d0,d5
+	bsr	HealWeakest
+	moveq	#SFX_POTION,d0
+	bsr	SfxPlay
+	bsr	InvClear
+	bra	.done
+.scroll:
+	tst.w	hr_MpMax(a6)
+	beq.s	.noMagic
+	move.w	it_Dice(a2),d6		; numero du sort
+	move.w	hr_Spells(a6),d0
+	btst	d6,d0
+	bne.s	.known
+	bset	d6,d0
+	move.w	d0,hr_Spells(a6)
+	moveq	#SFX_SPELL,d0
+	bsr	SfxPlay
+	bsr	InvClear
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtLearns,a0
+	bsr	StrCopy
+	move.w	d6,d0
+	bsr	SpellPtr
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra.s	.done
+.known:
+	lea	TxtAlreadyKnown,a0
+	bsr	LogAdd
+	bra.s	.done
+.noMagic:
+	lea	TxtNoMagic,a0
+	bsr	LogAdd
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+DropItem:
+	movem.l	d0-d7/a0-a6,-(sp)
+	bsr	InvItem
+	beq.s	.done
+	move.w	d0,d7
+	bsr	ItemPtr
+	cmp.w	#IT_KEY,it_Type(a0)
+	bne.s	.notKey
+	tst.w	KeyCount
+	beq.s	.notKey
+	subq.w	#1,KeyCount
+.notKey:
+	bsr	InvClear
+	move.w	d7,d0
+	lea	TxtDrops,a0
+	bsr	LogItem
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Touches, selon l'ecran ouvert
+;----------------------------------------------------------------------
+HandleKey:
+	movem.l	d1-d7/a0-a6,-(sp)
+	cmp.w	#KEY_ESC,d0
+	bne.s	.notEsc
+	tst.w	UiMode
+	beq.s	.quit
+	clr.w	UiMode
+	bra	.redraw
+.quit:
+	move.w	#1,Quit
+	bra	.done
+.notEsc:
+	tst.w	GameOver
+	bne	.done
+
+	move.w	UiMode,d1		; --- choix d'un sort
+	cmp.w	#UI_SPELL,d1
+	bne.s	.notSpellUi
+	move.w	d0,d2
+	sub.w	#KEY_1,d2
+	bmi	.done
+	cmp.w	#NSPELLS,d2
+	bge	.done
+	move.w	d2,d0
+	bsr	CastSpell
+	bra	.done
+.notSpellUi:
+	move.w	d0,d2			; 1 a 4 : heros courant
+	sub.w	#KEY_1,d2
+	bmi.s	.notHero
+	cmp.w	#NHEROES,d2
+	bge.s	.notHero
+	move.w	d2,SelHero
+	bra	.redraw
+.notHero:
+	cmp.w	#KEY_C,d0		; fiche d'aventure
+	bne.s	.notSheet
+	move.w	#UI_SHEET,d1
+	cmp.w	UiMode,d1
+	bne.s	.openSheet
+	clr.w	UiMode
+	bra	.redraw
+.openSheet:
+	move.w	#UI_SHEET,UiMode
+	bra	.redraw
+.notSheet:
+	cmp.w	#KEY_I,d0		; sac a dos
+	bne.s	.notInv
+	move.w	#UI_INV,d1
+	cmp.w	UiMode,d1
+	bne.s	.openInv
+	clr.w	UiMode
+	bra	.redraw
+.openInv:
+	move.w	#UI_INV,UiMode
+	bra	.redraw
+.notInv:
+	move.w	UiMode,d1
+	cmp.w	#UI_INV,d1
+	beq	.invKeys
+	tst.w	d1
+	bne	.done			; fiche ouverte : rien d'autre
+
+	tst.w	InCombat
+	bne	.fight
+
+	cmp.w	#KEY_UP,d0		; --- exploration
+	bne.s	.notUp
+	moveq	#1,d1
+	bsr	TryMove
+	bra	.done
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notDown
+	moveq	#-1,d1
+	bsr	TryMove
+	bra	.done
+.notDown:
+	cmp.w	#KEY_LEFT,d0
+	bne.s	.notLeft
+	move.w	Dir,d1
+	subq.w	#1,d1
+	and.w	#3,d1
+	move.w	d1,Dir
+	bra	.redraw
+.notLeft:
+	cmp.w	#KEY_RIGHT,d0
+	bne.s	.notRight
+	move.w	Dir,d1
+	addq.w	#1,d1
+	and.w	#3,d1
+	move.w	d1,Dir
+	bra	.redraw
+.notRight:
+	cmp.w	#KEY_SPACE,d0
+	bne	.done
+	bsr	DoAction
+	bra	.done
+
+.fight:					; --- combat
+	cmp.w	#KEY_A_QW,d0
+	beq.s	.attack
+	cmp.w	#KEY_A_AZ,d0
+	beq.s	.attack
+	cmp.w	#KEY_SPACE,d0
+	beq.s	.attack
+	cmp.w	#KEY_F,d0
+	beq.s	.flee
+	cmp.w	#KEY_S,d0
+	bne	.done
+	move.w	#UI_SPELL,UiMode
+	bra	.redraw
+.attack:
+	bsr	CombatRound
+	bra	.done
+.flee:
+	bsr	CombatFlee
+	bra	.done
+
+.invKeys:				; --- sac a dos
+	cmp.w	#KEY_UP,d0
+	bne.s	.notInvUp
+	move.w	InvCursor,d1
+	subq.w	#1,d1
+	bpl.s	.setCursor
+	moveq	#0,d1
+	bra.s	.setCursor
+.notInvUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notInvDown
+	move.w	InvCursor,d1
+	addq.w	#1,d1
+	cmp.w	#INVSIZE,d1
+	blt.s	.setCursor
+	move.w	#INVSIZE-1,d1
+.setCursor:
+	move.w	d1,InvCursor
+	move.w	InvTop,d2		; garder le curseur visible
+	cmp.w	d2,d1
+	bge.s	.notAbove
+	move.w	d1,InvTop
+	bra	.redraw
+.notAbove:
+	sub.w	d2,d1
+	cmp.w	#8,d1
+	blt	.redraw
+	move.w	InvCursor,d1
+	sub.w	#7,d1
+	move.w	d1,InvTop
+	bra	.redraw
+.notInvDown:
+	cmp.w	#KEY_E,d0
+	bne.s	.notEquip
+	bsr	EquipItem
+	bra	.done
+.notEquip:
+	cmp.w	#KEY_U,d0
+	bne.s	.notUse
+	bsr	UseItem
+	bra	.done
+.notUse:
+	cmp.w	#KEY_D,d0
+	bne	.done
+	bsr	DropItem
+	bra	.done
+.redraw:
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
 ; --- replayer ProTracker, dans la meme section de code ---
@@ -2174,126 +3538,127 @@ GfxName:	dc.b	"graphics.library",0
 	include	"dgnpal.i"
 	include	"font8.i"
 	even
+	include	"tables.i"
+	even
 
-DirTable:				; nord, est, sud, ouest
+BareHands:				; "objet" des poings nus
+	dc.b	"POINGS",0,0,0,0,0,0,0,0,0,0,0,0
+	dc.w	0,1,3,0,0,0
+
+DirTable:
 	dc.w	0,-1
 	dc.w	1,0
 	dc.w	0,1
 	dc.w	-1,0
 
-ClassTable:				; nom (12 octets), PV, ATT, DEF de base
-	dc.b	"GUERRIER",0,0,0,0
-	dc.w	30,7,3
-	dc.b	"BARBARE",0,0,0,0,0
-	dc.w	34,8,1
-	dc.b	"ECLAIREUR",0,0,0
-	dc.w	22,6,2
-	dc.b	"CLERC",0,0,0,0,0,0,0
-	dc.w	24,5,3
-
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
+StatNames:
+	dc.l	TxtFor,TxtDex,TxtCon,TxtInt,TxtSag,TxtCha
+StatOffsets:
+	dc.w	hr_Str,hr_Dex,hr_Con,hr_Int,hr_Wis,hr_Cha
 
-NameList:				; 9 octets par nom
-	dc.b	"ALDER",0,0,0,0
-	dc.b	"MYRA",0,0,0,0,0
-	dc.b	"BORIN",0,0,0,0
-	dc.b	"SELVA",0,0,0,0
-	dc.b	"THORGAL",0,0
-	dc.b	"ELWIN",0,0,0,0
-	dc.b	"KAREN",0,0,0,0
-	dc.b	"DRAKE",0,0,0,0
-	dc.b	"LYRA",0,0,0,0,0
-	dc.b	"GORIM",0,0,0,0
-	dc.b	"NESSA",0,0,0,0
-	dc.b	"VALDIS",0,0,0
-	dc.b	"ORRIN",0,0,0,0
-	dc.b	"SIBYL",0,0,0,0
-	dc.b	"HAKON",0,0,0,0
-	dc.b	"MAEVE",0,0,0,0
+TxtCls0:	dc.b	"SOLIDE, FRAPPE FORT",0
+TxtCls1:	dc.b	"TRES ROBUSTE, PEU SUR",0
+TxtCls2:	dc.b	"FUITE PLUS SURE, ARC",0
+TxtCls3:	dc.b	"SOINS ET SORTS DIVINS",0
+TxtFor:		dc.b	"FOR ",0
+TxtDex:		dc.b	"DEX ",0
+TxtCon:		dc.b	"CON ",0
+TxtInt:		dc.b	"INT ",0
+TxtSag:		dc.b	"SAG ",0
+TxtCha:		dc.b	"CHA ",0
 
-; Codes de position du clavier vers caracteres : le CIA ne donne pas des
-; caracteres mais la place de la touche, d'ou une table par disposition.
-KeyAzerty:
-	dc.b	0,'1','2','3','4','5','6','7','8','9','0',0,0,0,0,0
-	dc.b	'A','Z','E','R','T','Y','U','I','O','P',0,0,0,0,0,0
-	dc.b	'Q','S','D','F','G','H','J','K','L','M',0,0,0,0,0,0
-	dc.b	0,'W','X','C','V','B','N',0,0,0,0,0,0,0,0,0
-KeyQwerty:
-	dc.b	0,'1','2','3','4','5','6','7','8','9','0',0,0,0,0,0
-	dc.b	'Q','W','E','R','T','Y','U','I','O','P',0,0,0,0,0,0
-	dc.b	'A','S','D','F','G','H','J','K','L',0,0,0,0,0,0,0
-	dc.b	0,'Z','X','C','V','B','N','M',0,0,0,0,0,0,0,0
-
-MonTypes:
-	dc.b	"RAT GEANT",0,0,0
-	dc.w	14,4,1,12,6
-	dc.b	"SQUELETTE",0,0,0
-	dc.w	22,6,3,20,14
-	dc.b	"ORC",0,0,0,0,0,0,0,0,0
-	dc.w	34,8,4,32,26
-	dc.b	"DRAGONNET",0,0,0
-	dc.w	52,12,6,60,80
-
-TxtIntro:	dc.b	"LES CAVES DE FAERGHAIL. BON COURAGE.",0
+TxtIntro:	dc.b	"LA CRYPTE DE FAERGHAIL VOUS ATTEND.",0
+TxtCreate1:	dc.b	"CREEZ VOS QUATRE AVENTURIERS.",0
+TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
+TxtCreateTitle:	dc.b	"CREATION DU GROUPE",0
+TxtEmptySlot:	dc.b	"-----",0
+TxtHero:	dc.b	"HEROS ",0
+TxtOn4:		dc.b	" SUR 4",0
+TxtDash:	dc.b	" - ",0
+TxtPickClass:	dc.b	"CHOISISSEZ : 1 A 4",0
+TxtRoll:	dc.b	"R RELANCER  ENTREE OK",0
+TxtName:	dc.b	"NOM : ",0
+TxtNameHelp:	dc.b	"TAPEZ OU FLECHES",0
+TxtAzerty:	dc.b	"TAB : AZERTY",0
+TxtQwerty:	dc.b	"TAB : QWERTY",0
 TxtWall:	dc.b	"UN MUR BLOQUE LE PASSAGE.",0
 TxtDoorShut:	dc.b	"PORTE FERMEE. ESPACE POUR OUVRIR.",0
 TxtDoorOpen:	dc.b	"LA PORTE S'OUVRE EN GRINCANT.",0
+TxtLocked:	dc.b	"CETTE PORTE EST VERROUILLEE.",0
+TxtNeedKey:	dc.b	"IL VOUS FAUT UNE CLE.",0
+TxtUnlock:	dc.b	"LA CLE TOURNE. LA PORTE CEDE.",0
 TxtNothing:	dc.b	"RIEN A FAIRE ICI.",0
-TxtChest:	dc.b	"UN COFFRE ! VOUS TROUVEZ ",0
+TxtNiche:	dc.b	"DANS LA NICHE : ",0
+TxtNicheEmpty:	dc.b	"LA NICHE EST VIDE.",0
+TxtChest:	dc.b	"UN COFFRE ! ",0
 TxtGoldSuffix:	dc.b	" OR.",0
-TxtPotionFound:	dc.b	"ET UNE POTION DE SOIN.",0
+TxtFound:	dc.b	"VOUS TROUVEZ ",0
+TxtDrops:	dc.b	"VOUS JETEZ ",0
+TxtBagFull:	dc.b	"LE SAC EST PLEIN.",0
 TxtDescend:	dc.b	"UN ESCALIER. VOUS DESCENDEZ.",0
-TxtWin:		dc.b	"LA SORTIE ! VOUS REMONTEZ, VIVANTS.",0
+TxtWin:		dc.b	"LA SORTIE ! VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
 TxtYouHit:	dc.b	"LE GROUPE INFLIGE ",0
 TxtDamage:	dc.b	" DEGATS.",0
+TxtAllMiss:	dc.b	"TOUS LES COUPS SE PERDENT.",0
 TxtHits:	dc.b	" TOUCHE ",0
-TxtFor:		dc.b	" : ",0
-TxtParry:	dc.b	" PARE LE COUP.",0
+TxtFor2:	dc.b	" : ",0
+TxtMissed:	dc.b	" MANQUE ",0
 TxtFalls:	dc.b	" S'EFFONDRE !",0
 TxtDies:	dc.b	" TOMBE ! +",0
 TxtXpGold:	dc.b	" PX, ",0
 TxtLevelUp:	dc.b	" PASSE UN NIVEAU !",0
 TxtFlee:	dc.b	"VOUS PRENEZ LA FUITE.",0
 TxtFleeFail:	dc.b	"LA FUITE ECHOUE !",0
-TxtWiped:	dc.b	"LE GROUPE EST ANEANTI. C'EST FINI.",0
-TxtNoPotion:	dc.b	"PLUS AUCUNE POTION.",0
-TxtDrinks:	dc.b	" BOIT UNE POTION.",0
+TxtWiped:	dc.b	"LE GROUPE EST ANEANTI.",0
+TxtMonStunned:	dc.b	"LE MONSTRE RECULE, TERRIFIE.",0
+TxtCasts:	dc.b	" LANCE ",0
+TxtSpellHit:	dc.b	"LE SORT INFLIGE ",0
+TxtHealed:	dc.b	" RECUPERE ",0
+TxtPvSuffix:	dc.b	" PV.",0
+TxtShieldUp:	dc.b	"UNE AURA PROTEGE LE GROUPE.",0
+TxtFear:	dc.b	"LE MONSTRE EST TERRIFIE !",0
+TxtUnknownSpell: dc.b	"CE SORT VOUS EST INCONNU.",0
+TxtNoMana:	dc.b	"PAS ASSEZ DE MAGIE.",0
+TxtHeroDown:	dc.b	"CE HEROS EST HORS DE COMBAT.",0
+TxtEquips:	dc.b	" EQUIPE ",0
+TxtCannotEquip:	dc.b	"CELA NE S'EQUIPE PAS.",0
+TxtCannotUse:	dc.b	"CELA NE S'UTILISE PAS.",0
+TxtLearns:	dc.b	" APPREND ",0
+TxtAlreadyKnown: dc.b	"CE SORT EST DEJA CONNU.",0
+TxtNoMagic:	dc.b	"CE HEROS N'EST PAS MAGICIEN.",0
+TxtNoHero:	dc.b	"AUCUN HEROS ICI.",0
+TxtBag:		dc.b	"SAC A DOS",0
+TxtChooseSpell:	dc.b	"QUEL SORT ?",0
+TxtPmSuffix:	dc.b	"PM",0
 TxtPv:		dc.b	"PV ",0
+TxtPm:		dc.b	"PM ",0
 TxtNiv:		dc.b	"NIV ",0
-TxtPx:		dc.b	"PX ",0
+TxtSpPx:	dc.b	"  PX ",0
+TxtSpPv:	dc.b	"  PV ",0
+TxtSpPm:	dc.b	"   PM ",0
+TxtCa:		dc.b	"CA ",0
+TxtAtt:		dc.b	"   ATT ",0
+TxtWeapon:	dc.b	"ARME: ",0
+TxtArmorLbl:	dc.b	"ARM: ",0
+TxtBare:	dc.b	"POINGS NUS",0
+TxtNone:	dc.b	"AUCUNE",0
+TxtSpells:	dc.b	"SORTS : ",0
 TxtNiveau:	dc.b	"NIVEAU ",0
 TxtOr:		dc.b	"   OR ",0
-TxtPot:		dc.b	"   POTIONS ",0
-TxtEmptySlot:	dc.b	"-----",0
-TxtCreateTitle:	dc.b	"CREATION DU GROUPE",0
-TxtCreate1:	dc.b	"CREEZ VOS QUATRE HEROS.",0
-TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
-TxtHero:	dc.b	"HEROS ",0
-TxtOn4:		dc.b	" SUR 4",0
-TxtDash:	dc.b	" - ",0
-TxtPickClass:	dc.b	"CHOISISSEZ : 1 A 4",0
-TxtCls0:	dc.b	"SOLIDE ET OFFENSIF",0
-TxtCls1:	dc.b	"TRES ROBUSTE, PEU SUR",0
-TxtCls2:	dc.b	"LA FUITE EST PLUS SURE",0
-TxtCls3:	dc.b	"POTIONS PLUS EFFICACES",0
-TxtAtt:		dc.b	"  ATT ",0
-TxtDef:		dc.b	"  DEF ",0
-TxtRoll:	dc.b	"R RELANCER  ENTREE OK",0
-TxtName:	dc.b	"NOM : ",0
-TxtNameHelp:	dc.b	"TAPEZ OU FLECHES",0
-TxtAzerty:	dc.b	"TAB : AZERTY",0
-TxtQwerty:	dc.b	"TAB : QWERTY",0
-TxtNameOk:	dc.b	"ENTREE POUR VALIDER",0
+TxtKeys:	dc.b	"   CLES ",0
 TxtHelpCreate:	dc.b	"1-4 CLASSE  R DES  ENTREE OK  ESC",0
-TxtHelpMove:	dc.b	"FLECHES  ESPACE OUVRIR  P BOIRE  ESC",0
-TxtHelpFight:	dc.b	"A ATTAQUER  F FUIR  P BOIRE  ESC",0
+TxtHelpMove:	dc.b	"FLECHES  ESPACE  C FICHE  I SAC  ESC",0
+TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
+TxtHelpInv:	dc.b	"E EQUIPER U UTILISER D JETER 1-4",0
+TxtHelpSheet:	dc.b	"1-4 HEROS  I SAC  C FERMER  ESC",0
 	even
 
 ;======================================================================
-	SECTION	crawlchip,DATA_C	; le blitter ne lit que la Chip RAM
+	SECTION	crawlchip,DATA_C	; blitter et Paula : Chip RAM
 ;======================================================================
 
 DgnArt:
@@ -2302,6 +3667,11 @@ DgnArt:
 DgnMap:
 	incbin	"data/dgnmap.bin"
 	even
+SfxData:
+	incbin	"data/sfx.bin"
+	even
+SfxSilence:
+	dc.w	0,0
 
 ;======================================================================
 	SECTION	crawlbss,BSS
@@ -2313,7 +3683,6 @@ OldCopper:	ds.l	1
 ShowBuf:	ds.l	1
 DrawBuf:	ds.l	1
 CopBplPtrs:	ds.l	1
-MapBase:	ds.l	1
 MonPtr:		ds.l	1
 RngSeed:	ds.l	1
 OldIntena:	ds.w	1
@@ -2323,35 +3692,51 @@ PosY:		ds.w	1
 Dir:		ds.w	1
 Level:		ds.w	1
 Gold:		ds.w	1
-Potions:	ds.w	1
+KeyCount:	ds.w	1
 InCombat:	ds.w	1
-Phase:		ds.w	1
-CreIndex:	ds.w	1
-CreStep:	ds.w	1
-CreClass:	ds.w	1
-CreHp:		ds.w	1
-CreAtk:		ds.w	1
-CreDef:		ds.w	1
-CreNameLen:	ds.w	1
-CreNameIdx:	ds.w	1
-KbLayout:	ds.w	1
-CreName:	ds.b	NAMELEN+2
-	even
 MonKind:	ds.w	1
 MonHp:		ds.w	1
+MonStun:	ds.w	1
+AnimFrame:	ds.w	1
+AnimCount:	ds.w	1
 GameOver:	ds.w	1
 Quit:		ds.w	1
 NeedRedraw:	ds.w	1
 DrawReady:	ds.w	1
+MusicDone:	ds.w	1
+Phase:		ds.w	1
+UiMode:		ds.w	1
+SelHero:	ds.w	1
+InvCursor:	ds.w	1
+InvTop:		ds.w	1
+CreIndex:	ds.w	1
+CreStep:	ds.w	1
+CreClass:	ds.w	1
+CreHp:		ds.w	1
+CreMp:		ds.w	1
+CreNameLen:	ds.w	1
+CreNameIdx:	ds.w	1
+KbLayout:	ds.w	1
+CreStr:		ds.w	1		; les six caracteristiques tirees
+CreDex:		ds.w	1
+CreCon:		ds.w	1
+CreInt:		ds.w	1
+CreWis:		ds.w	1
+CreCha:		ds.w	1
+CreName:	ds.b	NAMELEN+2
+	even
 Heroes:		ds.b	NHEROES*hr_SIZEOF
-MapWork:	ds.b	MAPBYTES
+Inventory:	ds.b	INVSIZE
+	even
+MapTerrain:	ds.b	MAPBYTES
+MapParam:	ds.b	MAPBYTES
 LogBuf:		ds.b	LOGLINES*(LOGWIDTH+2)
-TmpStr:		ds.b	80
-NumBuf:		ds.b	12
+TmpStr:		ds.b	96
+NumBuf:		ds.b	14
 	even
 
 ;======================================================================
-	SECTION	crawlbuf,BSS_C		; tampons d'ecran et copperlist
+	SECTION	crawlbuf,BSS_C
 ;======================================================================
 
 ScreenA:	ds.b	SCRSIZE

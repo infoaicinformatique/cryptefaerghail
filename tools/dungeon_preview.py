@@ -29,7 +29,8 @@ DIRS = ((0, -1), (1, 0), (0, 1), (-1, 0))            # N, E, S, O
 
 # morceaux, dans l'ordre ou build_art les empile
 BG, FRONT, LEFT, RIGHT, DOOR, MONSTER = 0, 1, 5, 9, 13, 16
-FRONTL, FRONTR, OUTERL, OUTERR = 20, 24, 28, 30
+FRONTL, FRONTR, OUTERL, OUTERR = 24, 28, 32, 34
+NICHE, PORTRAIT, ICON = 36, 37, 41
 
 
 def load_art():
@@ -164,19 +165,23 @@ def frame(screen, x0, y0, x1, y1, colour):
         screen[y][x0] = screen[y][x1 - 1] = colour
 
 
-PARTY = [("ALDER", 9, 32, 32), ("MYRA", 8, 24, 26),
-         ("BORIN", 9, 30, 30), ("SELVA", 7, 19, 22)]
+PARTY = [("ALDER", 3, 26, 32, 0), ("MYRA", 2, 18, 22, 3),
+         ("BORIN", 3, 30, 30, 1), ("SELVA", 2, 14, 24, 2)]
 
 
 def draw_ui(screen, level, px, py, dirn, log, help_line):
     frame(screen, 8, 8, 216, 160, 6)
     frame(screen, 224, 8, 312, 160, 6)
-    for i, (name, lvl, hp, hpmax) in enumerate(PARTY):
-        y = 16 + i * 36
-        text(screen, 29, y, 13, name)
-        text(screen, 29, y + 10, 12 if hp * 2 >= hpmax else 15,
+    raw, pieces = load_art()
+    for i, (name, lvl, hp, hpmax, cls) in enumerate(PARTY):
+        y = 14 + i * 36
+        off, w, h, _ = pieces[PORTRAIT + cls]
+        blit(screen, raw, (off, w, h, y * SCRBPL + 28))
+        text(screen, 32, y, 14 if i == 0 else 13, name)
+        text(screen, 32, y + 10, 12 if hp * 2 >= hpmax else 15,
              f"PV {hp}/{hpmax}")
-        text(screen, 29, y + 20, 2, f"NIV {lvl}")
+        text(screen, 32, y + 20, 9 if cls >= 2 else 2,
+             f"PM {lvl}/6" if cls >= 2 else f"NIV {lvl}")
     frame(screen, 8, 164, 312, 252, 6)
     for i, line in enumerate(log):
         text(screen, 2, 172 + i * 12, 13 if i == len(log) - 1 else 2, line)
@@ -223,7 +228,7 @@ if __name__ == "__main__":
         help_line = "FLECHES  ESPACE OUVRIR  P BOIRE  ESC"
     else:
         blit(screen, raw, pieces[BG], masked=False)
-        blit(screen, raw, pieces[MONSTER + monster])
+        blit(screen, raw, pieces[MONSTER + monster * 2])
         log = ["UN ORC SURGIT !",
                "LE GROUPE INFLIGE 21 DEGATS.",
                "ORC TOUCHE MYRA : 6",

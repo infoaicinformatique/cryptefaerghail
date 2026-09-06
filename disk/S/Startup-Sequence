@@ -1,11 +1,10 @@
 ; Disquette AGA - Amiga 1200
-echo "*N  LES CAVES DE FAERGHAIL"
-echo "  ------------------------"
-echo "  Fleches : avancer, reculer, tourner"
-echo "  Espace : ouvrir   P : potion   ESC : quitter*N"
+echo "*N  LA CRYPTE DE FAERGHAIL"
+echo "  -------------------------"
+echo "  Creez votre groupe, puis explorez.*N"
+echo "  Fleches bouger   ESPACE agir   C fiche   I sac"
+echo "  Combat : A attaquer  S sort  F fuir*N"
 echo "  Chargement..."
 AGACrawl
-echo "*N  Autres programmes de la disquette :"
-echo "    AGAScroll   demo 8 bitplanes, scrolltext et musique"
-echo "    AGADemo     demo copper 24 bits"
+echo "*N  Egalement sur la disquette : AGAScroll et AGADemo."
 echo "  Voir Lisezmoi.txt.*N"

@@ -139,6 +139,7 @@ PT_Init:
 	clr.w	PT_DoJump
 	clr.w	PT_DoBreak
 
+	clr.w	PT_SfxLock
 	move.b	CIAAPRA,PT_OldFilter	; filtre passe-bas coupe (bit 1 = LED)
 	bset	#1,CIAAPRA
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -185,6 +186,10 @@ PT_Tick:
 	lea	chn_SIZEOF(a5),a5
 	dbf	d7,.repLoop
 
+	tst.w	PT_SfxLock		; le canal 3 est-il prete a un bruitage ?
+	beq.s	.noSfx
+	subq.w	#1,PT_SfxLock
+.noSfx:
 	move.w	PT_TickCnt,d0
 	addq.w	#1,d0
 	cmp.w	PT_Speed,d0
@@ -199,12 +204,19 @@ PT_Tick:
 	lea	PT_Channels,a5
 	moveq	#3,d7
 .hwLoop:
+	move.w	chn_DmaBit(a5),d1	; canal emprunte par un bruitage ?
+	cmp.w	#8,d1
+	bne.s	.hwOk
+	tst.w	PT_SfxLock
+	bne.s	.hwSkip
+.hwOk:
 	move.l	chn_AudBase(a5),a0
 	move.w	chn_PlayPer(a5),d0
 	beq.s	.hwNoPeriod
 	move.w	d0,AUDx_PER(a0)
 .hwNoPeriod:
 	move.w	chn_Volume(a5),AUDx_VOL(a0)
+.hwSkip:
 	lea	chn_SIZEOF(a5),a5
 	dbf	d7,.hwLoop
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -240,6 +252,13 @@ PT_NewRow:
 	tst.w	chn_Trigger(a5)
 	beq.s	.maskNext
 	move.w	chn_DmaBit(a5),d0
+	cmp.w	#8,d0			; canal 3 pris par un bruitage : on
+	bne.s	.maskAdd		; laisse tomber la note
+	tst.w	PT_SfxLock
+	beq.s	.maskAdd
+	clr.w	chn_Trigger(a5)
+	bra.s	.maskNext
+.maskAdd:
 	or.w	d0,d6
 .maskNext:
 	lea	chn_SIZEOF(a5),a5
@@ -586,6 +605,7 @@ PT_DoJump:	ds.w	1
 PT_JumpPos:	ds.w	1
 PT_DoBreak:	ds.w	1
 PT_BreakRow:	ds.w	1
+PT_SfxLock:	ds.w	1
 PT_OldFilter:	ds.b	1
 	even
 PT_Channels:	ds.b	chn_SIZEOF*4

@@ -23,10 +23,12 @@ import test_game as T
 PAL_CLOCK = 3546895
 RATE = 22050
 NOMS = ["epee", "hache", "arc", "impact", "esquive", "porte", "coffre",
-        "potion", "sort", "monstre", "niveau", "pas", "mort"]
+        "potion", "sort", "monstre", "niveau", "pas", "mort",
+        "piege", "pieces"]
 # indices attendus, dans l'ordre de SFX_ dans crawl.s
 SFX_SWORD, SFX_AXE, SFX_BOW, SFX_HIT, SFX_MISS, SFX_DOOR, SFX_CHEST, \
-    SFX_POTION, SFX_SPELL, SFX_GROWL, SFX_LEVEL, SFX_STEP, SFX_DEATH = range(13)
+    SFX_POTION, SFX_SPELL, SFX_GROWL, SFX_LEVEL, SFX_STEP, SFX_DEATH, \
+    SFX_TRAP, SFX_COIN = range(15)
 
 AUD3 = 0xd0                              # canal 3 : celui qu'on emprunte
 

@@ -41,6 +41,20 @@ T_NICHE		= 5
 T_RUNE		= 6
 T_LEVER		= 7			; levier scelle dans un mur
 T_GATE		= 8			; herse commandee par un levier
+T_SHOP		= 9			; echoppe scellee dans un mur
+T_TRAP		= 10			; dallage piege, invisible au depart
+
+; MapParam d'un piege : le quartet bas donne l'espece, le bit 7 dit que
+; le groupe l'a repere. Un piege desamorce redevient du dallage.
+TRAP_SEEN	= 7			; numero de bit
+NTRAPS		= 4
+tp_Name		= 0			; 16 octets
+tp_Save		= 16			; 0 Vigueur, 1 Reflexes, 2 Volonte
+tp_Faces	= 18			; faces du de de degats
+tp_SIZEOF	= 20
+
+NSHOP		= 8			; etals d'une echoppe
+SHOPROWS	= 8			; lignes visibles
 ; --- contenu, quartet haut ---
 C_CHEST		= $10
 C_MONSTER	= $20
@@ -155,6 +169,8 @@ SFX_GROWL	= 9
 SFX_LEVEL	= 10
 SFX_STEP	= 11
 SFX_DEATH	= 12
+SFX_TRAP	= 13
+SFX_COIN	= 14
 
 ; --- phases et ecrans ---
 PHASE_CREATE	= 0
@@ -162,7 +178,7 @@ PHASE_PLAY	= 1
 PHASE_TITLE	= 2			; l'ecran d'accueil
 TITLEH		= 176			; hauteur de l'illustration
 SAVEMAGIC	= $46414552		; "FAER"
-SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES
+SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -171,6 +187,7 @@ UI_RIDDLE	= 4
 UI_MAP		= 5
 UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
+UI_SHOP		= 8			; l'echoppe du marchand
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
 MAP_X		= 2			; carte : colonne octet du coin
@@ -1165,6 +1182,8 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_GATE,d2
 	beq.s	.yes
+	cmp.w	#T_SHOP,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1247,6 +1266,11 @@ DrawScene:
 	bsr	DrawOptions
 	bra	.done
 .notOpts:
+	cmp.w	#UI_SHOP,d0
+	bne.s	.notShop
+	bsr	DrawShop
+	bra	.done
+.notShop:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1328,6 +1352,13 @@ DrawScene:
 	bsr	BlitPiece
 	bra.s	.noFront
 .notNicheArt:
+	cmp.w	#T_SHOP,d4		; l'etal du marchand
+	bne.s	.notShopArt
+	moveq	#ART_SHOP,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	bra.s	.noFront
+.notShopArt:
 	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
 	bne.s	.noFront
 	move.w	d7,d2
@@ -1342,6 +1373,23 @@ DrawScene:
 	moveq	#0,d1
 	bsr	BlitPiece
 .noFront:
+	moveq	#1,d2			; la dalle juste devant, si on l'a vue
+	bsr	CellAhead
+	move.w	d0,d3
+	move.w	d1,d4
+	bsr	MapCell
+	and.w	#$000f,d0
+	cmp.w	#T_TRAP,d0
+	bne.s	.noTrapArt
+	move.w	d3,d0
+	move.w	d4,d1
+	bsr	MapGetParam
+	btst	#TRAP_SEEN,d0
+	beq.s	.noTrapArt
+	moveq	#ART_TRAP,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+.noTrapArt:
 	bsr	MusicPoll
 	move.w	d7,d6
 	subq.w	#1,d6
@@ -1711,8 +1759,13 @@ DrawStatus:
 	bra.s	.help
 .helpOpts:
 	cmp.w	#UI_OPTS,d0
-	bne.s	.helpOther
+	bne.s	.helpShop
 	lea	TxtHelpOpts,a0
+	bra.s	.help
+.helpShop:
+	cmp.w	#UI_SHOP,d0
+	bne.s	.helpOther
+	lea	TxtHelpShop,a0
 	bra.s	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
@@ -3502,6 +3555,7 @@ LoadLevel:
 .copyP:
 	move.b	(a0)+,(a1)+
 	dbf	d2,.copyP
+	bsr	ShopFillStock		; le marchand de l'etage regarnit
 	lea	MapSeen,a1		; on ne connait rien de cet etage
 	move.w	#MAPBYTES-1,d2
 .clearSeen:
@@ -3611,6 +3665,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.lever
 	cmp.w	#T_GATE,d0
 	beq	.gate
+	cmp.w	#T_SHOP,d0
+	beq	.shop
+	cmp.w	#T_TRAP,d0
+	beq	.trap
 
 	move.w	d4,PosX
 	move.w	d5,PosY
@@ -3653,6 +3711,32 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 .gate:
 	lea	TxtGateShut,a0
 	bsr	LogAdd
+	bra	.redraw
+.shop:
+	lea	TxtShopSeen,a0
+	bsr	LogAdd
+	bra	.redraw
+
+; Un dallage piege. Tant que personne ne l'a vu, on marche dessus et il
+; se detend. Une fois repere il barre le chemin : le desamorcer demande
+; d'appuyer sur espace en le regardant.
+.trap:
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam
+	btst	#TRAP_SEEN,d0
+	bne.s	.trapStep		; deja repere : on l'enjambe en sachant
+	move.w	d4,d0			; sinon, le groupe a une chance de le
+	move.w	d5,d1			; voir a temps
+	bsr	SpotTrap
+	tst.w	d0
+	bne	.redraw			; repere : le groupe s'arrete net
+.trapStep:
+	move.w	d4,PosX
+	move.w	d5,PosY
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	SpringTrap
 	bra	.redraw
 
 .chest:
@@ -3755,7 +3839,7 @@ DoAction:
 	move.w	d0,d3
 	and.w	#$000f,d0
 	cmp.w	#T_DOOR,d0
-	beq.s	.door
+	beq	.door
 	cmp.w	#T_LOCKED,d0
 	beq	.lockedDoor
 	cmp.w	#T_NICHE,d0
@@ -3764,8 +3848,36 @@ DoAction:
 	beq	.rune
 	cmp.w	#T_LEVER,d0
 	beq	.lever
+	cmp.w	#T_SHOP,d0
+	beq	.shopOpen
+	cmp.w	#T_TRAP,d0
+	beq	.trapDisarm
 	lea	TxtNothing,a0
 	bsr	LogAdd
+	bra	.done
+.shopOpen:
+	move.w	#UI_SHOP,UiMode
+	clr.w	ShopMode
+	clr.w	ShopCursor
+	clr.w	ShopTop
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	lea	TxtShopHello,a0
+	bsr	LogAdd
+	bra	.done
+.trapDisarm:
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam
+	btst	#TRAP_SEEN,d0		; on ne desamorce que ce qu'on voit
+	bne.s	.disarmGo
+	lea	TxtNothing,a0
+	bsr	LogAdd
+	bra	.done
+.disarmGo:
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	DisarmTrap
 	bra	.done
 .door:
 	move.w	d3,d2
@@ -4186,6 +4298,592 @@ AnswerRiddle:				; d0 = reponse donnee (0..2)
 	bsr	CheckWipe
 .done:
 	clr.w	UiMode
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+
+;----------------------------------------------------------------------
+; L'echoppe
+;
+; L'or s'entassait sans emploi : les coffres en donnaient, les monstres
+; aussi, et rien n'en demandait jamais. Le marchand vend ce qu'il a sur
+; son etal au prix de l'objet, et rachete le butin a moitie prix.
+;----------------------------------------------------------------------
+ShopRows:				; -> d0 = lignes du cote ouvert
+	tst.w	ShopMode
+	bne.s	.sell
+	moveq	#NSHOP,d0
+	rts
+.sell:
+	move.w	#INVSIZE,d0
+	rts
+
+ShopItem:				; d0 = ligne -> d0 = objet, Z si vide
+	movem.l	d1/a0,-(sp)
+	move.w	d0,d1
+	moveq	#0,d0
+	tst.w	ShopMode
+	bne.s	.sell
+	cmp.w	#NSHOP,d1
+	bge.s	.done
+	lea	ShopStock,a0
+	bra.s	.read
+.sell:
+	cmp.w	#INVSIZE,d1
+	bge.s	.done
+	lea	Inventory,a0
+.read:
+	move.b	(a0,d1.w),d0
+.done:
+	movem.l	(sp)+,d1/a0
+	tst.w	d0
+	rts
+
+ShopPrice:				; d0 = objet -> d0 = prix du cote ouvert
+	movem.l	a0,-(sp)
+	bsr	ItemPtr
+	move.w	it_Value(a0),d0
+	tst.w	ShopMode
+	beq.s	.done
+	lsr.w	#1,d0			; il rachete a moitie
+	tst.w	d0
+	bne.s	.done
+	moveq	#1,d0			; jamais pour rien
+.done:
+	movem.l	(sp)+,a0
+	rts
+
+ShopFillStock:				; l'etal de l'etage courant
+	movem.l	d0-d2/a0-a1,-(sp)
+	lea	ShopTable,a0
+	move.w	Level,d0
+	mulu.w	#NSHOP,d0
+	add.l	d0,a0
+	lea	ShopStock,a1
+	moveq	#NSHOP-1,d1
+.copy:
+	move.b	(a0)+,(a1)+
+	dbf	d1,.copy
+	movem.l	(sp)+,d0-d2/a0-a1
+	rts
+
+DrawShop:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	lea	TxtShopTitle,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	TxtShopBuy,a0
+	tst.w	ShopMode
+	beq.s	.side
+	lea	TxtShopSell,a0
+.side:
+	moveq	#11,d0
+	moveq	#20,d1
+	move.w	#C_ALERT,d2
+	bsr	DrawText
+	lea	TmpStr,a1
+	lea	TxtShopGold,a0
+	bsr	StrCopy
+	move.w	Gold,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#18,d0
+	moveq	#20,d1
+	move.w	#C_GOLD+2,d2
+	bsr	DrawText
+
+	moveq	#0,d7
+.rowLoop:
+	move.w	ShopTop,d6
+	add.w	d7,d6
+	bsr	ShopRows
+	cmp.w	d0,d6
+	bge	.rowsDone
+	move.w	d6,d0
+	bsr	ShopItem
+	beq	.rowNext
+	move.w	d0,d5
+
+	lea	TmpStr,a1
+	cmp.w	ShopCursor,d6
+	bne.s	.noCur
+	move.b	#'>',(a1)+
+	move.b	#' ',(a1)+
+	bra.s	.name
+.noCur:
+	move.b	#' ',(a1)+
+	move.b	#' ',(a1)+
+.name:
+	move.w	d5,d0
+	bsr	ItemPtr
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#11,d1
+	add.w	#34,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+
+	move.w	d5,d0			; le prix, cale sur la marge droite
+	bsr	ShopPrice
+	move.w	d0,d4
+	lea	TmpStr,a1
+	move.w	d4,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	lea	TmpStr,a2		; un chiffre de moins, une colonne
+	moveq	#25,d0			; de plus vers la droite
+.count:
+	tst.b	(a2)+
+	beq.s	.counted
+	subq.w	#1,d0
+	bra.s	.count
+.counted:
+	move.w	d7,d1
+	mulu.w	#11,d1
+	add.w	#34,d1
+	move.w	#C_GOLD+2,d2
+	cmp.w	Gold,d4			; hors de prix : le chiffre s'eteint
+	ble.s	.afford
+	tst.w	ShopMode
+	bne.s	.afford
+	move.w	#C_TEXTLOW,d2
+.afford:
+	bsr	DrawText
+.rowNext:
+	addq.w	#1,d7
+	cmp.w	#SHOPROWS,d7
+	blt	.rowLoop
+.rowsDone:
+	lea	TxtShopHelp,a0
+	moveq	#3,d0
+	move.w	#124,d1
+	move.w	#C_TEXTLOW,d2
+	bsr	DrawText
+	lea	TxtShopHelp2,a0
+	moveq	#3,d0
+	move.w	#135,d1
+	move.w	#C_TEXTLOW,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; ShopDeal : conclut la ligne visee, dans un sens ou dans l'autre
+ShopDeal:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	ShopCursor,d0
+	bsr	ShopItem
+	bne.s	.have
+	tst.w	ShopMode
+	bne.s	.noSell
+	lea	TxtShopEmpty,a0
+	bra	.say
+.noSell:
+	lea	TxtShopNoSell,a0
+	bra	.say
+.have:
+	move.w	d0,d7			; objet
+	bsr	ShopPrice
+	move.w	d0,d6			; prix
+	tst.w	ShopMode
+	bne	.sell
+
+	cmp.w	Gold,d6
+	ble.s	.rich
+	lea	TxtShopPoor,a0
+	bra	.say
+.rich:
+	move.w	d7,d0
+	bsr	AddItem
+	tst.w	d0
+	bne.s	.taken
+	lea	TxtShopFull,a0		; AddItem l'a deja dit, mais le
+	bra	.say			; panneau reste ouvert
+.taken:
+	sub.w	d6,Gold
+	move.w	d7,d0
+	bsr	CheckKey
+	lea	ShopStock,a0		; l'etal se vide de cette piece
+	move.w	ShopCursor,d0
+	clr.b	(a0,d0.w)
+	lea	TxtShopBought,a0
+	bra.s	.receipt
+
+.sell:
+	move.w	d7,d0
+	bsr	ItemPtr
+	cmp.w	#IT_KEY,it_Type(a0)	; les cles comptent a part
+	bne.s	.notKey
+	tst.w	KeyCount
+	beq.s	.notKey
+	subq.w	#1,KeyCount
+.notKey:
+	move.w	ShopCursor,InvCursor	; InvClear travaille sur le curseur
+	bsr	InvClear		; du sac : on les fait coincider
+	add.w	d6,Gold
+	lea	TxtShopSold,a0
+
+.receipt:
+	lea	TmpStr,a1
+	bsr	StrCopy
+	move.w	d7,d0
+	bsr	ItemPtr
+	bsr	StrCopy
+	lea	TxtShopFor,a0
+	bsr	StrCopy
+	move.w	d6,d0
+	bsr	StrNum
+	lea	TxtShopOr,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	lea	TmpStr,a0
+.say:
+	bsr	LogAdd
+	bsr	ShopClamp
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; ShopClamp : garde le curseur dans la liste et sur l'ecran
+ShopClamp:
+	movem.l	d0-d2,-(sp)
+	bsr	ShopRows
+	move.w	d0,d2
+	subq.w	#1,d2
+	move.w	ShopCursor,d0
+	cmp.w	d2,d0
+	ble.s	.notPast
+	move.w	d2,d0
+.notPast:
+	bpl.s	.notNeg
+	moveq	#0,d0
+.notNeg:
+	move.w	d0,ShopCursor
+	move.w	ShopTop,d1
+	cmp.w	d1,d0
+	bge.s	.notAbove
+	move.w	d0,ShopTop
+	bra.s	.done
+.notAbove:
+	sub.w	d1,d0
+	cmp.w	#SHOPROWS,d0
+	blt.s	.done
+	move.w	ShopCursor,d0
+	sub.w	#SHOPROWS-1,d0
+	move.w	d0,ShopTop
+.done:
+	movem.l	(sp)+,d0-d2
+	rts
+
+ShopKey:				; d0 = touche
+	movem.l	d0-d7/a0-a6,-(sp)
+	cmp.w	#KEY_UP,d0
+	bne.s	.notUp
+	subq.w	#1,ShopCursor
+	bra.s	.moved
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notDown
+	addq.w	#1,ShopCursor
+	bra.s	.moved
+.notDown:
+	cmp.w	#KEY_TAB,d0		; on passe d'un cote du comptoir
+	bne.s	.notTab			; a l'autre
+	eor.w	#1,ShopMode
+	clr.w	ShopCursor
+	clr.w	ShopTop
+	bra.s	.moved
+.notTab:
+	cmp.w	#KEY_RETURN,d0
+	beq.s	.deal
+	cmp.w	#KEY_SPACE,d0
+	bne.s	.done
+.deal:
+	bsr	ShopDeal
+	bra.s	.done
+.moved:
+	bsr	ShopClamp
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+
+;----------------------------------------------------------------------
+; Les pieges
+;
+; Un dallage piege ne se voit pas. En marchant dessus, le groupe a
+; d'abord une chance de le repere : chacun tente sa chance, le roublard
+; a l'oeil et les autres leur bon sens. Repere, le piege reste marque
+; sur le plan et ne bouge plus : on l'enjambe en connaissance de cause,
+; ou on le desamorce.
+;----------------------------------------------------------------------
+TrapPtr:				; d0 = espece -> a0
+	movem.l	d1,-(sp)
+	move.w	d0,d1
+	and.w	#NTRAPS-1,d1
+	mulu.w	#tp_SIZEOF,d1
+	lea	TrapTable,a0
+	add.l	d1,a0
+	movem.l	(sp)+,d1
+	rts
+
+TrapDC:					; -> d0 = difficulte, selon l'etage
+	move.w	Level,d0
+	add.w	d0,d0
+	add.w	#14,d0
+	rts
+
+; TrapSkill : a6 = heros -> d0 = ce qu'il ajoute a son d20. Le roublard
+; est du metier ; les autres n'ont que leur sagesse et l'habitude.
+TrapSkill:
+	movem.l	d1-d2/a0,-(sp)
+	moveq	#0,d2
+	cmp.w	#2,hr_Class(a6)		; ROUBLARD
+	bne.s	.plain
+	move.w	hr_Level(a6),d2
+	addq.w	#4,d2
+	bra.s	.wis
+.plain:
+	move.w	hr_Level(a6),d2
+	and.l	#$0000ffff,d2
+	divu.w	#3,d2
+	and.l	#$0000ffff,d2
+.wis:
+	move.w	hr_Wis(a6),d0
+	bsr	StatMod
+	add.w	d2,d0
+	movem.l	(sp)+,d1-d2/a0
+	rts
+
+MarkTrapSeen:				; d0 = x, d1 = y
+	movem.l	d0-d2,-(sp)
+	move.w	d0,d2
+	bsr	MapGetParam
+	bset	#TRAP_SEEN,d0
+	move.w	d0,-(sp)
+	move.w	d2,d0
+	move.w	(sp)+,d2
+	bsr	MapSetParam
+	movem.l	(sp)+,d0-d2
+	rts
+
+; SpotTrap : d0 = x, d1 = y -> d0 = 1 si quelqu'un l'a vu a temps
+SpotTrap:
+	movem.l	d1-d7/a0-a6,-(sp)
+	move.w	d0,d6
+	move.w	d1,d7
+	bsr	TrapDC
+	move.w	d0,d5
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d4
+	moveq	#0,d3
+.loop:
+	tst.w	hr_Hp(a6)
+	beq.s	.next
+	bsr	TrapSkill
+	move.w	d0,d2
+	bsr	D20
+	add.w	d2,d0
+	cmp.w	d5,d0
+	blt.s	.next
+	moveq	#1,d3
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d4,.loop
+	tst.w	d3
+	beq.s	.missed
+	move.w	d6,d0
+	move.w	d7,d1
+	bsr	MarkTrapSeen
+	move.w	d6,d0			; nommer ce qu'on a repere
+	move.w	d7,d1
+	bsr	MapGetParam
+	bsr	TrapPtr
+	lea	TmpStr,a1
+	move.l	a0,-(sp)
+	lea	TxtTrapSpot,a0
+	bsr	StrCopy
+	move.l	(sp)+,a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	moveq	#1,d0
+	bra.s	.done
+.missed:
+	moveq	#0,d0
+.done:
+	movem.l	(sp)+,d1-d7/a0-a6
+	rts
+
+; SpringTrap : d0 = x, d1 = y. Le piege se detend, puis disparait :
+; un ressort ne sert qu'une fois.
+SpringTrap:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	d0,d6
+	move.w	d1,d7
+	bsr	MapGetParam
+	move.w	d0,d5			; espece
+	bsr	TrapPtr
+	move.l	a0,a5			; descripteur du piege
+	move.w	d6,d0			; le dallage redevient ordinaire
+	move.w	d7,d1
+	moveq	#T_FLOOR,d2
+	bsr	MapSet
+	move.w	d6,d0
+	move.w	d7,d1
+	moveq	#0,d2
+	bsr	MapSetParam
+
+	moveq	#SFX_TRAP,d0
+	bsr	SfxPlay
+	lea	TmpStr,a1
+	move.l	a5,a0
+	bsr	StrCopy
+	lea	TxtTrapFires,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+
+	bsr	TrapDC
+	move.w	d0,d4			; difficulte de la sauvegarde
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d3
+	moveq	#0,d2			; total perdu par le groupe
+.hurt:
+	tst.w	hr_Hp(a6)
+	beq	.next
+	move.w	Level,d0		; degats : un de par etage, plus un
+	addq.w	#1,d0
+	move.w	tp_Faces(a5),d1
+	bsr	RollDice
+	move.w	d0,d6
+	move.w	tp_Save(a5),d0		; la bonne sauvegarde du piege
+	bsr	HeroSave
+	move.w	d0,d7
+	bsr	D20
+	add.w	d7,d0
+	cmp.w	d4,d0
+	blt.s	.full
+	lsr.w	#1,d6			; sauvegarde reussie : moitie moins
+.full:
+	tst.w	d6
+	beq.s	.next
+	sub.w	d6,hr_Hp(a6)
+	tst.w	hr_Hp(a6)
+	bgt.s	.alive
+	clr.w	hr_Hp(a6)
+.alive:
+	add.w	d6,d2
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d3,.hurt
+
+	tst.w	d2
+	beq.s	.spared
+	lea	TmpStr,a1
+	lea	TxtTrapHurt,a0
+	bsr	StrCopy
+	move.w	d2,d0
+	bsr	StrNum
+	lea	TxtPvSuffix,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bsr	CheckWipe
+	bra.s	.done
+.spared:
+	lea	TxtTrapMiss,a0
+	bsr	LogAdd
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; DisarmTrap : d0 = x, d1 = y. Le heros choisi s'y colle. Rate de peu,
+; il recommencera ; rate de loin, le piege lui saute au visage.
+DisarmTrap:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	d0,d6
+	move.w	d1,d7
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq	.down
+	bsr	TrapDC
+	move.w	d0,d5
+	bsr	TrapSkill
+	move.w	d0,d4
+	bsr	D20
+	add.w	d4,d0
+	cmp.w	d5,d0
+	blt.s	.failed
+	move.w	d6,d0			; desamorce : plus rien sous la dalle
+	move.w	d7,d1
+	moveq	#T_FLOOR,d2
+	bsr	MapSet
+	move.w	d6,d0
+	move.w	d7,d1
+	moveq	#0,d2
+	bsr	MapSetParam
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtTrapOff,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	lea	Heroes,a6		; le tour de main profite a tous
+	moveq	#NHEROES-1,d3
+.xp:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpNext
+	move.w	Level,d0
+	mulu.w	#15,d0
+	add.w	#25,d0
+	add.w	d0,hr_Xp(a6)
+	bsr	CheckLevel
+.xpNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d3,.xp
+	bra.s	.done
+.failed:
+	add.w	#5,d0			; rate de peu : la main a tremble
+	cmp.w	d5,d0
+	blt.s	.sprung
+	lea	TxtTrapSlip,a0
+	bsr	LogAdd
+	bra.s	.done
+.sprung:
+	move.w	d6,d0
+	move.w	d7,d1
+	bsr	SpringTrap
+	bra.s	.done
+.down:
+	lea	TxtTrapDown,a0
+	bsr	LogAdd
+.done:
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -5324,7 +6022,12 @@ HandleKey:
 	move.w	#UI_OPTS,UiMode
 	bra	.redraw
 .notOptsKey:
-	move.w	UiMode,d1		; les deux ecrans ont leurs fleches
+	move.w	UiMode,d1		; ces ecrans ont leurs propres fleches
+	cmp.w	#UI_SHOP,d1
+	bne.s	.notInShop
+	bsr	ShopKey
+	bra	.done
+.notInShop:
 	cmp.w	#UI_BOOK,d1
 	bne.s	.notInBook
 	bsr	BookKey
@@ -5499,6 +6202,27 @@ SaveName:	dc.b	"PROGDIR:AGACrawl.sav",0
 DosName:	dc.b	"dos.library",0
 	even
 
+; Les pieges : nom (16 octets), sauvegarde qui sauve, faces du de.
+; Les degats montent d'un de par etage.
+TrapTable:
+	dc.b	"JET DE DARDS",0,0,0,0
+	dc.w	1,6
+	dc.b	"LAME DE FAUX",0,0,0,0
+	dc.w	1,8
+	dc.b	"FOSSE A PIEUX",0,0,0
+	dc.w	1,6
+	dc.b	"NUAGE ACIDE",0,0,0,0,0
+	dc.w	0,4
+
+; L'etal du marchand, un par etage : huit numeros d'objet dans
+; ItemTable. Le prix est celui de l'objet ; il rachete a moitie.
+ShopTable:
+	dc.b	17,17,13,16,2,20,25,8	; potions, cuir, bouclier, cle
+	dc.b	17,18,14,3,6,22,21,26	; mailles, epee longue, parchemins
+	dc.b	18,18,15,9,10,11,24,23	; harnois et lames enchantees
+	even
+
+
 ; Ce qu'une partie contient : adresse et longueur de chaque bloc.
 SaveList:
 	dc.l	PosX,12			; PosX, PosY, Dir, Level, Gold, KeyCount
@@ -5507,6 +6231,7 @@ SaveList:
 	dc.l	MapTerrain,MAPBYTES
 	dc.l	MapParam,MAPBYTES
 	dc.l	MapSeen,MAPBYTES
+	dc.l	ShopStock,NSHOP
 	dc.l	0,0
 
 OptNames:
@@ -5622,6 +6347,29 @@ TxtCasts:	dc.b	" LANCE ",0
 TxtSpellHit:	dc.b	"LE SORT INFLIGE ",0
 TxtHealed:	dc.b	" RECUPERE ",0
 TxtPvSuffix:	dc.b	" PV.",0
+TxtShopSeen:	dc.b	"UNE ECHOPPE ! ESPACE POUR ENTRER.",0
+TxtShopHello:	dc.b	"BIENVENUE, DIT LE MARCHAND.",0
+TxtShopTitle:	dc.b	"ECHOPPE",0
+TxtShopBuy:	dc.b	"ACHAT",0
+TxtShopSell:	dc.b	"VENTE",0
+TxtShopHelp:	dc.b	"TAB CHANGE DE COTE",0
+TxtShopHelp2:	dc.b	"ENTREE CONCLUT, ESC SORT",0
+TxtShopGold:	dc.b	"OR ",0
+TxtShopEmpty:	dc.b	"L'ETAL EST VIDE.",0
+TxtShopNoSell:	dc.b	"VOTRE SAC EST VIDE.",0
+TxtShopPoor:	dc.b	"PAS ASSEZ D'OR.",0
+TxtShopFull:	dc.b	"LE SAC EST PLEIN.",0
+TxtShopBought:	dc.b	"ACHETE : ",0
+TxtShopSold:	dc.b	"VENDU : ",0
+TxtShopFor:	dc.b	", ",0
+TxtShopOr:	dc.b	" OR.",0
+TxtTrapSpot:	dc.b	"PIEGE REPERE : ",0
+TxtTrapFires:	dc.b	" SE DECLENCHE !",0
+TxtTrapHurt:	dc.b	"LE GROUPE PERD ",0
+TxtTrapMiss:	dc.b	"LE GROUPE S'EN TIRE INDEMNE.",0
+TxtTrapOff:	dc.b	" DESAMORCE LE PIEGE.",0
+TxtTrapSlip:	dc.b	"LA MAIN TREMBLE. RIEN N'EST FAIT.",0
+TxtTrapDown:	dc.b	"CE HEROS N'EST PLUS EN ETAT.",0
 TxtShieldUp:	dc.b	"UNE AURA PROTEGE LE GROUPE.",0
 TxtFear:	dc.b	"LE MONSTRE EST TERRIFIE !",0
 TxtUnknownSpell: dc.b	"CE SORT VOUS EST INCONNU.",0
@@ -5749,6 +6497,7 @@ TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
 TxtHelpInv:	dc.b	"E EQUIPER U UTILISER D JETER 1-4",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
 TxtHelpSheet:	dc.b	"1-4 HEROS  I SAC  L LIVRE  P REGLAGES",0
+TxtHelpShop:	dc.b	"FLECHES  TAB COTE  ENTREE  ESC SORT",0
 	even
 
 ;======================================================================
@@ -5803,6 +6552,9 @@ OptCursor:	ds.w	1
 OptMusic:	ds.w	1
 OptSfx:	ds.w	1
 CurMusic:	ds.w	1
+ShopMode:	ds.w	1
+ShopCursor:	ds.w	1
+ShopTop:	ds.w	1
 SpellCount:	ds.w	1
 SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1
@@ -5843,6 +6595,8 @@ Inventory:	ds.b	INVSIZE
 MapTerrain:	ds.b	MAPBYTES
 MapParam:	ds.b	MAPBYTES
 MapSeen:	ds.b	MAPBYTES
+ShopStock:	ds.b	NSHOP
+	even
 	even
 SaveBuf:	ds.b	SAVESIZE
 LogBuf:		ds.b	LOGLINES*(LOGWIDTH+2)

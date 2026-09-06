@@ -205,11 +205,13 @@ niveau de donjon selon leur facteur de puissance.
 | Touche | Effet |
 |---|---|
 | Flèches | avancer, reculer, tourner |
-| Espace | ouvrir une porte, fouiller une niche |
+| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
 | 1 à 4 | choisir le héros courant |
 | A / S / F | attaquer, lancer un sort, fuir (en combat) |
 | E / U / D | équiper, utiliser, jeter (dans le sac) |
+| M / L / P | carte du niveau, grimoire, réglages |
+| Tab | à l'échoppe : passer de l'achat à la vente |
 | ESC | fermer un écran, puis quitter |
 
 ### Contenu
@@ -220,6 +222,26 @@ niches creusées dans les murs, portes ordinaires, portes verrouillées — et
 une **porte à runes** par niveau, qui pose une énigme à trois réponses :
 juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
 un aventurier.
+
+**Une échoppe par étage.** L'or ramassé dans les coffres et sur les cadavres
+ne servait à rien : chaque objet portait pourtant un prix dans `ItemTable`, et
+personne ne le lisait. Le marchand est scellé dans un mur comme une niche, à
+trois à neuf pas du départ pour qu'on puisse s'équiper avant de s'enfoncer.
+Espace ouvre son étal : huit articles choisis pour l'étage, au prix de
+l'objet ; Tab passe de l'autre côté du comptoir, où il rachète le butin à
+moitié prix. Ce qui est vendu reste vendu — l'étal fait partie de la partie
+sauvée.
+
+**Des dalles piégées**, quatre au premier étage, huit au dernier. Elles ne se
+voient pas. En marchant dessus, chaque aventurier debout tente un jet contre
+DD 14 + 2 × étage : le roublard ajoute son niveau et 4, les autres se
+contentent de leur sagesse et d'un tiers de leur niveau. Repérée, la dalle
+est marquée d'une croix à la craie et le groupe s'arrête net ; Espace tente
+de la désamorcer, ce qui rapporte de l'expérience à tout le monde et, raté de
+plus de 5, la fait sauter. Non repérée, elle se détend : jet de Réflexes (de
+Vigueur pour le nuage acide), un dé de dégâts par étage plus un, moitié moins
+si la sauvegarde passe. Un ressort ne sert qu'une fois — la dalle redevient
+du dallage.
 
 Le générateur **vérifie que chaque niveau reste finissable** : il place les
 serrures loin du départ et les clés près, puis contrôle par parcours en

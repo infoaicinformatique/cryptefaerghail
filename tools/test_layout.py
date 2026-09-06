@@ -64,6 +64,21 @@ def widest(g):
     g.setw("NeedRedraw", 1)
 
 
+def richest(g):
+    """Un etal aux noms les plus longs, et une bourse a cinq chiffres :
+    c'est la ligne la plus large que le panneau puisse avoir a ecrire."""
+    items = g.addr("ItemTable")
+    longest = {}
+    for n in range(1, 29):
+        name = bytes(g.mem.r8(items + (n - 1) * 34 + k) for k in range(18))
+        longest[n] = len(name.split(b"\0")[0])
+    order = sorted(longest, key=lambda n: -longest[n])
+    stock = g.addr("ShopStock")
+    for slot in range(8):
+        g.mem.w8(stock + slot, order[slot])
+    g.setw("Gold", 0xffff)                # la bourse la plus encombrante
+
+
 def shot(g, name, fails, ring=True):
     """`ring` a faux pour l'accueil : son illustration couvre l'ecran
     entier, elle a le droit d'occuper la bordure."""
@@ -108,6 +123,21 @@ if __name__ == "__main__":
     g.key(0x28); g.key(0x19)              # P : les reglages
     shot(g, "reglages", fails)
     g.key(0x19)
+
+    richest(g)                            # l'echoppe, des deux cotes
+    g.setw("UiMode", T.read_equ("UI_SHOP", 8))
+    g.setw("ShopMode", 0)
+    g.setw("ShopCursor", 0)
+    g.setw("ShopTop", 0)
+    g.setw("NeedRedraw", 1)
+    shot(g, "echoppe-achat", fails)
+    g.setw("ShopMode", 1)                 # le sac, deja rempli par widest()
+    g.setw("ShopCursor", 23)
+    g.setw("ShopTop", 16)
+    g.setw("NeedRedraw", 1)
+    shot(g, "echoppe-vente", fails)
+    g.setw("UiMode", 0)
+    g.setw("NeedRedraw", 1)
 
     import play_game as P                 # une enigme, si on en trouve une
     grid = P.terrain(g)

@@ -20,6 +20,7 @@ import test_game as T
 MAPW = MAPH = 24
 T_FLOOR, T_WALL, T_DOOR, T_STAIRS, T_LOCKED, T_NICHE, T_RUNE = range(7)
 T_LEVER, T_GATE = 7, 8
+T_SHOP, T_TRAP = 9, 10
 C_CHEST, C_MONSTER, C_ITEM, C_MASK = 0x10, 0x20, 0x30, 0x30
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]     # meme ordre que DirTable
 
@@ -77,6 +78,50 @@ def goto(g, target, log=None, on_combat=None):
     return False
 
 
+def visit_shop(g, fails, stats):
+    """Aller marchander : c'est le seul endroit ou l'or sert."""
+    grid = terrain(g)
+    shops = find(grid, T_SHOP)
+    if not shops:
+        fails.append("aucune echoppe sur le premier etage")
+        return
+    sx, sy = shops[0]
+    spot = next(((sx + dx, sy + dy) for dx, dy in DIRS
+                 if 0 <= sx + dx < MAPW and 0 <= sy + dy < MAPH
+                 and passable(grid[sy + dy][sx + dx])), None)
+    if spot is None or not goto(g, spot, on_combat=lambda gg:
+                               fight(gg, fails, stats)):
+        fails.append(f"echoppe inabordable en {sx},{sy}")
+        return
+    if not face(g, DIRS.index((sx - spot[0], sy - spot[1])), []):
+        return
+    g.key(T.K_SPACE)
+    if g.w("UiMode") != 8:
+        fails.append(f"l'echoppe ne s'ouvre pas (UiMode={g.w('UiMode')})")
+        return
+    g.setw("Gold", 400)
+    gold0 = g.w("Gold")
+    for line in range(8):                 # tout l'etal, dans la limite du sac
+        g.setw("ShopCursor", line)
+        g.key(T.K_RET)
+        check_state(g, fails)
+    if g.w("Gold") < gold0:
+        stats["achats"] += 1
+    g.key(T.K_TAB)                        # puis revendre ce qu'on tire
+    for line in range(3):
+        g.setw("ShopCursor", 0)
+        before = g.w("Gold")
+        g.key(T.K_RET)
+        if g.w("Gold") > before:
+            stats["ventes"] += 1
+        check_state(g, fails)
+    if g.sw("Gold") < 0:
+        fails.append(f"l'echoppe laisse l'or negatif : {g.sw('Gold')}")
+    g.key(T.K_ESC)
+    if g.w("UiMode"):
+        fails.append("l'echoppe ne se referme pas")
+
+
 def pull_levers(g, fails=None, stats=None):
     """Va tirer chaque levier, et verifie que sa herse se leve."""
     done = 0
@@ -125,7 +170,7 @@ def terrain(g):
 
 def passable(cell):
     t = cell & 0x0f
-    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE)
+    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP)
 
 
 def bfs(grid, start, want):
@@ -170,9 +215,17 @@ def step_to(g, target, log):
     if not face(g, DIRS.index((dx, dy)), log):
         return False
     before = (g.w("PosX"), g.w("PosY"))
+    was = g.mem.r8(g.addr("MapTerrain") + target[1] * MAPW + target[0]) & 0x0f
     g.key(T.K_UP)
     if (g.w("PosX"), g.w("PosY")) != before:
         return True
+    if was == T_TRAP:
+        # Le groupe a repere la dalle et s'est arrete net. On la
+        # desamorce, puis on repart : c'est ce qu'un joueur ferait.
+        log.append(("piege repere", target))
+        g.key(T.K_SPACE)
+        g.key(T.K_UP)
+        return (g.w("PosX"), g.w("PosY")) != before
     g.key(T.K_SPACE)                      # porte, rune, levier
     if g.w("UiMode") == 4:                # une enigme barre le passage
         for answer in range(3):
@@ -249,7 +302,7 @@ def check_state(g, fails):
         fails.append(f"or negatif : {g.sw('Gold')}")
     if not 0 <= g.w("Level") < 3:
         fails.append(f"niveau de donjon {g.w('Level')}")
-    if not 0 <= g.w("UiMode") <= 4:
+    if not 0 <= g.w("UiMode") <= 8:
         fails.append(f"UiMode {g.w('UiMode')}")
     base = g.addr("Inventory")
     for i in range(24):
@@ -324,7 +377,7 @@ def main():
     fails, log = [], []
     stats = {"rounds": 0, "fights": 0, "steps": 0, "items": 0,
              "spells": 0, "menus": 0, "heals": 0,
-             "levers": 0}
+             "levers": 0, "achats": 0, "ventes": 0, "pieges": 0}
     g = T.Game()
     T.create_party(g)
     if g.w("Phase") != 1:
@@ -337,6 +390,7 @@ def main():
         ("escalier", lambda c: c & 0x0f == T_STAIRS),
     ]
     exercise_ui(g, fails, stats)
+    visit_shop(g, fails, stats)
     levers = len(find(terrain(g), T_LEVER))
     pull_levers(g, fails, stats)
     if levers and not stats["levers"]:
@@ -353,9 +407,13 @@ def main():
             log.append(("plus de but atteignable", here))
             break
         for cell in path[1:]:
+            was = g.mem.r8(g.addr("MapTerrain")
+                           + cell[1] * MAPW + cell[0]) & 0x0f
             if not step_to(g, cell, log):
                 log.append(("bloque", here, cell))
                 break
+            if was == T_TRAP:
+                stats["pieges"] += 1
             stats["steps"] += 1
             check_state(g, fails)
             if g.w("InCombat"):
@@ -373,6 +431,8 @@ def main():
           f"or {g.w('Gold')}, PX {g.hero(0, 'hr_Xp')}, "
           f"objets {inv_count(g)}, sorts {stats['spells']}, "
           f"soins {stats['heals']}, leviers {stats['levers']}, "
+          f"achats {stats['achats']}, ventes {stats['ventes']}, "
+          f"pieges {stats['pieges']}, "
           f"fin {g.w('GameOver')}")
     for i in range(4):
         print(f"  {g.name(i):8s} PV {g.hero(i,'hr_Hp')}/{g.hero(i,'hr_HpMax')} "

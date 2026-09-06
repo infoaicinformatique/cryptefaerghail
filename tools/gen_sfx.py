@@ -112,6 +112,40 @@ def descend(n, f0, f1):
     return out
 
 
+def snap(n, seed):
+    """Detente d'un piege : un claquement sec, puis le sifflement des
+    darts. Bruit blanc pique d'une resonance qui descend vite."""
+    rnd = random.Random(seed)
+    out, prev = [], 0.0
+    for i in range(n):
+        t = i / n
+        env = math.exp(-9.0 * t) + 0.35 * math.exp(-2.5 * t)
+        prev += (rnd.uniform(-1, 1) - prev) * (0.9 - 0.6 * t)
+        ring = math.sin(2 * math.pi * (2600 - 1900 * t) * i / 8000)
+        out.append(clamp8(120 * env * (0.6 * prev + 0.4 * ring)))
+    return out
+
+
+def coins(n, seed):
+    """Des pieces qu'on pose sur un comptoir : quelques tintements
+    metalliques serres, chacun un peu plus bas que le precedent."""
+    rnd = random.Random(seed)
+    out = []
+    hits = [(int(n * f), 900 + rnd.randrange(700)) for f in
+            (0.0, 0.16, 0.28, 0.46, 0.62)]
+    for i in range(n):
+        v = 0.0
+        for start, freq in hits:
+            if i < start:
+                continue
+            t = (i - start) / n
+            v += math.exp(-13.0 * t) * math.sin(2 * math.pi * freq * (i - start) / 8000)
+            v += 0.4 * math.exp(-16.0 * t) * math.sin(
+                2 * math.pi * freq * 2.7 * (i - start) / 8000)
+        out.append(clamp8(58 * v))
+    return out
+
+
 # nom, echantillon, periode
 SFX = [
     ("epee",     swing(1300, 0.05, 0.35, 1.6, 1), 320),
@@ -127,6 +161,8 @@ SFX = [
     ("niveau",   tone_seq([523, 659, 784, 1047], 320, wave="square"), 300),
     ("pas",      impact(500, 90, 9, noisy=0.35), 460),
     ("mort",     descend(2000, 400, 70), 360),
+    ("piege",    snap(1500, 11), 340),
+    ("pieces",   coins(2400, 13), 300),
 ]
 
 

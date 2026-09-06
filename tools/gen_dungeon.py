@@ -521,17 +521,102 @@ def make_niche():
             if abs(dx) > 24 or abs(dy) > 20:
                 continue
             edge = max(abs(dx) / 24.0, abs(dy) / 20.0)
-            if edge > 0.86:
-                p.set(x, y, 6)                        # encadrement
-            elif edge > 0.78:
-                p.set(x, y, 7)                        # ombre portee
+            if edge > 0.86:                           # encadrement taille
+                p.set(x, y, pal.lit("STONE", 0.30 + 0.20 * edge))
+            elif edge > 0.78:                         # ombre portee du bord
+                p.set(x, y, pal.lit("STONE", 0.86))
+            elif dy < 6:                              # le creux, presque noir
+                p.set(x, y, pal.lit("STONE", 0.97))
             else:
-                p.set(x, y, 0 if dy < 6 else 7)       # creux sombre
-    for y in range(CY - 2, CY + 8):                   # un objet pose dedans
+                p.set(x, y, pal.lit("EARTH", 0.88))   # fond de la niche
+    for y in range(CY - 2, CY + 8):                   # l'offrande, dans l'or
         for x in range(CX - 7, CX + 8):
             r = ((x - CX) / 7.0) ** 2 + ((y - CY - 3) / 5.0) ** 2
             if r <= 1.0:
-                p.set(x, y, 14 if r < 0.35 else 8)
+                p.set(x, y, pal.lit("GOLD", 0.10 + 0.62 * r))
+    return p
+
+
+def make_shop():
+    """L'echoppe : un auvent de toile, un comptoir de bois, et de quoi
+    marchander pose dessus. Elle occupe un mur, comme la niche, mais
+    prend toute sa largeur -- on ne la rate pas."""
+    x0, x1 = snap(CX - 46, CX + 46)
+    y0, y1 = CY - 40, CY + 34
+    p = Piece(x0, y0, x1 - x0, y1 - y0)
+
+    for y in range(CY - 30, CY + 26):                 # renfoncement du mur
+        for x in range(CX - 40, CX + 41):
+            e = max(abs(x - CX) / 40.0, abs(y - (CY - 2)) / 28.0)
+            if e > 1.0:
+                continue
+            if e > 0.93:
+                p.set(x, y, pal.lit("STONE", 0.34 + 0.22 * e))
+            else:
+                p.set(x, y, pal.lit("STONE", 0.88 + 0.09 * (1.0 - e)))
+
+    for i in range(9):                                # auvent raye
+        xa = CX - 38 + i * 9
+        for y in range(CY - 34, CY - 20):
+            sag = ((y - (CY - 34)) / 14.0) ** 2 * 3.0
+            for x in range(xa, xa + 9):
+                if not (CX - 40 <= x <= CX + 40):
+                    continue
+                if y - (CY - 34) > 11 - abs(x - CX) * 0.06 + sag * 0:
+                    continue
+                band = "CLOTHR" if i % 2 == 0 else "BONE"
+                t = 0.22 + 0.40 * ((y - (CY - 34)) / 14.0)
+                p.set(x, y, pal.lit(band, min(1.0, t)))
+    for x in range(CX - 40, CX + 41):                 # frange de l'auvent
+        p.set(x, CY - 20, pal.lit("WOOD", 0.30))
+
+    for y in range(CY + 4, CY + 26):                  # comptoir de chene
+        for x in range(CX - 36, CX + 37):
+            grain = 0.30 + 0.26 * ((x * 7 + y * 3) % 5) / 4.0
+            if y < CY + 8:                            # le plateau, eclaire
+                p.set(x, y, pal.lit("WOOD", 0.16 + 0.14 * ((x // 3) % 2)))
+            else:
+                p.set(x, y, pal.lit("WOOD", min(1.0, grain + 0.24)))
+
+    for i, (cx, r) in enumerate(((-24, 5), (-10, 4), (6, 6), (22, 4))):
+        mat = ("GOLD", "MAGIC", "IRON", "GOLD")[i]    # la marchandise
+        for y in range(CY + 4 - 2 * r, CY + 5):
+            for x in range(CX + cx - r, CX + cx + r + 1):
+                d = ((x - (CX + cx)) / float(r)) ** 2 + \
+                    ((y - (CY + 2 - r)) / float(r)) ** 2
+                if d <= 1.0:
+                    p.set(x, y, pal.lit(mat, 0.12 + 0.60 * d))
+
+    for y in range(CY - 18, CY - 4):                  # la lanterne du stand
+        for x in range(CX + 27, CX + 36):
+            d = ((x - (CX + 31)) / 4.0) ** 2 + ((y - (CY - 11)) / 6.0) ** 2
+            if d > 1.0:
+                continue
+            if d < 0.45:                              # la flamme dedans
+                p.set(x, y, pal.lit("FIRE", 0.10 + 0.55 * d))
+            else:                                     # sa monture de fer
+                p.set(x, y, pal.lit("IRON", 0.24 + 0.44 * d))
+    return p
+
+
+def make_trap():
+    """La dalle piegee, une fois reperee : une croix gravee a la craie
+    sur le dallage, juste devant le groupe. Elle ne se voit que quand
+    quelqu'un l'a vue -- avant, il n'y a rien a dessiner."""
+    x0, x1 = snap(CX - 40, CX + 40)
+    y0, y1 = CY + 24, CY + 54
+    p = Piece(x0, y0, x1 - x0, y1 - y0)
+    cy = CY + 38
+    for i in range(-16, 17):                          # deux traits croises
+        for w in (-1, 0, 1):
+            t = abs(i) / 16.0
+            col = pal.lit("BONE", 0.10 + 0.35 * t)
+            p.set(CX + i, cy + i // 2 + w, col)
+            p.set(CX + i, cy - i // 2 + w, col)
+    for i in range(-19, 20):                          # le liseré de la dalle
+        e = pal.lit("BONE", 0.62)
+        p.set(CX + i, cy - 11 + abs(i) // 4, e)
+        p.set(CX + i, cy + 11 - abs(i) // 4, e)
     return p
 
 
@@ -1151,6 +1236,10 @@ def build_art():
     pieces += [make_lever(s) for s in (0, 1)]
     ART_INDEX["ART_NICHE"] = len(pieces)
     pieces += [make_niche()]
+    ART_INDEX["ART_SHOP"] = len(pieces)
+    pieces += [make_shop()]
+    ART_INDEX["ART_TRAP"] = len(pieces)
+    pieces += [make_trap()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
     # Le portrait est dessine sur un carre de trente-deux, puis rogne :
     # le nom du heros prend toute la largeur du panneau au-dessus de
@@ -1176,6 +1265,8 @@ def build_art():
 MAPW = MAPH = 24
 FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
 LEVER, GATE = 7, 8                       # herse et son levier
+SHOP, TRAP = 9, 10                       # echoppe et dallage piege
+NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
 # Rencontres par niveau : indices dans MonTypes (gen_tables.py)
@@ -1348,6 +1439,47 @@ def build_level(level, seed):
         free.remove((x, y))
         gates += 1
 
+    # L'echoppe : un mur borde par un couloir, pres du depart pour qu'on
+    # puisse s'equiper avant de s'enfoncer, et jamais collee a l'escalier.
+    reach = distances(grid, start)
+    shop = None
+    for (cx, cy), d in sorted(reach.items(), key=lambda kv: kv[1]):
+        if not 3 <= d <= 9 or grid[cy][cx] != FLOOR:
+            continue
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = cx + dx, cy + dy
+            if not (0 < nx < MAPW - 1 and 0 < ny < MAPH - 1):
+                continue
+            if grid[ny][nx] != WALL or par[ny][nx]:
+                continue
+            if abs(nx - far[0]) + abs(ny - far[1]) < 3:
+                continue
+            shop = (nx, ny)
+            break
+        if shop:
+            break
+    if shop:
+        grid[shop[1]][shop[0]] = SHOP
+        if shop in free:
+            free.remove(shop)
+
+    # Les dalles piegees : sur du dallage nu, loin du depart, et jamais
+    # devant l'echoppe -- on doit pouvoir aller marchander sans sauter.
+    traps = 0
+    for x, y in list(free):
+        if traps >= 4 + 2 * level:
+            break
+        if grid[y][x] != FLOOR or par[y][x]:
+            continue
+        if reach.get((x, y), 0) < 4:
+            continue
+        if shop and abs(x - shop[0]) + abs(y - shop[1]) <= 1:
+            continue
+        grid[y][x] = TRAP
+        par[y][x] = rnd.randrange(NTRAPKINDS)
+        free.remove((x, y))
+        traps += 1
+
     # niches : un mur borde par un couloir, avec une offrande dedans
     niches = 0
     for y in range(1, MAPH - 1):
@@ -1395,7 +1527,7 @@ def distances(grid, start, blocked=()):
                 continue
             if (nx, ny) in blocked:
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE, SHOP):
                 continue
             dist[(nx, ny)] = dist[(x, y)] + 1
             q.append((nx, ny))
@@ -1419,7 +1551,7 @@ def check_solvable(grid, par, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER, SHOP):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
@@ -1443,7 +1575,7 @@ def check_solvable(grid, par, start):
                 # Une serrure ne coupe pas la route : le groupe a des
                 # cles. Seule la herse compte, c'est tout l'objet du
                 # controle.
-                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER):
+                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP):
                     continue
                 reach.add((nx, ny))
                 q.append((nx, ny))
@@ -1454,6 +1586,15 @@ def check_solvable(grid, par, start):
                 near = any((x + dx, y + dy) in reach
                            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
                 assert near, f"levier inatteignable en {x},{y}"
+    # L'echoppe doit se laisser aborder : un marchand qu'on ne peut pas
+    # voir ne vaut pas la peine d'etre pose.
+    for y in range(MAPH):
+        for x in range(MAPW):
+            if (grid[y][x] & 0x0f) != SHOP:
+                continue
+            near = any((x + dx, y + dy) in seen
+                       for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+            assert near, f"echoppe inatteignable en {x},{y}"
     return len(seen), keys, stairs
 
 
@@ -1470,7 +1611,7 @@ def check_reachable(grid, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
@@ -1533,12 +1674,11 @@ if __name__ == "__main__":
         f.write("; ajoute, d'ou leur generation plutot qu'une liste tenue a\n")
         f.write("; la main dans le source.\n")
         f.write(";----------------------------------------------------------\n\n")
-        for k in ("ART_BG", "ART_FRONT", "ART_LEFT", "ART_RIGHT", "ART_DOOR",
-                  "ART_MONSTER", "ART_FRONTL", "ART_FRONTR", "ART_OUTERL",
-                  "ART_OUTERR", "ART_TITLE", "ART_GATE", "ART_LEVER",
-                  "ART_NICHE",
-                  "ART_PORTRAIT", "ART_ICON"):
-            f.write(f"{k}\t= {ART_INDEX[k]}\n")
+        # On sort tout ce que build_art a nomme, dans l'ordre ou il l'a
+        # pose. Cette liste etait tenue a la main, et le premier morceau
+        # ajoute ensuite n'est jamais arrive jusqu'au source.
+        for k, v in ART_INDEX.items():
+            f.write(f"{k}\t= {v}\n")
         f.write(f"NMONSTERART\t= {NMONSTERART}\n")
     maps, levels = build_maps()
     open(os.path.join(ROOT, "data", "dgnmap.bin"), "wb").write(maps)

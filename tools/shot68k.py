@@ -119,7 +119,33 @@ if __name__ == "__main__":
     g.key(0x19)                           # P : les reglages
     shoot(g, "reglages")
     g.key(0x19)
-    import play_game as P                 # marcher jusqu'a un monstre
+    import play_game as P                 # d'abord l'echoppe, puis un monstre
+    grid = P.terrain(g)
+    shops = P.find(grid, P.T_SHOP)
+    if shops:
+        sx, sy = shops[0]
+        spot = next(((sx + dx, sy + dy) for dx, dy in P.DIRS
+                     if 0 <= sx + dx < P.MAPW and 0 <= sy + dy < P.MAPH
+                     and P.passable(grid[sy + dy][sx + dx])), None)
+        def settle(gg):                   # un monstre en chemin se regle
+            for _ in range(40):
+                if not gg.w("InCombat") or gg.w("GameOver"):
+                    break
+                gg.key(T.K_A)
+
+        if spot and P.goto(g, spot, on_combat=settle):
+            P.face(g, P.DIRS.index((sx - spot[0], sy - spot[1])), [])
+            g.setw("Gold", 260)           # de quoi que l'etal ait du sens
+            g.setw("NeedRedraw", 1)
+            shoot(g, "echoppe-vue")       # l'etal, vu du couloir
+            g.key(T.K_SPACE)
+            if g.w("UiMode") == 8:
+                shoot(g, "echoppe")
+                g.key(T.K_TAB)
+                shoot(g, "echoppe-vente")
+                g.key(T.K_ESC)
+    while g.w("InCombat") and not g.w("GameOver"):
+        g.key(T.K_A)
     grid = P.terrain(g)
     path = P.bfs(grid, (g.w("PosX"), g.w("PosY")),
                  lambda c: c & 0x30 == 0x20)

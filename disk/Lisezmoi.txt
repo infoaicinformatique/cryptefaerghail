@@ -37,7 +37,8 @@ CREATION DU GROUPE
 COMMANDES
   Fleches haut/bas      avancer, reculer
   Fleches gauche/droite tourner
-  ESPACE                ouvrir une porte, fouiller une niche
+  ESPACE                ouvrir une porte, fouiller une niche,
+                        entrer a l'echoppe, desamorcer un piege
   C                     fiche d'aventure du heros courant
   I                     sac a dos
   M                     carte du niveau, telle que vous l'avez parcouru
@@ -63,6 +64,34 @@ LEVIERS ET HERSES
   face a lui et pressez ESPACE. Un levier peut se remettre en place, et
   la herse retombe. La carte montre les herses fermees en gris de fer
   et les leviers en laiton.
+
+L'ECHOPPE
+  Un marchand par etage, scelle dans un mur comme une niche, jamais
+  loin du depart. Mettez-vous face a son etal et pressez ESPACE. Huit
+  articles choisis pour l'etage, au prix de l'objet ; TAB passe de
+  l'autre cote du comptoir, ou il rachete votre butin a moitie prix.
+  Les fleches choisissent la ligne, ENTREE conclut, ESC vous fait
+  sortir. Ce que vous lui achetez, il ne l'a plus : l'etal est garde
+  dans la partie sauvee.
+
+  C'est le seul emploi de l'or. Ramassez-en.
+
+LES DALLES PIEGEES
+  Quatre au premier etage, huit au dernier, et rien ne les distingue du
+  dallage. En marchant dessus, chacun de vos aventuriers debout a une
+  chance de la voir a temps -- le roublard bien plus que les autres.
+  Reperee, elle porte une croix a la craie et le groupe s'arrete net :
+  pressez ESPACE pour la desamorcer, avec le heros que vous aurez
+  choisi. Reussi, tout le monde y gagne de l'experience. Rate de peu,
+  la main tremble et vous pouvez recommencer ; rate de loin, elle vous
+  saute au visage.
+
+  Non reperee, elle se detend : dards, lame de faux, fosse a pieux ou
+  nuage acide, un de de degats par etage plus un, moitie moins pour qui
+  reussit sa sauvegarde. Un ressort ne sert qu'une fois.
+
+  Rien n'oblige a desamorcer : on peut toujours enjamber une dalle
+  reperee, en sachant ce qu'on fait.
 
 LES PORTRAITS
   Un visage par classe, dessine en trente-deux pixels de cote : le

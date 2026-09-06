@@ -34,7 +34,9 @@ def party(g):
         pos=(g.w("PosX"), g.w("PosY"), g.w("Dir")),
         niveau=g.w("Level"), or_=g.w("Gold"), cles=g.w("KeyCount"),
         vues=sum(g.mem.r8(seen + i) for i in range(576)),
-        carte=[g.mem.r8(g.addr("MapTerrain") + i) for i in range(576)])
+        carte=[g.mem.r8(g.addr("MapTerrain") + i) for i in range(576)],
+        param=[g.mem.r8(g.addr("MapParam") + i) for i in range(576)],
+        etal=[g.mem.r8(g.addr("ShopStock") + i) for i in range(8)])
 
 
 if __name__ == "__main__":
@@ -70,12 +72,18 @@ if __name__ == "__main__":
             break
         while g.w("InCombat") and not g.w("GameOver"):
             g.key(T.K_A)
+    stock = g.addr("ShopStock")           # une piece vendue doit le rester
+    g.mem.w8(stock + 0, 0)
+    g.mem.w8(stock + 3, 0)
     g.key(T.K_ESC)                        # deux ESC : on abandonne
     g.key(T.K_ESC)
     avant = party(g)
+    if avant["etal"].count(0) < 2:
+        fails.append("l'etal vide ne part pas dans la sauvegarde")
     taille = os.path.getsize(os.path.join(SAVEDIR, "AGACrawl.sav"))
     print(f"  sauvegarde de {taille} octets, position {avant['pos']}, "
-          f"or {avant['or_']}, {avant['vues']} cases relevees")
+          f"or {avant['or_']}, {avant['vues']} cases relevees, "
+          f"etal {8 - avant['etal'].count(0)}/8")
 
     print("--- on relance le jeu ---")
     h = T.Game()
@@ -87,7 +95,7 @@ if __name__ == "__main__":
     else:
         apres = party(h)
         for cle in ("heros", "sac", "pos", "niveau", "or_", "cles",
-                    "vues", "carte"):
+                    "vues", "carte", "param", "etal"):
             if apres[cle] != avant[cle]:
                 fails.append(f"{cle} n'est pas restaure")
         print(f"  reprise : {apres['pos']}, or {apres['or_']}, "

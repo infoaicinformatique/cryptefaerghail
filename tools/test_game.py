@@ -165,6 +165,7 @@ class Game(R.Harness):
 MAPH = 24
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
 T_WALL, T_NICHE, T_LEVER, T_GATE = 1, 5, 7, 8
+T_SHOP, T_TRAP = 9, 10
 C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
 
 
@@ -201,7 +202,7 @@ def walk_towards(g, want, budget=60):
                 if not (0 <= nxt[0] < MAPW and 0 <= nxt[1] < MAPH):
                     continue
                 t = grid[nxt[1]][nxt[0]] & 0x0f
-                if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE):
+                if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP):
                     continue
                 seen[nxt] = cur
                 q.append(nxt)
@@ -241,6 +242,249 @@ def create_party(g, classes=(0, 6, 1, 5)):
         g.key(K_RET)                     # garder les caracteristiques
         g.key(K_RET)                     # garder le nom propose
     return g.w("Phase")
+
+
+def face_cell(g, target):
+    """Tourne le groupe vers une case voisine."""
+    d = (target[0] - g.w("PosX"), target[1] - g.w("PosY"))
+    if d not in DIRS:
+        return False
+    for _ in range(4):
+        if g.w("Dir") == DIRS.index(d):
+            return True
+        g.key(K_RIGHT)
+    return False
+
+
+def shop_test(g, fails):
+    """Aller au marchand, acheter, revendre, et verifier la bourse.
+
+    C'est le seul emploi de l'or dans le jeu : s'il se casse, le joueur
+    amasse des pieces pour rien et rien ne le signale."""
+    grid = grid_of(g)
+    shops = [(x, y) for y in range(MAPH) for x in range(MAPW)
+             if grid[y][x] & 0x0f == T_SHOP]
+    if not check(shops, "aucune echoppe sur cet etage", fails):
+        return
+    sx, sy = shops[0]
+    spot = [(sx + dx, sy + dy) for dx, dy in DIRS
+            if 0 <= sx + dx < MAPW and 0 <= sy + dy < MAPH
+            and grid[sy + dy][sx + dx] & 0x0f not in
+            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP)]
+    if not check(spot, f"echoppe murée en {sx},{sy}", fails):
+        return
+    if not walk_to(g, spot[0]):
+        fails.append(f"impossible d'atteindre l'echoppe en {spot[0]}")
+        return
+    if not check(face_cell(g, (sx, sy)), "impossible de faire face a l'echoppe",
+                 fails):
+        return
+    g.key(K_SPACE)
+    ui = g.w("UiMode")
+    if not check(ui == 8, f"l'echoppe ne s'ouvre pas (UiMode={ui})", fails):
+        return
+
+    g.setw("Gold", 500)                   # de quoi conclure une affaire
+    g.setw("NeedRedraw", 1)
+    stock = g.addr("ShopStock")
+    before = [g.mem.r8(stock + i) for i in range(8)]
+    check(any(before), "l'etal du marchand est vide", fails)
+    line = next(i for i, v in enumerate(before) if v)
+    g.setw("ShopCursor", line)
+    gold0, bag0 = g.w("Gold"), inv_used(g)
+    g.key(K_RET)                          # acheter
+    after = [g.mem.r8(stock + i) for i in range(8)]
+    check(after[line] == 0, "l'objet achete reste sur l'etal", fails)
+    check(g.w("Gold") < gold0, f"l'achat ne coute rien ({gold0} -> "
+          f"{g.w('Gold')})", fails)
+    check(inv_used(g) == bag0 + 1, "l'objet achete n'arrive pas dans le sac",
+          fails)
+    print(f"  achat : or {gold0} -> {g.w('Gold')}, sac {bag0} -> {inv_used(g)}")
+
+    g.key(K_TAB)                          # passer a la vente
+    check(g.w("ShopMode") == 1, "TAB ne change pas de cote du comptoir", fails)
+    g.setw("ShopCursor", 0)
+    gold1, bag1 = g.w("Gold"), inv_used(g)
+    g.key(K_RET)
+    check(g.w("Gold") > gold1, f"la vente ne rapporte rien ({gold1} -> "
+          f"{g.w('Gold')})", fails)
+    check(inv_used(g) == bag1 - 1, "l'objet vendu reste dans le sac", fails)
+    print(f"  vente : or {gold1} -> {g.w('Gold')}, sac {bag1} -> {inv_used(g)}")
+
+    g.setw("Gold", 0)                     # sans le sou, on n'achete rien
+    g.key(K_TAB)
+    g.setw("ShopCursor", next(i for i, v in enumerate(
+        [g.mem.r8(stock + i) for i in range(8)]) if v))
+    bag2 = inv_used(g)
+    g.key(K_RET)
+    check(g.sw("Gold") == 0, f"l'or passe sous zero : {g.sw('Gold')}", fails)
+    check(inv_used(g) == bag2, "un objet arrive sans etre paye", fails)
+    print("  sans le sou : le marchand ne cede rien")
+    g.key(K_ESC)
+    check(g.w("UiMode") == 0, "l'echoppe ne se referme pas", fails)
+
+
+def trap_test(g, fails):
+    """Marcher jusqu'a un piege et voir ce qu'il fait."""
+    grid = grid_of(g)
+    traps = [(x, y) for y in range(MAPH) for x in range(MAPW)
+             if grid[y][x] & 0x0f == T_TRAP]
+    if not check(traps, "aucun piege sur cet etage", fails):
+        return
+    print(f"  {len(traps)} dalles piegees sur l'etage")
+    hp0 = sum(g.hero(i, "hr_Hp") for i in range(4))
+    sprung = spotted = disarmed = 0
+    for tx, ty in traps:
+        if g.w("GameOver") or spotted + sprung >= 6:
+            break
+        grid = grid_of(g)
+        if grid[ty][tx] & 0x0f != T_TRAP:
+            continue
+        spot = [(tx + dx, ty + dy) for dx, dy in DIRS
+                if 0 <= tx + dx < MAPW and 0 <= ty + dy < MAPH
+                and grid[ty + dy][tx + dx] & 0x0f not in
+                (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_TRAP)]
+        if not spot or not walk_to(g, spot[0]):
+            continue
+        if not face_cell(g, (tx, ty)):
+            continue
+        heal(g)                           # on veut voir le piege, pas mourir
+        before = (g.w("PosX"), g.w("PosY"))
+        hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+        g.key(K_UP)                       # marcher dessus
+        par = g.mem.r8(g.addr("MapParam") + ty * MAPW + tx)
+        now = grid_of(g)[ty][tx] & 0x0f
+        moved = (g.w("PosX"), g.w("PosY")) != before
+        if now == T_TRAP:
+            # Repere a temps : la dalle reste armee, marquee, et le
+            # groupe s'arrete devant.
+            spotted += 1
+            check(par & 0x80, "le piege reste arme sans etre marque", fails)
+            check(not moved, "le piege est repere et le groupe avance quand"
+                  " meme", fails)
+            check(sum(g.hero(i, "hr_Hp") for i in range(4)) == hpa,
+                  "un piege repere blesse quand meme", fails)
+            g.key(K_SPACE)                # tenter le desamorcage
+            if grid_of(g)[ty][tx] & 0x0f != T_TRAP:
+                disarmed += 1
+        else:
+            # Detendu : la dalle redevient du sol et le groupe est dessus.
+            sprung += 1
+            check(moved, "le piege se detend mais le groupe n'avance pas",
+                  fails)
+            check(g.mem.r8(g.addr("MapParam") + ty * MAPW + tx) == 0,
+                  "un piege detendu garde son parametre", fails)
+        for i in range(4):
+            hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
+            if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
+                return
+    hp1 = sum(g.hero(i, "hr_Hp") for i in range(4))
+    print(f"  {spotted} reperes ({disarmed} desamorces), {sprung} declenches, "
+          f"PV du groupe {hp0} -> {hp1}")
+    check(spotted + sprung > 0, "aucun piege n'a pu etre approche", fails)
+    check(spotted > 0, "aucun piege n'est jamais repere : le jet de detection"
+          " ne sert a rien", fails)
+
+    # Le declenchement se couvre a part : a difficulte moderee la
+    # detection l'emporte presque toujours, et la moitie du mecanisme
+    # ne serait jamais eprouvee. Enjamber sciemment une dalle reperee
+    # est un vrai chemin du jeu, et il passe par SpringTrap.
+    grid = grid_of(g)
+    rest = [(x, y) for y in range(MAPH) for x in range(MAPW)
+            if grid[y][x] & 0x0f == T_TRAP]
+    for tx, ty in rest:
+        spot = [(tx + dx, ty + dy) for dx, dy in DIRS
+                if 0 <= tx + dx < MAPW and 0 <= ty + dy < MAPH
+                and grid[ty + dy][tx + dx] & 0x0f not in
+                (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_TRAP)]
+        if not spot or not walk_to(g, spot[0]) or not face_cell(g, (tx, ty)):
+            continue
+        heal(g)
+        par = g.addr("MapParam") + ty * MAPW + tx
+        g.mem.w8(par, g.mem.r8(par) | 0x80)     # le groupe sait, et y va
+        hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+        g.key(K_UP)
+        now = grid_of(g)[ty][tx] & 0x0f
+        hpb = sum(g.hero(i, "hr_Hp") for i in range(4))
+        check(now != T_TRAP, "on enjambe une dalle reperee et elle reste"
+              " armee", fails)
+        check((g.w("PosX"), g.w("PosY")) == (tx, ty),
+              "la dalle se detend mais le groupe reste en arriere", fails)
+        check(hpb <= hpa, f"le piege rend des points de vie ({hpa} -> {hpb})",
+              fails)
+        print(f"  dalle enjambee sciemment : elle se detend, "
+              f"PV {hpa} -> {hpb}")
+        break
+    else:
+        check(False, "aucune dalle n'a pu etre enjambee sciemment", fails)
+
+
+def heal(g):
+    """Remet le groupe d'aplomb, pour eprouver un piege et non l'usure."""
+    for i in range(4):
+        base = g.addr("Heroes") + i * HR["hr_SIZEOF"]
+        g.mem.w16(base + HR["hr_Hp"], g.hero(i, "hr_HpMax"))
+
+
+def inv_used(g):
+    base = g.addr("Inventory")
+    return sum(1 for i in range(24) if g.mem.r8(base + i))
+
+
+def walk_to(g, target, budget=80):
+    """Marche jusqu'a une case precise, en reglant les combats croises."""
+    for _ in range(budget):
+        here = (g.w("PosX"), g.w("PosY"))
+        if here == target:
+            return True
+        if g.w("InCombat"):
+            for _ in range(40):
+                if not g.w("InCombat"):
+                    break
+                g.key(K_A)
+            if g.w("GameOver"):
+                return False
+            continue
+        grid = grid_of(g)
+        seen, q, path = {here: None}, collections.deque([here]), None
+        while q:
+            cur = q.popleft()
+            if cur == target:
+                path = []
+                while cur:
+                    path.append(cur)
+                    cur = seen[cur]
+                path.reverse()
+                break
+            for dx, dy in DIRS:
+                nxt = (cur[0] + dx, cur[1] + dy)
+                if not (0 <= nxt[0] < MAPW and 0 <= nxt[1] < MAPH):
+                    continue
+                t = grid[nxt[1]][nxt[0]] & 0x0f
+                if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE,
+                                        T_SHOP, T_TRAP):
+                    continue                 # les pieges se testent a part
+                seen[nxt] = cur
+                q.append(nxt)
+        if not path or len(path) < 2:
+            return False
+        step = path[1]
+        if not face_cell(g, step):
+            return False
+        g.key(K_UP)
+        if (g.w("PosX"), g.w("PosY")) == here:
+            g.key(K_SPACE)                # porte ou enigme
+            if g.w("UiMode") == 4:
+                for answer in range(3):
+                    g.key(K_1 + answer)
+                    if g.w("UiMode") != 4:
+                        break
+                else:
+                    g.key(K_ESC)
+            g.key(K_UP)
+            if (g.w("PosX"), g.w("PosY")) == here:
+                return False
+    return False
 
 
 def check(cond, msg, fails):
@@ -315,6 +559,12 @@ if __name__ == "__main__":
     check(rounds == 0 or g.hero(0, "hr_Xp") > 0 or g.w("GameOver"),
           "des combats sans le moindre point d" + chr(39) + "experience", fails)
 
+    print("--- l'echoppe ---")
+    shop_test(g, fails)
+
+    print("--- les pieges ---")
+    trap_test(g, fails)
+
     print("--- fuzzing clavier ---")
     allkeys = [K_UP, K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_A, K_S, K_F, K_I,
                K_C, K_E, K_U, K_D, K_TAB, K_RET, K_M_QW, K_M_AZ,
@@ -323,7 +573,7 @@ if __name__ == "__main__":
     for n in range(800):
         g.key(random.choice(allkeys))
         ui, phase = g.w("UiMode"), g.w("Phase")
-        if not check(ui <= 7, f"UiMode={ui}", fails):
+        if not check(ui <= 8, f"UiMode={ui}", fails):
             break
         if not check(phase <= 2, f"Phase={phase}", fails):
             break

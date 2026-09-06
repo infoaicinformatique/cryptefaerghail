@@ -20,7 +20,7 @@ import shot68k as S
 
 SCRW = 320
 VIEW = (16, 16, 208, 152)                # ce que le fond du donjon repeint
-FRAME = (8, 8, 216, 160)                 # le cadre dessine autour
+FRAME = (11, 11, 213, 157)               # bord interieur du cadre cisele
 
 
 def outside(px):

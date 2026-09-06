@@ -16,11 +16,12 @@
 ;----------------------------------------------------------------------
 
 	include	"hardware.i"
+	include	"dgncol.i"		; noms des gammes de la palette
 
 SCRW		= 320
 SCRH		= 256
 SCRBPL		= 40
-DEPTH		= 4
+DEPTH		= 8			; AGA : huit bitplanes, 256 couleurs
 PLANESIZE	= SCRBPL*SCRH
 SCRSIZE		= PLANESIZE*DEPTH
 
@@ -38,6 +39,8 @@ T_STAIRS	= 3
 T_LOCKED	= 4
 T_NICHE		= 5
 T_RUNE		= 6
+T_LEVER		= 7			; levier scelle dans un mur
+T_GATE		= 8			; herse commandee par un levier
 ; --- contenu, quartet haut ---
 C_CHEST		= $10
 C_MONSTER	= $20
@@ -201,7 +204,7 @@ LOG_Y		= 160
 LOG_H		= 96
 LOGLINES	= 4
 LOGWIDTH	= 36
-COPSIZE		= 512
+COPSIZE		= 2600			; 8 banques de palette + pointeurs + fin
 
 ;======================================================================
 	SECTION	crawl,CODE
@@ -415,7 +418,7 @@ InitScreen:
 	move.w	#FMODE,(a2)+
 	move.w	#$0000,(a2)+
 	move.w	#BPLCON0,(a2)+
-	move.w	#$4201,(a2)+		; 4 plans, COLOR, ECSENA
+	move.w	#$0211,(a2)+		; BPU3 = 8 plans, COLOR, ECSENA
 	move.w	#BPLCON1,(a2)+
 	move.w	#$0000,(a2)+
 	move.w	#BPLCON2,(a2)+
@@ -449,30 +452,41 @@ InitScreen:
 	addq.w	#2,d1
 	dbf	d2,.bplLoop
 
+	; --- 256 couleurs : huit banques de trente-deux, chacune ecrite
+	; deux fois, quartets hauts puis quartets bas (LOCT).
 	lea	DgnPalette,a3
+	moveq	#0,d3			; numero de banque
+.bankLoop:
+	move.w	d3,d4
+	lsl.w	#8,d4
+	lsl.w	#5,d4			; BANK dans les bits 15-13
 	move.w	#BPLCON3,(a2)+
-	move.w	#$0000,(a2)+
+	move.w	d4,(a2)+
 	move.w	#COLOR00,d1
-	moveq	#15,d2
+	moveq	#31,d2
 .hiLoop:
 	move.w	d1,(a2)+
 	move.w	(a3),(a2)+
 	addq.l	#4,a3
 	addq.w	#2,d1
 	dbf	d2,.hiLoop
-	lea	DgnPalette+2,a3
+	sub.l	#32*4,a3		; on relit la meme banque
 	move.w	#BPLCON3,(a2)+
-	move.w	#$0200,(a2)+
+	or.w	#$0200,d4
+	move.w	d4,(a2)+
 	move.w	#COLOR00,d1
-	moveq	#15,d2
+	moveq	#31,d2
 .loLoop:
 	move.w	d1,(a2)+
-	move.w	(a3),(a2)+
+	move.w	2(a3),(a2)+
 	addq.l	#4,a3
 	addq.w	#2,d1
 	dbf	d2,.loLoop
+	addq.w	#1,d3
+	cmp.w	#8,d3
+	blt.s	.bankLoop
 	move.w	#BPLCON3,(a2)+
-	move.w	#$0000,(a2)+
+	move.w	#$0000,(a2)+		; retour banque 0, LOCT = 0
 	move.l	#$fffffffe,(a2)+
 
 	bsr	SetBplPtrs
@@ -653,7 +667,8 @@ HLine:
 	lsr.w	#3,d5
 	add.w	d5,d4
 	add.l	d4,a2
-	lsr.w	#3,d2
+	lsr.w	#3,d2			; largeur en octets
+	beq	.tooThin		; moins d'un octet : rien a tracer
 	moveq	#0,d5
 .planeLoop:
 	move.l	a2,a0
@@ -673,6 +688,7 @@ HLine:
 	addq.w	#1,d5
 	cmp.w	#DEPTH,d5
 	blt.s	.planeLoop
+.tooThin:
 	movem.l	(sp)+,d0-d7/a0-a2
 	rts
 
@@ -715,6 +731,108 @@ VLine:
 	rts
 
 ; DrawBox : d0 = x, d1 = y, d2 = largeur, d3 = hauteur, d4 = couleur
+; DrawFrame : un cadre de bronze biseaute, d0,d1 = coin, d2,d3 = taille.
+; Trois traits -- ombre exterieure, corps du bronze, arete eclairee en
+; haut et a gauche -- et un clou a chaque angle. En 256 couleurs le
+; relief se lit tout seul, la ou un trait unique restait plat.
+DrawFrame:
+	movem.l	d0-d4,-(sp)
+	subq.w	#1,d0			; ombre portee, un pixel dehors
+	subq.w	#1,d1
+	addq.w	#2,d2
+	addq.w	#2,d3
+	move.w	#C_FRAMEDK,d4
+	bsr	DrawBox
+	movem.l	(sp),d0-d4		; le corps du cadre
+	move.w	#C_FRAME,d4
+	bsr	DrawBox
+	movem.l	(sp),d0-d4		; arete eclairee : le haut
+	addq.w	#1,d0
+	addq.w	#1,d1
+	subq.w	#2,d2
+	move.w	#C_FRAMELIT,d3
+	bsr	HLine
+	movem.l	(sp),d0-d4		; arete eclairee : la gauche
+	addq.w	#1,d0
+	addq.w	#1,d1
+	subq.w	#2,d3
+	move.w	d3,d2
+	move.w	#C_FRAMELIT,d3
+	bsr	VLine
+	movem.l	(sp),d0-d4		; les quatre clous
+	bsr	DrawStud
+	movem.l	(sp),d0-d4
+	add.w	d2,d0
+	subq.w	#4,d0
+	bsr	DrawStud
+	movem.l	(sp),d0-d4
+	add.w	d3,d1
+	subq.w	#4,d1
+	bsr	DrawStud
+	movem.l	(sp),d0-d4
+	add.w	d2,d0
+	subq.w	#4,d0
+	add.w	d3,d1
+	subq.w	#4,d1
+	bsr	DrawStud
+	movem.l	(sp)+,d0-d4
+	rts
+
+; DrawStud : un clou de trois pixels sur trois, d0,d1 = coin.
+; On passe par VLine, seul trait au pixel pres : HLine travaille a
+; l'octet et ne saurait pas dessiner trois pixels de large.
+DrawStud:
+	movem.l	d0-d4,-(sp)
+	moveq	#3,d2
+	move.w	#C_FRAMELIT,d3
+	bsr	VLine
+	movem.l	(sp),d0-d4
+	addq.w	#1,d0
+	moveq	#3,d2
+	move.w	#C_GOLD+N_GOLD-2,d3
+	bsr	VLine
+	movem.l	(sp),d0-d4
+	addq.w	#2,d0
+	moveq	#3,d2
+	move.w	#C_FRAMEDK,d3
+	bsr	VLine
+	movem.l	(sp)+,d0-d4
+	rts
+
+; DrawGauge : une jauge de trois pixels de haut, au pixel pres.
+;   d0 = x, d1 = y, d2 = largeur, d3 = valeur, d4 = maximum,
+;   d5 = couleur de la part remplie ; le creux reste sombre.
+DrawGauge:
+	movem.l	d0-d7,-(sp)
+	moveq	#0,d6			; nombre de pixels remplis
+	tst.w	d4
+	beq.s	.haveN
+	tst.w	d3
+	ble.s	.haveN
+	move.w	d3,d6
+	mulu.w	d2,d6
+	divu.w	d4,d6
+	and.l	#$0000ffff,d6
+.haveN:
+	move.w	d2,d7
+	subq.w	#1,d7
+	moveq	#0,d2			; colonne courante
+.colLoop:
+	movem.l	d0-d7,-(sp)
+	move.w	d5,d3
+	cmp.w	d6,d2
+	blt.s	.filled
+	move.w	#C_FRAMEDK,d3		; le creux de la jauge
+.filled:
+	add.w	d2,d0
+	moveq	#3,d2
+	bsr	VLine
+	movem.l	(sp)+,d0-d7
+	addq.w	#1,d2
+	dbf	d7,.colLoop
+	movem.l	(sp)+,d0-d7
+	rts
+
 DrawBox:
 	movem.l	d0-d4,-(sp)
 	move.l	d4,d5
@@ -768,17 +886,28 @@ DrawText:
 	moveq	#0,d5
 	move.l	a3,a2
 .planeLoop:
+	moveq	#0,d3			; $ff si ce plan porte la couleur
 	btst	d5,d2
-	beq.s	.planeNext
+	beq.s	.planeZero
+	moveq	#-1,d3
+.planeZero:
 	moveq	#7,d6
 	move.l	a2,a4
 	move.l	a1,a5
 .rowLoop:
-	move.b	(a5)+,d7
-	or.b	d7,(a4)
+	; Le texte etait pose au OU : il ne rendait juste que sur du noir,
+	; et virait de couleur des qu'un fond passait dessous. On efface
+	; donc le pave du caractere avant d'y poser le glyphe.
+	move.b	(a5)+,d4		; bits du glyphe
+	move.b	(a4),d7
+	move.b	d4,d0
+	not.b	d0
+	and.b	d0,d7			; trou a la forme du caractere
+	and.b	d3,d4			; le glyphe, si le plan est allume
+	or.b	d4,d7
+	move.b	d7,(a4)
 	lea	SCRBPL(a4),a4
 	dbf	d6,.rowLoop
-.planeNext:
 	lea	PLANESIZE(a2),a2
 	addq.w	#1,d5
 	cmp.w	#DEPTH,d5
@@ -997,6 +1126,10 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_RUNE,d2
 	beq.s	.yes
+	cmp.w	#T_LEVER,d2
+	beq.s	.yes
+	cmp.w	#T_GATE,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1117,7 +1250,18 @@ DrawScene:
 	cmp.w	#T_LOCKED,d4
 	beq.s	.asDoor
 	cmp.w	#T_RUNE,d4
+	beq.s	.asDoor
+	cmp.w	#T_GATE,d4
 	bne.s	.stone
+	cmp.w	#4,d7			; herse : barreaux, le couloir se voit
+	bge.s	.stone
+	move.w	d7,d0
+	add.w	#ART_FRONT-1,d0		; le mur du fond, puis les barreaux
+	moveq	#0,d1
+	bsr	BlitPiece
+	move.w	d7,d0
+	add.w	#ART_GATE-1,d0
+	bra.s	.blitFront
 .asDoor:
 	cmp.w	#4,d7
 	bge.s	.stone
@@ -1130,11 +1274,26 @@ DrawScene:
 .blitFront:
 	moveq	#0,d1
 	bsr	BlitPiece
-	cmp.w	#T_NICHE,d4		; une niche se voit de pres
+	cmp.w	#1,d7			; les details ne se voient que de pres
 	bne.s	.noFront
-	cmp.w	#1,d7
-	bne.s	.noFront
+	cmp.w	#T_NICHE,d4
+	bne.s	.notNicheArt
 	moveq	#ART_NICHE,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	bra.s	.noFront
+.notNicheArt:
+	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
+	bne.s	.noFront
+	move.w	d7,d2
+	bsr	CellAhead
+	bsr	MapGetParam
+	moveq	#ART_LEVER,d1
+	btst	#7,d0
+	beq.s	.leverArt
+	addq.w	#1,d1
+.leverArt:
+	move.w	d1,d0
 	moveq	#0,d1
 	bsr	BlitPiece
 .noFront:
@@ -1238,13 +1397,13 @@ Redraw:
 	moveq	#8,d1
 	move.w	#PANEL_W,d2
 	move.w	#152,d3
-	moveq	#0,d4
+	move.w	#C_PANEL,d4
 	bsr	FillRect
 	moveq	#0,d0
 	move.w	#LOG_Y,d1
 	move.w	#SCRW,d2
 	move.w	#LOG_H,d3
-	moveq	#0,d4
+	move.w	#C_PANEL,d4
 	bsr	FillRect
 
 	bsr	DrawScene
@@ -1254,20 +1413,17 @@ Redraw:
 	moveq	#8,d1
 	move.w	#208,d2
 	move.w	#152,d3
-	moveq	#6,d4
-	bsr	DrawBox
+	bsr	DrawFrame
 	move.w	#PANEL_X,d0
 	moveq	#8,d1
 	move.w	#88,d2
 	move.w	#152,d3
-	moveq	#6,d4
-	bsr	DrawBox
+	bsr	DrawFrame
 	moveq	#8,d0
 	move.w	#164,d1
 	move.w	#304,d2
 	move.w	#88,d3
-	moveq	#6,d4
-	bsr	DrawBox
+	bsr	DrawFrame
 
 	bsr	DrawParty
 	bsr	MusicPoll
@@ -1293,7 +1449,7 @@ DrawParty:
 	lea	TxtEmptySlot,a0
 	move.w	#29,d0
 	move.w	d5,d1
-	moveq	#5,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	bra	.heroNext
 .exists:
@@ -1308,14 +1464,14 @@ DrawParty:
 	move.l	a6,a0			; nom
 	move.w	#32,d0
 	move.w	d5,d1
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 	tst.w	hr_Hp(a6)
 	bne.s	.alive
-	moveq	#5,d2
+	move.w	#C_TEXTLOW,d2		; a terre : le nom s'eteint
 .alive:
 	cmp.w	SelHero,d7
 	bne.s	.notSel
-	moveq	#14,d2			; heros selectionne : en or
+	move.w	#C_HILITE,d2		; heros selectionne : en or
 .notSel:
 	bsr	DrawText
 
@@ -1331,15 +1487,27 @@ DrawParty:
 	lea	TmpStr,a0
 	move.w	#32,d0
 	move.w	d5,d1
-	add.w	#10,d1
-	moveq	#12,d2
+	addq.w	#8,d1
+	move.w	#C_HEALTH,d2
 	move.w	hr_Hp(a6),d3
 	add.w	d3,d3
 	cmp.w	hr_HpMax(a6),d3
 	bge.s	.hpOk
-	moveq	#15,d2
+	move.w	#C_ALERT,d2
 .hpOk:
+	move.w	d2,d6			; on garde la teinte pour la jauge
 	bsr	DrawText
+
+	movem.l	d5-d6,-(sp)		; d5 porte la ligne du bloc
+	move.w	#256,d0			; jauge de vie, sous le compte
+	move.w	d5,d1
+	add.w	#17,d1
+	moveq	#48,d2
+	move.w	hr_Hp(a6),d3
+	move.w	hr_HpMax(a6),d4
+	move.w	d6,d5
+	bsr	DrawGauge
+	movem.l	(sp)+,d5-d6
 
 	tst.w	hr_MpMax(a6)		; points de magie, si la classe en a
 	beq.s	.noMp
@@ -1355,9 +1523,20 @@ DrawParty:
 	lea	TmpStr,a0
 	move.w	#32,d0
 	move.w	d5,d1
-	add.w	#20,d1
-	moveq	#9,d2
+	add.w	#22,d1
+	move.w	#C_MANA,d2
 	bsr	DrawText
+
+	movem.l	d5-d6,-(sp)		; jauge de magie
+	move.w	#256,d0
+	move.w	d5,d1
+	add.w	#31,d1
+	moveq	#48,d2
+	move.w	hr_Mp(a6),d3
+	move.w	hr_MpMax(a6),d4
+	move.w	#C_MANA,d5
+	bsr	DrawGauge
+	movem.l	(sp)+,d5-d6
 	bra.s	.heroNext
 .noMp:
 	lea	TmpStr,a1
@@ -1369,8 +1548,8 @@ DrawParty:
 	lea	TmpStr,a0
 	move.w	#32,d0
 	move.w	d5,d1
-	add.w	#20,d1
-	moveq	#2,d2
+	add.w	#22,d1
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 .heroNext:
 	lea	hr_SIZEOF(a6),a6
@@ -1390,10 +1569,10 @@ DrawLog:
 	move.w	d7,d1
 	mulu.w	#12,d1
 	add.w	#172,d1
-	moveq	#2,d2
+	move.w	#C_TEXTDIM,d2
 	cmp.w	#LOGLINES-1,d7
 	bne.s	.old
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 .old:
 	bsr	DrawText
 	lea	LOGWIDTH+2(a6),a6
@@ -1410,7 +1589,7 @@ DrawStatus:
 	lea	TxtCreateTitle,a0
 	move.w	#2,d0
 	move.w	#224,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 	lea	TxtHelpCreate,a0
 	bra	.help
@@ -1433,7 +1612,7 @@ DrawStatus:
 	lea	TmpStr,a0
 	move.w	#2,d0
 	move.w	#224,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	move.w	UiMode,d0
@@ -1470,7 +1649,7 @@ DrawStatus:
 .help:
 	move.w	#2,d0
 	move.w	#238,d1
-	moveq	#4,d2
+	move.w	#C_TEXTLOW,d2
 	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -1703,7 +1882,7 @@ DrawSheet:
 	moveq	#16,d1
 	move.w	#192,d2
 	move.w	#136,d3
-	moveq	#0,d4
+	move.w	#C_BLACK,d4
 	bsr	FillRect
 	move.w	SelHero,d0
 	bsr	HeroPtr
@@ -1712,7 +1891,7 @@ DrawSheet:
 	lea	TxtNoHero,a0
 	moveq	#3,d0
 	moveq	#60,d1
-	moveq	#5,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	bra	.done
 .ok:
@@ -1729,7 +1908,7 @@ DrawSheet:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	moveq	#20,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	lea	TmpStr,a1		; niveau et experience
@@ -1752,7 +1931,7 @@ DrawSheet:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	moveq	#32,d1
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 	bsr	DrawText
 
 	moveq	#0,d7			; les six caracteristiques
@@ -1786,7 +1965,7 @@ DrawSheet:
 	lsr.w	#1,d1
 	mulu.w	#11,d1
 	add.w	#48,d1
-	moveq	#2,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	addq.w	#1,d7
 	cmp.w	#6,d7
@@ -1809,7 +1988,7 @@ DrawSheet:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	#88,d1
-	moveq	#12,d2
+	move.w	#C_HEALTH,d2
 	bsr	DrawText
 
 	lea	TmpStr,a1		; arme portee
@@ -1828,7 +2007,7 @@ DrawSheet:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	#100,d1
-	moveq	#1,d2
+	move.w	#C_TEXT,d2
 	bsr	DrawText
 
 	lea	TmpStr,a1		; armure
@@ -1847,7 +2026,7 @@ DrawSheet:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	#110,d1
-	moveq	#1,d2
+	move.w	#C_TEXT,d2
 	bsr	DrawText
 
 	lea	TmpStr,a1		; jets de sauvegarde
@@ -1866,7 +2045,7 @@ DrawSheet:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	#120,d1
-	moveq	#12,d2
+	move.w	#C_HEALTH,d2
 	bsr	DrawText
 
 	lea	TmpStr,a1		; sorts connus
@@ -1901,7 +2080,7 @@ DrawSheet:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	#130,d1
-	moveq	#9,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -1916,12 +2095,12 @@ DrawInventory:
 	moveq	#16,d1
 	move.w	#192,d2
 	move.w	#136,d3
-	moveq	#0,d4
+	move.w	#C_BLACK,d4
 	bsr	FillRect
 	lea	TxtBag,a0
 	moveq	#3,d0
 	moveq	#20,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	moveq	#0,d7			; huit lignes visibles
@@ -1956,10 +2135,10 @@ DrawInventory:
 	move.w	d7,d1
 	mulu.w	#11,d1
 	add.w	#34,d1
-	moveq	#1,d2
+	move.w	#C_TEXT,d2
 	cmp.w	InvCursor,d6
 	bne.s	.dim
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 .dim:
 	bsr	DrawText
 
@@ -1997,12 +2176,12 @@ DrawSpellMenu:
 	moveq	#16,d1
 	move.w	#192,d2
 	move.w	#136,d3
-	moveq	#0,d4
+	move.w	#C_BLACK,d4
 	bsr	FillRect
 	lea	TxtChooseSpell,a0
 	moveq	#3,d0
 	moveq	#20,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	bsr	BuildSpellMenu
@@ -2013,7 +2192,7 @@ DrawSpellMenu:
 	lea	TxtNoSpellKnown,a0	; ce heros n'a rien appris
 	moveq	#3,d0
 	moveq	#48,d1
-	moveq	#5,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	bra	.done
 .list:
@@ -2365,7 +2544,7 @@ DrawCreate:
 	moveq	#16,d1
 	move.w	#192,d2
 	move.w	#136,d3
-	moveq	#0,d4
+	move.w	#C_BLACK,d4
 	bsr	FillRect
 
 	lea	TmpStr,a1
@@ -2380,7 +2559,7 @@ DrawCreate:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	moveq	#18,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	move.w	CreStep,d7
@@ -2403,10 +2582,10 @@ DrawCreate:
 	move.w	d6,d1
 	mulu.w	#11,d1
 	add.w	#34,d1
-	moveq	#5,d2
+	move.w	#C_TEXTDIM,d2
 	cmp.w	CreCursor,d6		; la classe visee ressort
 	bne.s	.dimClass
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 .dimClass:
 	bsr	DrawText
 	lea	cl_SIZEOF(a6),a6
@@ -2420,12 +2599,12 @@ DrawCreate:
 	move.l	(a5,d0.w),a0
 	moveq	#3,d0
 	move.w	#126,d1
-	moveq	#2,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	lea	TxtPickClass,a0
 	moveq	#3,d0
 	move.w	#138,d1
-	moveq	#12,d2
+	move.w	#C_HEALTH,d2
 	bsr	DrawText
 	bra	.done
 
@@ -2436,7 +2615,7 @@ DrawCreate:
 	add.l	d0,a0
 	moveq	#3,d0
 	moveq	#38,d1
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 	bsr	DrawText
 
 	lea	CreStr,a6		; les six jets
@@ -2468,7 +2647,7 @@ DrawCreate:
 	lsr.w	#1,d1
 	mulu.w	#11,d1
 	add.w	#52,d1
-	moveq	#2,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	addq.w	#1,d6
 	cmp.w	#6,d6
@@ -2487,7 +2666,7 @@ DrawCreate:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	#90,d1
-	moveq	#12,d2
+	move.w	#C_HEALTH,d2
 	bsr	DrawText
 
 	cmp.w	#1,d7
@@ -2495,7 +2674,7 @@ DrawCreate:
 	lea	TxtRoll,a0
 	moveq	#3,d0
 	move.w	#112,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 	bra	.done
 .nameUi:
@@ -2509,12 +2688,12 @@ DrawCreate:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	#106,d1
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 	bsr	DrawText
 	lea	TxtNameHelp,a0
 	moveq	#3,d0
 	move.w	#120,d1
-	moveq	#2,d2
+	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	lea	TxtAzerty,a0
 	tst.w	KbLayout
@@ -2523,7 +2702,7 @@ DrawCreate:
 .layout:
 	moveq	#3,d0
 	move.w	#132,d1
-	moveq	#4,d2
+	move.w	#C_TEXTLOW,d2
 	bsr	DrawText
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -2702,6 +2881,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.locked
 	cmp.w	#T_RUNE,d0
 	beq	.rune
+	cmp.w	#T_LEVER,d0
+	beq	.lever
+	cmp.w	#T_GATE,d0
+	beq	.gate
 
 	move.w	d4,PosX
 	move.w	d5,PosY
@@ -2735,6 +2918,14 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bra	.redraw
 .rune:
 	lea	TxtRuneDoor,a0
+	bsr	LogAdd
+	bra	.redraw
+.lever:
+	lea	TxtLeverSeen,a0
+	bsr	LogAdd
+	bra	.redraw
+.gate:
+	lea	TxtGateShut,a0
 	bsr	LogAdd
 	bra	.redraw
 
@@ -2845,6 +3036,8 @@ DoAction:
 	beq	.niche
 	cmp.w	#T_RUNE,d0
 	beq	.rune
+	cmp.w	#T_LEVER,d0
+	beq	.lever
 	lea	TxtNothing,a0
 	bsr	LogAdd
 	bra	.done
@@ -2886,7 +3079,7 @@ DoAction:
 	move.w	d0,d7
 	bsr	AddItem
 	tst.w	d0
-	beq.s	.done
+	beq	.done
 	moveq	#SFX_CHEST,d0
 	bsr	SfxPlay
 	move.w	d4,d0			; la niche devient un mur ordinaire
@@ -2907,6 +3100,34 @@ DoAction:
 	lea	TxtNicheEmpty,a0
 	bsr	LogAdd
 	bra	.done
+.lever:
+	move.w	d4,d0			; le numero du mecanisme
+	move.w	d5,d1
+	bsr	MapGetParam
+	move.w	d0,d6
+	and.w	#$007f,d6		; sans le drapeau d'etat
+	beq	.done
+	move.w	d0,d3			; etat courant
+	eor.w	#$0080,d3		; on bascule le levier
+	move.w	d4,d0
+	move.w	d5,d1
+	move.w	d3,d2
+	bsr	MapSetParam
+	btst	#7,d3
+	beq.s	.leverUp
+	moveq	#T_FLOOR,d3		; abaisse : les herses s'ouvrent
+	lea	TxtLeverDown,a0
+	bra.s	.leverGo
+.leverUp:
+	moveq	#T_GATE,d3		; releve : elles retombent
+	lea	TxtLeverUp,a0
+.leverGo:
+	bsr	LogAdd
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	bsr	SetGates
+	bra	.done
+
 .rune:
 	move.w	d4,d0			; l'enigme gravee sur la porte
 	move.w	d5,d1
@@ -2966,7 +3187,7 @@ MapColour:
 	bne.s	.notHere
 	cmp.w	PosY,d7
 	bne.s	.notHere
-	moveq	#15,d0			; le groupe, en blanc
+	move.w	#C_WHITE,d0		; le groupe, en blanc
 	bra	.done
 .notHere:
 	move.w	d1,d2
@@ -2975,50 +3196,60 @@ MapColour:
 	and.w	#C_MASK,d3		; ce que la case contient
 	cmp.w	#T_STAIRS,d2
 	bne.s	.notStairs
-	moveq	#14,d0
+	move.w	#C_GOLD+N_GOLD-2,d0	; escalier
 	bra	.done
 .notStairs:
 	cmp.w	#T_DOOR,d2
 	bne.s	.notDoor
-	moveq	#6,d0
+	move.w	#C_WOOD+N_WOOD-4,d0	; porte
 	bra	.done
 .notDoor:
 	cmp.w	#T_LOCKED,d2
 	bne.s	.notLocked
-	moveq	#9,d0
+	move.w	#C_BLOOD+3,d0		; porte verrouillee
 	bra.s	.done
 .notLocked:
 	cmp.w	#T_RUNE,d2
 	bne.s	.notRune
-	moveq	#10,d0
+	move.w	#C_MAGIC+4,d0		; porte a runes
 	bra.s	.done
 .notRune:
+	cmp.w	#T_LEVER,d2
+	bne.s	.notLever
+	move.w	#C_GOLD+2,d0		; levier
+	bra.s	.done
+.notLever:
+	cmp.w	#T_GATE,d2
+	bne.s	.notGate
+	move.w	#C_IRON+N_IRON-3,d0	; herse fermee
+	bra.s	.done
+.notGate:
 	cmp.w	#T_NICHE,d2
 	bne.s	.notNiche
-	moveq	#5,d0
+	move.w	#C_STONE+12,d0		; niche
 	bra.s	.done
 .notNiche:
 	cmp.w	#T_WALL,d2
 	bne.s	.floor
-	moveq	#4,d0			; mur reconnu : bleu sombre
+	move.w	#C_STONE+4,d0		; mur reconnu
 	bra.s	.done
 .floor:
 	cmp.w	#C_MONSTER,d3
 	bne.s	.notMon
-	moveq	#3,d0
+	move.w	#C_ALERT,d0		; monstre
 	bra.s	.done
 .notMon:
 	cmp.w	#C_CHEST,d3
 	bne.s	.notChest
-	moveq	#12,d0
+	move.w	#C_HILITE,d0		; coffre
 	bra.s	.done
 .notChest:
 	cmp.w	#C_ITEM,d3
 	bne.s	.plain
-	moveq	#11,d0
+	move.w	#C_PARCH,d0		; objet
 	bra.s	.done
 .plain:
-	moveq	#1,d0			; sol parcouru
+	move.w	#C_EARTH+N_EARTH-5,d0	; sol parcouru
 .done:
 	movem.l	(sp)+,d1-d3
 	rts
@@ -3029,7 +3260,7 @@ DrawMap:
 	moveq	#16,d1
 	move.w	#192,d2
 	move.w	#136,d3
-	moveq	#0,d4
+	move.w	#C_BLACK,d4
 	bsr	FillRect
 
 	lea	TmpStr,a1		; CARTE NIVEAU n - direction
@@ -3049,7 +3280,7 @@ DrawMap:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	moveq	#18,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	moveq	#0,d7			; ligne de la carte
@@ -3107,12 +3338,12 @@ DrawRiddle:
 	moveq	#16,d1
 	move.w	#192,d2
 	move.w	#136,d3
-	moveq	#0,d4
+	move.w	#C_BLACK,d4
 	bsr	FillRect
 	lea	TxtRuneTitle,a0
 	moveq	#3,d0
 	moveq	#20,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	move.w	RiddleIdx,d0
@@ -3128,7 +3359,7 @@ DrawRiddle:
 	move.w	d7,d1
 	mulu.w	#11,d1
 	add.w	#38,d1
-	moveq	#13,d2
+	move.w	#C_TEXT,d2
 	bsr	DrawText
 	addq.w	#1,d7
 	cmp.w	#3,d7
@@ -3153,7 +3384,7 @@ DrawRiddle:
 	move.w	d7,d1
 	mulu.w	#13,d1
 	add.w	#84,d1
-	moveq	#12,d2
+	move.w	#C_HEALTH,d2
 	bsr	DrawText
 	addq.w	#1,d7
 	cmp.w	#3,d7
@@ -3162,7 +3393,7 @@ DrawRiddle:
 	lea	TxtRuneAsk,a0
 	moveq	#3,d0
 	move.w	#128,d1
-	moveq	#14,d2
+	move.w	#C_HILITE,d2
 	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -3255,6 +3486,45 @@ Descend:
 	bsr	LogAdd
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; SetGates : d6 = numero du mecanisme, d3 = terrain a poser sur ses
+; herses. Un seul levier peut en commander plusieurs.
+SetGates:
+	movem.l	d0-d7/a0-a1,-(sp)
+	lea	MapTerrain,a0
+	lea	MapParam,a1
+	move.w	#MAPBYTES-1,d7
+	moveq	#0,d5
+.loop:
+	moveq	#0,d0
+	move.b	(a0,d5.w),d0
+	move.w	d0,d1
+	and.w	#$000f,d1
+	cmp.w	#T_GATE,d1
+	beq.s	.match
+	tst.w	d1			; une herse ouverte est du sol
+	bne.s	.next
+.match:
+	moveq	#0,d2
+	move.b	(a1,d5.w),d2
+	and.w	#$007f,d2
+	cmp.w	d6,d2
+	bne.s	.next
+	tst.w	d1			; ne toucher qu'aux cases du mecanisme
+	beq.s	.isOpen
+	bra.s	.set
+.isOpen:
+	tst.w	d2			; du sol sans numero : ce n'est pas
+	beq.s	.next			; une herse
+.set:
+	and.w	#$00f0,d0		; on garde le contenu de la case
+	or.w	d3,d0
+	move.b	d0,(a0,d5.w)
+.next:
+	addq.w	#1,d5
+	dbf	d7,.loop
+	movem.l	(sp)+,d0-d7/a0-a1
 	rts
 
 ; PartyRest : une halte entre deux niveaux rend les sorts et un peu
@@ -4602,6 +4872,10 @@ TxtNiveau:	dc.b	"NIVEAU ",0
 TxtOr:		dc.b	"   OR ",0
 TxtKeys:	dc.b	"   CLES ",0
 TxtRuneDoor:	dc.b	"UNE PORTE COUVERTE DE RUNES.",0
+TxtLeverSeen:	dc.b	"UN LEVIER SCELLE DANS LE MUR.",0
+TxtGateShut:	dc.b	"UNE HERSE DE FER BARRE LE PASSAGE.",0
+TxtLeverDown:	dc.b	"LE LEVIER CEDE. UNE HERSE SE LEVE.",0
+TxtLeverUp:	dc.b	"LE LEVIER REMONTE. LA HERSE RETOMBE.",0
 TxtRuneTitle:	dc.b	"LA PORTE VOUS PARLE",0
 TxtRuneAsk:	dc.b	"REPONDEZ : 1, 2 OU 3",0
 TxtRuneOk:	dc.b	"LES RUNES S'EFFACENT. PASSAGE !",0

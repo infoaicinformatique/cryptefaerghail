@@ -34,13 +34,13 @@ xdftool "$ADF" create + format "AGADemos" \
 	+ write "$STAGE/Lisezmoi.txt" \
 	+ makedir S \
 	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence \
-	+ makedir Src \
-	+ makedir Src/data
+	+ makedir Src
+# Les sources tiennent sur la disquette, pas les donnees generees : a
+# huit bitplanes les decors pesent a eux seuls plus de trois cent
+# quatre-vingt mille octets. Elles restent dans l'archive LhA, et les
+# generateurs Python les refabriquent.
 for f in "$STAGE"/Src/*.s "$STAGE"/Src/*.i; do
 	xdftool "$ADF" write "$f" "Src/$(basename "$f")"
-done
-for f in "$STAGE"/Src/data/*; do
-	xdftool "$ADF" write "$f" "Src/data/$(basename "$f")"
 done
 xdftool "$ADF" boot install			# bootblock DOS0 : la disquette demarre
 

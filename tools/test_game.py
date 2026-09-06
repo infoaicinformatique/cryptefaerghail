@@ -137,9 +137,22 @@ class Game(R.Harness):
             out += bytes([c])
         return out.decode("latin-1")
 
-    def key(self, code, slices=40):
+    def idle(self):
+        """Le jeu a-t-il fini de dessiner ?
+
+        A huit bitplanes une image coute pres de deux millions de
+        cycles, bien plus qu'une tranche : s'arreter sur un compteur
+        donnait des captures tronquees en plein journal. On attend donc
+        que le processeur soit revenu attendre le retour trame, sans
+        redessin en cours ni image en attente d'echange."""
+        pc = self.cpu.r_pc()
+        top, end = self.addr("WaitVBlank"), self.addr("WaitBlit")
+        return (top <= pc < end and self.w("NeedRedraw") == 0
+                and self.w("DrawReady") == 0)
+
+    def key(self, code, slices=80):
         self.press(code)
-        err = self.run(slices=slices)
+        err = self.run(slices=slices, idle=self.idle)
         assert err is None or "termine" in err, err
 
     def keys(self, seq, slices=40):

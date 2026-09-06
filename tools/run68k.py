@@ -334,9 +334,11 @@ class Harness:
             self.sdr = (~(((raw << 1) | (raw >> 7)) & 0xff)) & 0xff
             self.icr = 0x08
 
-    def run(self, slices=400, cycles=200000, after=3):
+    def run(self, slices=400, cycles=300000, after=6, idle=None):
         """Tourne jusqu'a ce que la touche soit lue, puis quelques
-        tranches de plus pour laisser le jeu finir son affichage."""
+        tranches de plus pour laisser le jeu finir son affichage. Huit
+        bitplanes, c'est deux fois plus de blits qu'a quatre : il faut
+        laisser le temps au redessin de s'achever."""
         if self.finished:                    # le jeu a rendu la main :
             return "programme termine"       # plus rien a executer
         extra = 0
@@ -350,6 +352,8 @@ class Harness:
                 self.finished = True
                 return "programme termine"
             if not self.keys and self.icr == 0:
+                if idle is not None and not idle():
+                    continue        # le jeu redessine encore : on le laisse
                 extra += 1
                 if extra >= after:
                     return None

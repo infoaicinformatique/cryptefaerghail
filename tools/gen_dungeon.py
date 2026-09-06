@@ -26,43 +26,47 @@ VIEW_W, VIEW_H = 192, 136
 CX, CY = VIEW_W // 2, VIEW_H // 2        # point de fuite
 F = 64.0                                 # demi-taille d'un mur a distance 1
 SCRBPL = 40                              # octets par ligne d'un plan d'ecran
-DEPTHS = 4
+DEPTHS = 8                               # AGA : huit bitplanes
 NMONSTERART = 9                          # familles de silhouettes
 NCLASSPORTRAIT = 8                       # un visage par classe
 
-# --- palette 16 couleurs ------------------------------------------------
-PALETTE = [
-    (0x00, 0x00, 0x00),                  # 0  noir
-    (0xc8, 0xc4, 0xb4),                  # 1  pierre, la plus claire
-    (0xa8, 0xa4, 0x96),                  # 2
-    (0x88, 0x84, 0x78),                  # 3
-    (0x68, 0x64, 0x5c),                  # 4
-    (0x48, 0x46, 0x40),                  # 5
-    (0x2c, 0x2b, 0x28),                  # 6  pierre, la plus sombre
-    (0x1a, 0x18, 0x16),                  # 7  joints
-    # Les quatre bruns servent deux fois : bois et sol pour le donjon,
-    # et la gamme de carnation des portraits, qui n'avait autrement
-    # aucune teinte de peau dans cette palette de pierre.
-    (0xdc, 0xa8, 0x7c),                  # 8  bois clair / peau claire
-    (0x8c, 0x5c, 0x3c),                  # 9  bois sombre / peau ombree
-    (0xac, 0x80, 0x5c),                  # 10 sol / carnation moyenne
-    (0x50, 0x38, 0x28),                  # 11 sol lointain / ombre profonde
-    (0x3c, 0x96, 0x46),                  # 12 vert (mousse, PV)
-    (0xff, 0xff, 0xff),                  # 13 blanc
-    (0xf0, 0xc8, 0x3c),                  # 14 or
-    (0xc8, 0x32, 0x28),                  # 15 rouge
+# --- palette : 256 couleurs AGA, decrites dans tools/palette.py ------
+import palette as pal                     # noqa: E402
+
+PALETTE = pal.PALETTE
+
+
+def stone(t):
+    """Pierre, t = profondeur d'ombre (0 en pleine lumiere)."""
+    return pal.lit("STONE", t)
+
+
+# Les creatures et les icones ont ete dessinees pour seize couleurs.
+# Plutot que de les redessiner, on fait correspondre chaque ancien
+# index a une teinte des nouvelles gammes : le trait reste, la matiere
+# s'affine.
+C = [
+    pal.one("BLACK"),
+    pal.lit("STONE", 0.05), pal.lit("STONE", 0.22), pal.lit("STONE", 0.38),
+    pal.lit("STONE", 0.52), pal.lit("STONE", 0.68), pal.lit("STONE", 0.82),
+    pal.lit("MORTAR", 0.90),
+    pal.lit("WOOD", 0.30), pal.lit("WOOD", 0.62),
+    pal.lit("EARTH", 0.42), pal.lit("EARTH", 0.72),
+    pal.lit("MOSS", 0.40),
+    pal.one("WHITE"),
+    pal.lit("GOLD", 0.25),
+    pal.lit("BLOOD", 0.40),
 ]
-STONE = [1, 2, 3, 4, 5, 6]
 
 
 BRICK_W, BRICK_H = 0.25, 0.125           # taille d'un bloc, en cases
 
 
-def shade(dist, side):
-    """Niveau de gris : plus c'est loin, plus c'est sombre ; les murs
-    lateraux sont un cran plus sombres que les murs de face."""
-    level = (dist - 1.0) * 1.15 + (0.85 if side else 0.0)
-    return max(0, min(len(STONE) - 1, int(level)))
+def wall_tone(dist, side):
+    """Profondeur d'ombre d'un mur : plus c'est loin, plus c'est sombre,
+    et les murs lateraux prennent un cran de plus. En 256 couleurs on
+    peut travailler en continu au lieu de six paliers."""
+    return (dist - 1.0) * 0.185 + (0.14 if side else 0.0) + 0.08
 
 
 def jitter(a, b):
@@ -91,32 +95,38 @@ def brick(u, v, dist, side):
     jx = 0.07 + 0.03 * noise(col, row, 3)
     jy = 0.12 + 0.04 * noise(col, row, 4)
     if du < jx or dv < jy:
-        return 7
+        return pal.lit("MORTAR", min(1.0, 0.62 + 0.22 * (dist - 1.0)))
 
-    lvl = shade(dist, side) + jitter(col, row)
+    t = wall_tone(dist, side) + 0.030 * jitter(col, row)
     if dv < 0.28:                                    # arete eclairee du bloc
-        lvl -= 1
+        t -= 0.055
     elif dv > 0.82 or du > 0.93:                     # arete a l'ombre
-        lvl += 1
+        t += 0.055
 
     n = noise(int((u + 8) * 90), int((v + 8) * 90), 1)   # grain de la pierre
-    if n > 0.80:
-        lvl -= 1
-    elif n < 0.18:
-        lvl += 1
+    t += (n - 0.5) * 0.075
+
+    # veinures claires : la pierre n'est pas unie
+    if noise(col, row, 17) > 0.62:
+        w = abs((du - 0.5) * 0.9 - (dv - 0.5) * 2.2)
+        if w < 0.10:
+            t -= 0.045
 
     # fissure : une diagonale par bloc, sur une partie des blocs seulement
     if noise(col, row, 7) > 0.72:
-        crack = abs((du - 0.5) * 1.7 + (dv - 0.5)) 
+        crack = abs((du - 0.5) * 1.7 + (dv - 0.5))
         if crack < 0.06 + 0.05 * noise(int(dv * 60), col, 8):
-            lvl += 2
+            t += 0.16
 
     # mousse : bas des blocs, plutot pres du sol et sur les murs lateraux
     if v > 0.18 and noise(col, row, 11) > (0.55 if side else 0.72):
         if dv > 0.55 + 0.2 * noise(int(du * 40), row, 12):
-            return 12 if dist < 2.0 else 6
-
-    return STONE[max(0, min(len(STONE) - 1, lvl))]
+            return pal.lit("MOSS", min(1.0, 0.20 + 0.22 * (dist - 1.0)
+                                       + 0.25 * noise(col, row, 13)))
+    # salpetre : trainees pales pres du sol
+    if v > 0.30 and noise(col, row, 19) > 0.80 and dv > 0.4:
+        t -= 0.10
+    return stone(max(0.0, min(1.0, t)))
 
 
 # --- construction des morceaux -----------------------------------------
@@ -139,7 +149,25 @@ def snap(x0, x1):
     return a, b
 
 
-def make_front(k, door=False, offset=0):
+def gate_pixel(u, v, k):
+    """Herse : barreaux de fer verticaux, deux traverses, et le vide
+    entre les barreaux -- on laisse le pixel transparent pour que le
+    couloir se voie au travers."""
+    depth = 0.12 + 0.22 * (k - 1.0)
+    if abs(u) > 0.19 or v < -0.27:                   # encadrement de pierre
+        return stone(min(1.0, depth + 0.30))
+    bar = (u + 8.0) / 0.048
+    d = abs(bar % 1.0 - 0.5)
+    cross = -0.16 < v < -0.125 or 0.02 < v < 0.055
+    if d < 0.24 or cross:
+        t = depth + 0.30 + 0.34 * d
+        if d < 0.09 and not cross:                   # reflet sur le barreau
+            t -= 0.26
+        return pal.lit("IRON", max(0.0, min(1.0, t)))
+    return None                                      # entre les barreaux
+
+
+def make_front(k, door=False, offset=0, gate=False):
     """Face d'une case a la distance k, decalee lateralement de `offset`
     cases : offset 0 ferme le couloir, offset -1 ou +1 ferme le fond d'un
     passage lateral."""
@@ -157,7 +185,11 @@ def make_front(k, door=False, offset=0):
                 continue
             u = (x - CX) * k / (2 * F)               # coordonnees monde
             v = (y - CY) * k / (2 * F)
-            if door and -0.22 < u < 0.22 and v > -0.30:
+            if gate and -0.22 < u < 0.22 and v > -0.30:
+                c = gate_pixel(u, v, k)
+                if c is not None:
+                    p.set(x, y, c)
+            elif door and -0.22 < u < 0.22 and v > -0.30:
                 p.set(x, y, door_pixel(u, v, k))
             else:
                 p.set(x, y, brick(u, v, k, False))
@@ -165,14 +197,26 @@ def make_front(k, door=False, offset=0):
 
 
 def door_pixel(u, v, k):
-    """Planches verticales, encadrement, poignee."""
-    if abs(u) > 0.19 or v < -0.27:
-        return 9 if (k > 2) else 6                   # encadrement
-    if (int((u + 8.0) / 0.055) % 2) == 0:
-        return 8 if k < 3 else 9
-    if 0.10 < u < 0.16 and -0.02 < v < 0.06:
-        return 14                                    # poignee
-    return 9
+    """Porte de chene : planches verticales, ferrures, gros anneau."""
+    depth = 0.10 + 0.20 * (k - 1.0)
+    if abs(u) > 0.19 or v < -0.27:                   # encadrement de pierre
+        return stone(min(1.0, depth + 0.30))
+    plank = (u + 8.0) / 0.055
+    edge = plank % 1.0
+    t = depth + 0.10 + 0.16 * noise(int(plank), int((v + 8) * 40), 31)
+    if edge < 0.10:                                  # creux entre planches
+        t += 0.30
+    elif edge > 0.86:
+        t -= 0.08
+    for band in (-0.17, 0.09):                       # ferrures horizontales
+        if band < v < band + 0.055:
+            rivet = abs((u + 8.0) / 0.05 % 1.0 - 0.5)
+            return pal.lit("IRON", 0.30 if rivet < 0.18 else 0.62)
+    if 0.10 < u < 0.16 and -0.03 < v < 0.05:         # anneau de tirage
+        r = ((u - 0.13) / 0.030) ** 2 + ((v - 0.01) / 0.038) ** 2
+        if 0.35 < r <= 1.0:
+            return pal.lit("GOLD", 0.30 + 0.35 * depth)
+    return pal.lit("WOOD", max(0.0, min(1.0, t)))
 
 
 def make_side(i, lateral):
@@ -223,17 +267,62 @@ def make_background():
             gu = (lat + 8.0) % 1.0
             gv = (dist + 8.0) % 1.0
             joint = gu < 0.06 or gv < 0.06
+            depth = min(1.0, 0.06 + 0.24 * dist)
             if floor:
-                base = 10 if dist < 1.6 else (11 if dist < 3.2 else 6)
+                t = depth + 0.10 * noise(int(lat * 30), int(dist * 30), 21)
                 if joint:
-                    base = 11 if dist < 1.6 else 6
-                elif noise(int(lat * 30), int(dist * 30), 21) > 0.86:
-                    base = 11 if base == 10 else base
-            else:
-                base = 5 if dist < 1.6 else (6 if dist < 3.2 else 7)
+                    t += 0.28
+                if noise(int(lat * 18), int(dist * 18), 23) > 0.88:
+                    base = pal.lit("MOSS", min(1.0, depth + 0.25))
+                else:
+                    base = pal.lit("EARTH", max(0.0, min(1.0, t)))
+            else:                                    # voute, plus sombre
+                t = depth + 0.34
                 if joint:
-                    base = 6 if dist < 1.6 else 7
+                    t += 0.16
+                base = stone(max(0.0, min(1.0, t)))
             p.set(x, y, base)
+    return p
+
+
+def make_lever(pulled):
+    """Levier de fer sur une platine, vu de pres : leve ou abaisse."""
+    x0, x1 = snap(CX - 20, CX + 20)
+    y0, y1 = CY - 24, CY + 18
+    p = Piece(x0, y0, x1 - x0, y1 - y0)
+    px, py = CX, CY - 4                              # axe du levier
+    for y in range(py - 14, py + 15):                # platine boulonnee
+        for x in range(px - 9, px + 10):
+            e = max(abs(x - px) / 9.0, abs(y - py) / 14.0)
+            if e > 1.0:
+                continue
+            t = 0.30 + 0.34 * e + 0.16 * ((x - px) + (y - py)) / 20.0
+            p.set(x, y, pal.lit("IRON", max(0.0, min(1.0, t))))
+    for sx, sy in ((-6, -11), (6, -11), (-6, 11), (6, 11)):   # rivets
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if abs(dx) + abs(dy) < 2:
+                    p.set(px + sx + dx, py + sy + dy,
+                          pal.lit("STEEL", 0.18 if dx + dy < 0 else 0.62))
+    dx, dy = (7, 9) if pulled else (7, -11)          # manche de bois
+    for i in range(22):
+        t = i / 21.0
+        x = int(px + dx * t)
+        y = int(py + dy * t)
+        for w in range(-2, 3):
+            for h in range(-1, 2):
+                shade = 0.26 + 0.30 * abs(w) / 2.0 + 0.18 * t
+                p.set(x + w, y + h, pal.lit("WOOD", min(1.0, shade)))
+    kx, ky = int(px + dx), int(py + dy)              # pommeau de laiton
+    for y in range(ky - 3, ky + 4):
+        for x in range(kx - 3, kx + 4):
+            r = ((x - kx) / 3.2) ** 2 + ((y - ky) / 3.2) ** 2
+            if r <= 1.0:
+                p.set(x, y, pal.lit("GOLD", 0.16 + 0.5 * r))
+    for y in range(py - 2, py + 3):                  # axe
+        for x in range(px - 2, px + 3):
+            if abs(x - px) + abs(y - py) <= 2:
+                p.set(x, y, pal.lit("STEEL", 0.30))
     return p
 
 
@@ -266,8 +355,15 @@ def make_niche():
 # Gamme de carnation, du plus clair au plus sombre. La palette de
 # pierre n'avait aucune teinte de peau : les quatre bruns du bois et du
 # sol ont ete choisis pour servir aussi de carnation.
-SKIN = [1, 8, 10, 9, 11, 7]
-STEEL = [1, 2, 3, 4, 5, 6, 7]
+SKIN = list(reversed(pal.ramp("SKIN")))
+STEEL = list(reversed(pal.ramp("STEEL")))
+HAIR_DARK = list(reversed(pal.ramp("HAIRD")))
+HAIR_LIGHT = list(reversed(pal.ramp("HAIRL")))
+HAIR_RED = list(reversed(pal.ramp("HAIRR")))
+CLOAK_GREY = list(reversed(pal.ramp("IRON")))
+CLOAK_GREEN = list(reversed(pal.ramp("CLOTHG")))
+CLOAK_RED = list(reversed(pal.ramp("CLOTHR")))
+LINEN = list(reversed(pal.ramp("BONE")))
 
 # Un visage de trente-deux pixels ne supporte pas des traits calcules :
 # le volume vient d'un eclairage d'ellipsoide, mais les yeux, le nez et
@@ -332,13 +428,13 @@ def draw_features(p, tones, iris=9, brow=9, cx=FACE_CX, narrow=0):
     # n'en garde qu'un, du cote eclaire, comme sur un vrai reflet.
     for ox, out in ((el, 0), (er, 2)):
         for x in range(ox - 1, ox + 3):           # paupiere superieure
-            p.set(x, EYE_Y - 1, 7)
+            p.set(x, EYE_Y - 1, pal.lit("SKIN", 0.94))
         p.set(ox, EYE_Y, dark)
         p.set(ox + 1, EYE_Y, dark)
         p.set(ox + 2, EYE_Y, dark)
-        p.set(ox + out, EYE_Y, 13)                # reflet
+        p.set(ox + out, EYE_Y, pal.one("WHITE"))  # reflet
         p.set(ox + (1 if out else 1), EYE_Y, iris)
-        p.set(ox + 2 - out, EYE_Y, 7)             # pupille, cote ombre
+        p.set(ox + 2 - out, EYE_Y, pal.one("INK"))   # pupille
         for x in range(ox, ox + 3):               # paupiere inferieure
             p.set(x, EYE_Y + 1, mid)
     for ox in (el - 1, er - 1):                   # sourcils
@@ -348,13 +444,13 @@ def draw_features(p, tones, iris=9, brow=9, cx=FACE_CX, narrow=0):
     for y in range(EYE_Y + 1, MOUTH_Y - 2):       # arete du nez
         p.set(NOSE_X, y, light)
         p.set(NOSE_X + 1, y, dark)                # cote a l'ombre
-    p.set(NOSE_X - 1, MOUTH_Y - 2, 11)            # narines
-    p.set(NOSE_X + 2, MOUTH_Y - 2, 11)
+    p.set(NOSE_X - 1, MOUTH_Y - 2, pal.lit("SKIN", 0.86))  # narines
+    p.set(NOSE_X + 2, MOUTH_Y - 2, pal.lit("SKIN", 0.86))
     p.set(NOSE_X, MOUTH_Y - 2, light)
     p.set(NOSE_X + 1, MOUTH_Y - 2, dark)
 
     for x in range(cx - 3, cx + 4):               # bouche
-        p.set(x, MOUTH_Y, 11)
+        p.set(x, MOUTH_Y, pal.lit("BLOOD", 0.72))
     p.set(cx - 4, MOUTH_Y, dark)
     p.set(cx + 4, MOUTH_Y, dark)
     for x in range(cx - 2, cx + 3):               # levre inferieure eclairee
@@ -463,17 +559,17 @@ def draw_helmet(p, cx=FACE_CX, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, nasal=True, c
     band = int(cy + ry * brim)
     half = head_half(band, cy, rx * 1.16, ry * 1.14, 0.30)
     for x in range(int(cx - half), int(cx + half) + 1):
-        p.set(x, band, 6)
-        p.set(x, band - 1, 1)
+        p.set(x, band, pal.lit("STEEL", 0.85))
+        p.set(x, band - 1, pal.lit("STEEL", 0.10))
     if nasal:
         for y in range(band, MOUTH_Y - 2):
-            p.set(cx, y, 2)
-            p.set(cx + 1, y, 4)
+            p.set(cx, y, pal.lit("STEEL", 0.28))
+            p.set(cx + 1, y, pal.lit("STEEL", 0.58))
     if crest is not None:
         for y in range(int(cy - ry * 1.32), band - 1):
             p.set(cx - 1, y, crest)
             p.set(cx, y, crest)
-            p.set(cx + 1, y, 9)
+            p.set(cx + 1, y, pal.lit("CLOTHR", 0.70))
 
 
 def draw_hood(p, tones, cx=FACE_CX, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, shade=True,
@@ -505,77 +601,82 @@ def make_portrait(cls):
     casquee ou encapuchonnee selon le metier."""
     p = Piece(0, 0, 32, 32)
     if cls == 0:                                      # guerrier
-        draw_shoulders(p, (4, 6))
+        draw_shoulders(p, (pal.lit("IRON", 0.45), pal.lit("IRON", 0.70)))
         draw_face(p, SKIN, jaw=0.26)
         draw_neck(p, SKIN, wide=5)
-        draw_features(p, SKIN, iris=9, brow=9)
-        draw_beard(p, [9, 11, 7, 7], length=3, moustache=True)
+        draw_features(p, SKIN, iris=pal.lit("WOOD", 0.55),
+                      brow=pal.lit("HAIRD", 0.75))
+        draw_beard(p, HAIR_DARK, length=3, moustache=True)
         draw_helmet(p, nasal=True)
     elif cls == 1:                                    # barbare
-        draw_shoulders(p, (9, 11))
-        draw_hair(p, [15, 15, 9, 11], jaw=0.28, hairline=-0.28,
-                  drop=0.98, volume=1.40, base=0.04, spread=0.48,
-                  vshade=0.18)
+        draw_shoulders(p, (pal.lit("HIDE", 0.45), pal.lit("HIDE", 0.72)))
+        draw_hair(p, HAIR_RED, jaw=0.28, hairline=-0.28, drop=0.98,
+                  volume=1.40, base=0.10, spread=0.62, vshade=0.24)
         draw_face(p, SKIN, jaw=0.28)
         draw_neck(p, SKIN, wide=6)
-        draw_features(p, SKIN, iris=10, brow=9)
-        draw_beard(p, [15, 15, 9, 11], length=6, moustache=True,
-                   base=0.14, spread=0.40)
+        draw_features(p, SKIN, iris=pal.lit("MOSS", 0.45),
+                      brow=pal.lit("HAIRR", 0.70))
+        draw_beard(p, HAIR_RED, length=6, moustache=True,
+                   base=0.18, spread=0.56)
         for y in range(EYE_Y - 5, EYE_Y + 2):         # cicatrice
-            p.set(FACE_CX - 6, y, 9)
+            p.set(FACE_CX - 6, y, pal.lit("BLOOD", 0.45))
     elif cls == 2:                                    # roublard
-        draw_shoulders(p, (6, 7))
+        draw_shoulders(p, (pal.lit("HAIRD", 0.55), pal.lit("HAIRD", 0.80)))
         draw_face(p, SKIN, jaw=0.40, rx=FACE_RX * 0.94)
         draw_neck(p, SKIN, wide=4)
-        draw_features(p, SKIN, iris=11, brow=7, narrow=1)
-        draw_hood(p, [5, 5, 6, 7, 7], low=1.30, base=0.10)
+        draw_features(p, SKIN, iris=pal.lit("EARTH", 0.70),
+                      brow=pal.lit("HAIRD", 0.85), narrow=1)
+        draw_hood(p, CLOAK_GREY + CLOAK_GREY[-2:], low=1.30, base=0.10)
     elif cls == 3:                                    # rodeur
-        draw_shoulders(p, (12, 11))
-        draw_hair(p, [10, 9, 11], jaw=0.32, hairline=-0.24,
-                  drop=0.40, volume=1.08, base=0.18)
+        draw_shoulders(p, (pal.lit("CLOTHG", 0.40), pal.lit("CLOTHG", 0.70)))
+        draw_hair(p, HAIR_DARK, jaw=0.32, hairline=-0.24, drop=0.40,
+                  volume=1.08, base=0.22)
         draw_face(p, SKIN, jaw=0.32)
         draw_neck(p, SKIN, wide=4)
-        draw_features(p, SKIN, iris=12, brow=9)
-        draw_beard(p, [9, 11, 7, 7], length=2, moustache=False)
-        draw_hood(p, [12, 12, 12, 11, 7], shade=False, base=0.06,
-                  low=1.30)
+        draw_features(p, SKIN, iris=pal.lit("MOSS", 0.35),
+                      brow=pal.lit("HAIRD", 0.75))
+        draw_beard(p, HAIR_DARK, length=2, moustache=False)
+        draw_hood(p, CLOAK_GREEN, shade=False, base=0.10, low=1.30)
     elif cls == 4:                                    # paladin
-        draw_shoulders(p, (2, 4))
+        draw_shoulders(p, (pal.lit("STEEL", 0.30), pal.lit("STEEL", 0.55)))
         draw_face(p, SKIN, jaw=0.28)
         draw_neck(p, SKIN, wide=5)
-        draw_features(p, SKIN, iris=9, brow=9)
-        draw_helmet(p, nasal=True, crest=15)
+        draw_features(p, SKIN, iris=pal.lit("WOOD", 0.55),
+                      brow=pal.lit("HAIRD", 0.75))
+        draw_helmet(p, nasal=True, crest=pal.lit("CLOTHR", 0.35))
     elif cls == 5:                                    # clerc
-        draw_shoulders(p, (2, 3))
+        draw_shoulders(p, (pal.lit("BONE", 0.25), pal.lit("BONE", 0.45)))
         draw_face(p, SKIN, jaw=0.32)
         draw_neck(p, SKIN, wide=4)
-        draw_features(p, SKIN, iris=9, brow=3)
-        draw_hood(p, [1, 1, 2, 3, 5], shade=False, base=0.10,
-                  low=1.30)
+        draw_features(p, SKIN, iris=pal.lit("WOOD", 0.50),
+                      brow=pal.lit("HAIRL", 0.60))
+        draw_hood(p, LINEN, shade=False, base=0.14, low=1.30)
         for y in range(3, 8):                         # symbole sur le capuchon
-            p.set(FACE_CX, y, 14)
+            p.set(FACE_CX, y, pal.lit("GOLD", 0.20))
         for x in range(FACE_CX - 2, FACE_CX + 3):
-            p.set(x, 5, 14)
+            p.set(x, 5, pal.lit("GOLD", 0.20))
     elif cls == 6:                                    # magicien
-        draw_shoulders(p, (5, 6))
-        draw_hair(p, [1, 1, 2, 3, 4], jaw=0.36, hairline=0.02,
-                  drop=0.80, volume=1.34, base=0.12)
+        draw_shoulders(p, (pal.lit("CLOTHB", 0.40), pal.lit("CLOTHB", 0.70)))
+        draw_hair(p, HAIR_LIGHT, jaw=0.36, hairline=0.02, drop=0.80,
+                  volume=1.34, base=0.16)
         draw_face(p, SKIN, jaw=0.36)
         draw_neck(p, SKIN, wide=4)
-        draw_features(p, SKIN, iris=5, brow=2)
-        draw_beard(p, [1, 1, 2, 3, 4], length=7, moustache=True)
+        draw_features(p, SKIN, iris=pal.lit("MAGIC", 0.40),
+                      brow=pal.lit("HAIRL", 0.45))
+        draw_beard(p, HAIR_LIGHT, length=7, moustache=True)
         for x in (FACE_CX - 4, FACE_CX + 4):                    # rides du front
-            p.set(x, EYE_Y - 6, 9)
-            p.set(x, EYE_Y - 5, 9)
+            p.set(x, EYE_Y - 6, pal.lit("SKIN", 0.62))
+            p.set(x, EYE_Y - 5, pal.lit("SKIN", 0.62))
     else:                                             # ensorceleur
-        draw_shoulders(p, (11, 7))
-        draw_hair(p, [5, 5, 6, 7], jaw=0.42, hairline=-0.20, drop=0.66,
-                  volume=1.26, base=0.12, sweep=-0.26)
+        draw_shoulders(p, (pal.lit("CLOTHP", 0.40), pal.lit("CLOTHP", 0.70)))
+        draw_hair(p, HAIR_DARK, jaw=0.42, hairline=-0.20, drop=0.66,
+                  volume=1.26, base=0.14, sweep=-0.26)
         draw_face(p, SKIN, jaw=0.42, rx=FACE_RX * 0.96)
         draw_neck(p, SKIN, wide=4)
-        draw_features(p, SKIN, iris=14, brow=7)
+        draw_features(p, SKIN, iris=pal.lit("GOLD", 0.25),
+                      brow=pal.lit("HAIRD", 0.85))
         for k in range(4):                            # une meche libre
-            p.set(FACE_CX - 5 + k, EYE_Y - 4 + k, 6)
+            p.set(FACE_CX - 5 + k, EYE_Y - 4 + k, pal.lit("HAIRD", 0.55))
     return p
 
 
@@ -654,16 +755,16 @@ def make_monster(kind, frame=0):
     sway = 2 if frame else -2
 
     if kind == 0:                                    # --- bete a quatre pattes
-        body, dark = 4, 6
+        body, dark = C[4], C[6]
         ellipse(p, cx + 2, cy + 10, 26, 15, body)
-        ellipse(p, cx + 2, cy + 6, 24, 11, 3)        # dos eclaire
+        ellipse(p, cx + 2, cy + 6, 24, 11, C[3])        # dos eclaire
         for s, off in ((-1, -16), (-1, 8), (1, -12), (1, 12)):
             limb(p, cx + off, cy + 18, cx + off + s * 3, cy + 28 + f * 2, 3, dark)
         ellipse(p, cx - 26, cy + 2, 13, 11, body)    # tete
-        ellipse(p, cx - 34, cy + 4, 6, 5, 3)         # museau
+        ellipse(p, cx - 34, cy + 4, 6, 5, C[3])         # museau
         limb(p, cx - 31, cy - 8, cx - 27, cy - 2, 2, dark)   # oreilles
         limb(p, cx - 24, cy - 10, cx - 22, cy - 3, 2, dark)
-        eyes(p, cx - 29, cy - 1, 0, 15, 1)
+        eyes(p, cx - 29, cy - 1, 0, C[15], 1)
         for t in range(26):                          # queue
             p.set(cx + 27 + t // 2, cy + 6 - t + (t * sway) // 14, dark)
         for t in range(-6, 7):                       # crocs
@@ -671,12 +772,12 @@ def make_monster(kind, frame=0):
                 p.set(cx - 36 + abs(t) // 2, cy + 8, 13)
 
     elif kind == 1:                                  # --- squelette
-        bone, shade = 13, 2
+        bone, shade = C[13], C[2]
         ellipse(p, cx, cy - 24, 11, 13, bone)        # crane
         for e in (-4, 4):
-            ellipse(p, cx + e, cy - 26, 3, 4, 0)
+            ellipse(p, cx + e, cy - 26, 3, 4, C[0])
         for t in range(-4, 5, 2):                    # machoire
-            p.set(cx + t, cy - 14, 0)
+            p.set(cx + t, cy - 14, C[0])
         limb(p, cx, cy - 12, cx, cy + 14, 3, bone)   # colonne
         for r in range(-8, 12, 5):                   # cotes
             for x in range(-12, 13):
@@ -686,56 +787,56 @@ def make_monster(kind, frame=0):
         limb(p, cx + 12, cy - 8, cx + 20, cy + 10, 2, bone)
         limb(p, cx - 6, cy + 16, cx - 9, cy + 34, 3, bone)
         limb(p, cx + 6, cy + 16, cx + 9, cy + 34, 3, bone)
-        limb(p, cx + 20, cy + 10, cx + 26, cy - 16, 2, 4)     # arme
+        limb(p, cx + 20, cy + 10, cx + 26, cy - 16, 2, C[4])     # arme
         for t in range(6):
-            p.set(cx + 26 + t // 3, cy - 18 - t, 2)
+            p.set(cx + 26 + t // 3, cy - 18 - t, C[2])
 
     elif kind == 2:                                  # --- petit humanoide
-        skin, cloth = 12, 9
+        skin, cloth = C[12], C[9]
         ellipse(p, cx, cy + 8, 13, 16, skin)         # corps
         ellipse(p, cx, cy - 12, 11, 11, skin)        # tete
         limb(p, cx - 9, cy - 18, cx - 14, cy - 24, 2, skin)   # oreilles
         limb(p, cx + 9, cy - 18, cx + 14, cy - 24, 2, skin)
-        eyes(p, cx, cy - 13, 4, 14, 2)
+        eyes(p, cx, cy - 13, 4, C[14], 2)
         for t in range(-4, 5, 2):
-            p.set(cx + t, cy - 6, 13)                # dents
+            p.set(cx + t, cy - 6, C[13])                # dents
         limb(p, cx - 12, cy + 4, cx - 18 - f * 2, cy + 16, 3, skin)
         limb(p, cx + 12, cy + 2, cx + 18, cy - 10 - f * 4, 3, skin)
-        limb(p, cx + 18, cy - 26 - f * 4, cx + 18, cy + 14, 1, 4)  # lance
+        limb(p, cx + 18, cy - 26 - f * 4, cx + 18, cy + 14, 1, C[4])  # lance
         limb(p, cx - 6, cy + 22, cx - 8, cy + 34, 3, cloth)
         limb(p, cx + 6, cy + 22, cx + 8, cy + 34, 3, cloth)
 
     elif kind == 3:                                  # --- humanoide arme
-        skin, dark = 12, 6
+        skin, dark = C[12], C[6]
         ellipse(p, cx, cy + 10, 20, 20, skin)
-        ellipse(p, cx, cy + 6, 17, 15, 3)            # torse eclaire
+        ellipse(p, cx, cy + 6, 17, 15, C[3])            # torse eclaire
         ellipse(p, cx, cy - 16, 13, 13, skin)
-        eyes(p, cx, cy - 18, 5, 14, 2)
+        eyes(p, cx, cy - 18, 5, C[14], 2)
         for t in (-5, 5):                            # defenses
-            p.set(cx + t, cy - 8, 13), p.set(cx + t, cy - 7, 13)
+            p.set(cx + t, cy - 8, C[13]), p.set(cx + t, cy - 7, C[13])
         limb(p, cx - 18, cy + 4, cx - 26, cy + 18 - f * 4, 4, skin)
         limb(p, cx + 18, cy + 2, cx + 26, cy - 12 - f * 6, 4, skin)
-        limb(p, cx + 26, cy - 14 - f * 6, cx + 34, cy - 30 - f * 6, 2, 4)
+        limb(p, cx + 26, cy - 14 - f * 6, cx + 34, cy - 30 - f * 6, 2, C[4])
         for t in range(10):                          # lame de la hache
-            p.set(cx + 30 + t // 2, cy - 32 - f * 6 + t, 2)
-            p.set(cx + 36 - t // 3, cy - 30 - f * 6 + t, 1)
+            p.set(cx + 30 + t // 2, cy - 32 - f * 6 + t, C[2])
+            p.set(cx + 36 - t // 3, cy - 30 - f * 6 + t, C[1])
         limb(p, cx - 8, cy + 28, cx - 11, cy + 40, 4, dark)
         limb(p, cx + 8, cy + 28, cx + 11, cy + 40, 4, dark)
 
     elif kind == 4:                                  # --- grand brutal
-        skin, dark = 3, 5
+        skin, dark = C[3], C[5]
         ellipse(p, cx, cy + 14, 27, 26, skin)
-        ellipse(p, cx, cy + 10, 23, 20, 2)
+        ellipse(p, cx, cy + 10, 23, 20, C[2])
         ellipse(p, cx, cy - 18, 16, 15, skin)
-        limb(p, cx - 14, cy - 30, cx - 20, cy - 38, 3, 13)    # cornes
-        limb(p, cx + 14, cy - 30, cx + 20, cy - 38, 3, 13)
-        eyes(p, cx, cy - 20, 6, 15, 2)
+        limb(p, cx - 14, cy - 30, cx - 20, cy - 38, 3, C[13])    # cornes
+        limb(p, cx + 14, cy - 30, cx + 20, cy - 38, 3, C[13])
+        eyes(p, cx, cy - 20, 6, C[15], 2)
         for t in range(-6, 7, 3):
-            p.set(cx + t, cy - 10, 13)
+            p.set(cx + t, cy - 10, C[13])
         limb(p, cx - 24, cy + 6, cx - 34, cy + 22 - f * 4, 5, skin)
         limb(p, cx + 24, cy + 4, cx + 32, cy - 14 - f * 6, 5, skin)
-        limb(p, cx + 32, cy - 16 - f * 6, cx + 38, cy - 36 - f * 8, 4, 9)
-        ellipse(p, cx + 38, cy - 38 - f * 8, 8, 8, 9)         # masse
+        limb(p, cx + 32, cy - 16 - f * 6, cx + 38, cy - 36 - f * 8, 4, C[9])
+        ellipse(p, cx + 38, cy - 38 - f * 8, 8, 8, C[9])         # masse
         limb(p, cx - 10, cy + 36, cx - 13, cy + 42, 6, dark)
         limb(p, cx + 10, cy + 36, cx + 13, cy + 42, 6, dark)
 
@@ -745,22 +846,22 @@ def make_monster(kind, frame=0):
             ellipse(p, cx, cy + 6 + f, max(2, r - 6), r, idx)
         for t in range(24):                          # lambeaux
             p.set(cx - 22 + t, cy + 34 + (t % 5) - f * 2, 6)
-        ellipse(p, cx, cy - 16, 12, 13, 7)           # capuche
-        ellipse(p, cx, cy - 14, 9, 10, 0)
-        eyes(p, cx, cy - 16, 4, 12, 2)
-        limb(p, cx - 14, cy - 2, cx - 24 - f * 2, cy - 12, 2, 6)
-        limb(p, cx + 14, cy - 2, cx + 24, cy - 14 - f * 2, 2, 6)
+        ellipse(p, cx, cy - 16, 12, 13, C[7])           # capuche
+        ellipse(p, cx, cy - 14, 9, 10, C[0])
+        eyes(p, cx, cy - 16, 4, C[12], 2)
+        limb(p, cx - 14, cy - 2, cx - 24 - f * 2, cy - 12, 2, C[6])
+        limb(p, cx + 14, cy - 2, cx + 24, cy - 14 - f * 2, 2, C[6])
 
     elif kind == 6:                                  # --- momie
-        wrap, shade = 2, 4
+        wrap, shade = C[2], C[4]
         ellipse(p, cx, cy + 12, 18, 24, wrap)
         ellipse(p, cx, cy - 16, 12, 14, wrap)
         for r in range(-28, 36, 5):                  # bandelettes
             for x in range(-20, 21):
                 if abs(x) < 19 - abs(r) // 6:
                     p.set(cx + x + (r // 4) % 3, cy + r, shade)
-        ellipse(p, cx - 4, cy - 18, 3, 3, 0)
-        ellipse(p, cx + 4, cy - 18, 3, 3, 0)
+        ellipse(p, cx - 4, cy - 18, 3, 3, C[0])
+        ellipse(p, cx + 4, cy - 18, 3, 3, C[0])
         limb(p, cx - 16, cy + 2, cx - 30, cy - 6 - f * 3, 4, wrap)
         limb(p, cx + 16, cy + 2, cx + 30, cy - 4 - f * 3, 4, wrap)
         for t in range(8):                           # bandelettes qui pendent
@@ -768,7 +869,7 @@ def make_monster(kind, frame=0):
             p.set(cx + 30 - t % 3, cy + 4 + t, shade)
 
     elif kind == 7:                                  # --- creature ailee
-        body, wing = 6, 5
+        body, wing = C[6], C[5]
         for s in (-1, 1):                            # ailes
             for i in range(5):
                 limb(p, cx + s * 10, cy - 4,
@@ -778,23 +879,23 @@ def make_monster(kind, frame=0):
         ellipse(p, cx, cy - 14, 11, 11, body)
         limb(p, cx - 10, cy - 22, cx - 14, cy - 30, 2, body)  # cornes
         limb(p, cx + 10, cy - 22, cx + 14, cy - 30, 2, body)
-        eyes(p, cx, cy - 15, 4, 14, 2)
+        eyes(p, cx, cy - 15, 4, C[14], 2)
         limb(p, cx - 6, cy + 24, cx - 10, cy + 34, 3, body)   # serres
         limb(p, cx + 6, cy + 24, cx + 10, cy + 34, 3, body)
 
     else:                                            # --- hydre
-        ellipse(p, cx, cy + 22, 24, 14, 12)          # corps
-        ellipse(p, cx, cy + 18, 20, 10, 3)
+        ellipse(p, cx, cy + 22, 24, 14, C[12])          # corps
+        ellipse(p, cx, cy + 18, 20, 10, C[3])
         necks = ((-30, -18), (-16, -30), (0, -36), (16, -30), (30, -16))
         for i, (hx, hy) in enumerate(necks):
             wob = f * (2 if i % 2 else -2)
-            limb(p, cx, cy + 16, cx + hx, cy + hy + wob, 3, 12)
-            ellipse(p, cx + hx, cy + hy + wob, 8, 6, 12)
+            limb(p, cx, cy + 16, cx + hx, cy + hy + wob, 3, C[12])
+            ellipse(p, cx + hx, cy + hy + wob, 8, 6, C[12])
             ellipse(p, cx + hx + (2 if hx > 0 else -2), cy + hy + wob + 2,
                     5, 3, 15)
-            eyes(p, cx + hx, cy + hy + wob - 2, 3, 14, 1)
+            eyes(p, cx + hx, cy + hy + wob - 2, 3, C[14], 1)
         for t in range(20):                          # queue
-            p.set(cx + 24 + t // 2, cy + 28 + t // 3, 12)
+            p.set(cx + 24 + t // 2, cy + 28 + t // 3, C[12])
     return p
 
 
@@ -804,7 +905,7 @@ def encode(piece):
     wwords = piece.w // 16
     assert piece.w % 16 == 0, piece.w
     out = bytearray()
-    for plane in range(-1, 4):                       # -1 = masque
+    for plane in range(-1, DEPTHS):                  # -1 = masque
         for y in range(piece.h):
             for wx in range(wwords):
                 acc = 0
@@ -846,6 +947,10 @@ def build_art():
     pieces += [make_side(i, -1.5) for i in (2, 3)]
     ART_INDEX["ART_OUTERR"] = len(pieces)
     pieces += [make_side(i, 1.5) for i in (2, 3)]
+    ART_INDEX["ART_GATE"] = len(pieces)
+    pieces += [make_front(k, gate=True) for k in (1, 2, 3)]
+    ART_INDEX["ART_LEVER"] = len(pieces)
+    pieces += [make_lever(s) for s in (0, 1)]
     ART_INDEX["ART_NICHE"] = len(pieces)
     pieces += [make_niche()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
@@ -868,6 +973,7 @@ def build_art():
 # --- donjon -------------------------------------------------------------
 MAPW = MAPH = 24
 FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
+LEVER, GATE = 7, 8                       # herse et son levier
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
 # Rencontres par niveau : indices dans MonTypes (gen_tables.py)
@@ -1000,6 +1106,41 @@ def build_level(level, seed):
             free.remove((x, y))
             keys += 1
 
+    # Herses et leviers : la herse coupe un couloir loin du depart, le
+    # levier qui la commande est scelle dans un mur atteignable avant
+    # elle. Le parametre porte le numero du mecanisme, pour les apparier.
+    gates = 0
+    for x, y in far_cells:
+        if gates >= 1 + (level > 0):
+            break
+        if grid[y][x] != FLOOR:
+            continue
+        blocked = distances(grid, start, blocked={(x, y)})
+        if far not in blocked:                       # ne pas murer la sortie
+            continue
+        lever = None
+        want = dist[(x, y)] * 0.6              # ni sur le pas de la porte,
+        for cx, cy in sorted(free,             # ni au pied de la herse
+                             key=lambda c: abs(dist.get(c, 99) - want)):
+            d = dist.get((cx, cy), 99)
+            if grid[cy][cx] != FLOOR or not 3 <= d < dist[(x, y)]:
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = cx + dx, cy + dy
+                if grid[ny][nx] == WALL and not par[ny][nx]:
+                    lever = (nx, ny)
+                    break
+            if lever:
+                break
+        if not lever:
+            continue
+        grid[y][x] = GATE
+        par[y][x] = gates + 1
+        grid[lever[1]][lever[0]] = LEVER
+        par[lever[1]][lever[0]] = gates + 1
+        free.remove((x, y))
+        gates += 1
+
     # niches : un mur borde par un couloir, avec une offrande dedans
     niches = 0
     for y in range(1, MAPH - 1):
@@ -1033,8 +1174,9 @@ def build_maps():
     return bytes(out), levels
 
 
-def distances(grid, start):
-    """Distance de chaque case au depart, murs exclus."""
+def distances(grid, start, blocked=()):
+    """Distance de chaque case au depart, murs exclus. `blocked` permet
+    d'essayer une herse : on verifie ainsi qu'elle coupe bien la route."""
     import collections
     dist = {start: 0}
     q = collections.deque([start])
@@ -1044,7 +1186,9 @@ def distances(grid, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in dist or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE):
+            if (nx, ny) in blocked:
+                continue
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE):
                 continue
             dist[(nx, ny)] = dist[(x, y)] + 1
             q.append((nx, ny))
@@ -1068,12 +1212,38 @@ def check_solvable(grid, par, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
     assert stairs or keys > 0, \
         "niveau bloque : ni escalier ni cle sans forcer une serrure"
+
+    # Chaque levier doit s'atteindre sans franchir la herse qu'il commande,
+    # sinon le mecanisme s'enferme lui-meme.
+    shut = {(x, y) for y in range(MAPH) for x in range(MAPW)
+            if (grid[y][x] & 0x0f) == GATE}
+    if shut:
+        reach, q = {start}, collections.deque([start])
+        while q:
+            x, y = q.popleft()
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = x + dx, y + dy
+                if (nx, ny) in reach or (nx, ny) in shut:
+                    continue
+                if not (0 <= nx < MAPW and 0 <= ny < MAPH):
+                    continue
+                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, LOCKED):
+                    continue
+                reach.add((nx, ny))
+                q.append((nx, ny))
+        for y in range(MAPH):
+            for x in range(MAPW):
+                if (grid[y][x] & 0x0f) != LEVER:
+                    continue
+                near = any((x + dx, y + dy) in reach
+                           for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+                assert near, f"levier inatteignable en {x},{y}"
     return len(seen), keys, stairs
 
 
@@ -1155,7 +1325,8 @@ if __name__ == "__main__":
         f.write(";----------------------------------------------------------\n\n")
         for k in ("ART_BG", "ART_FRONT", "ART_LEFT", "ART_RIGHT", "ART_DOOR",
                   "ART_MONSTER", "ART_FRONTL", "ART_FRONTR", "ART_OUTERL",
-                  "ART_OUTERR", "ART_NICHE", "ART_PORTRAIT", "ART_ICON"):
+                  "ART_OUTERR", "ART_GATE", "ART_LEVER", "ART_NICHE",
+                  "ART_PORTRAIT", "ART_ICON"):
             f.write(f"{k}\t= {ART_INDEX[k]}\n")
         f.write(f"NMONSTERART\t= {NMONSTERART}\n")
     maps, levels = build_maps()

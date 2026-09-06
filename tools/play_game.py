@@ -19,8 +19,79 @@ import test_game as T
 
 MAPW = MAPH = 24
 T_FLOOR, T_WALL, T_DOOR, T_STAIRS, T_LOCKED, T_NICHE, T_RUNE = range(7)
+T_LEVER, T_GATE = 7, 8
 C_CHEST, C_MONSTER, C_ITEM, C_MASK = 0x10, 0x20, 0x30, 0x30
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]     # meme ordre que DirTable
+
+
+def path_to(grid, start, target):
+    """Chemin jusqu'a une case precise."""
+    seen = {start: None}
+    q = collections.deque([start])
+    while q:
+        cur = q.popleft()
+        if cur == target:
+            out = []
+            while cur:
+                out.append(cur)
+                cur = seen[cur]
+            return out[::-1]
+        for dx, dy in DIRS:
+            nxt = (cur[0] + dx, cur[1] + dy)
+            if not (0 <= nxt[0] < MAPW and 0 <= nxt[1] < MAPH):
+                continue
+            if nxt in seen or not passable(grid[nxt[1]][nxt[0]]):
+                continue
+            seen[nxt] = cur
+            q.append(nxt)
+    return None
+
+
+def find(grid, kind):
+    return [(x, y) for y in range(MAPH) for x in range(MAPW)
+            if grid[y][x] & 0x0f == kind]
+
+
+def goto(g, target, log=None):
+    """Marche jusqu'a la case voulue ; False si la route se ferme."""
+    for _ in range(120):
+        here = (g.w("PosX"), g.w("PosY"))
+        if here == target:
+            return True
+        path = path_to(terrain(g), here, target)
+        if not path or len(path) < 2:
+            return False
+        if not step_to(g, path[1], log if log is not None else []):
+            return False
+    return False
+
+
+def pull_levers(g, fails=None, stats=None):
+    """Va tirer chaque levier, et verifie que sa herse se leve."""
+    done = 0
+    for lx, ly in find(terrain(g), T_LEVER):
+        grid = terrain(g)
+        par = g.addr("MapParam")
+        num = g.mem.r8(par + ly * MAPW + lx) & 0x7f
+        mates = [(x, y) for x, y in find(grid, T_GATE)
+                 if g.mem.r8(par + y * MAPW + x) & 0x7f == num]
+        spot = next(((lx + dx, ly + dy) for dx, dy in DIRS
+                     if 0 <= lx + dx < MAPW and 0 <= ly + dy < MAPH
+                     and passable(grid[ly + dy][lx + dx])), None)
+        if spot is None or not goto(g, spot):
+            continue
+        if not face(g, DIRS.index((lx - spot[0], ly - spot[1])), []):
+            continue
+        g.key(T.K_SPACE)
+        after = terrain(g)
+        if mates and all(after[y][x] & 0x0f == T_GATE for x, y in mates):
+            if fails is not None:
+                fails.append(f"le levier {num} n'ouvre pas sa herse")
+        else:
+            done += 1
+            if stats is not None:
+                stats["levers"] += 1
+    return done
 
 
 def inv_count(g):
@@ -36,7 +107,7 @@ def terrain(g):
 
 def passable(cell):
     t = cell & 0x0f
-    return t not in (T_WALL, T_NICHE)
+    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE)
 
 
 def bfs(grid, start, want):
@@ -224,7 +295,8 @@ def main():
     random.seed(7)
     fails, log = [], []
     stats = {"rounds": 0, "fights": 0, "steps": 0, "items": 0,
-             "spells": 0, "menus": 0, "heals": 0}
+             "spells": 0, "menus": 0, "heals": 0,
+             "levers": 0}
     g = T.Game()
     T.create_party(g)
     if g.w("Phase") != 1:
@@ -237,6 +309,7 @@ def main():
         ("escalier", lambda c: c & 0x0f == T_STAIRS),
     ]
     exercise_ui(g, fails, stats)
+    pull_levers(g, fails, stats)
     for tour in range(40):
         grid = terrain(g)
         here = (g.w("PosX"), g.w("PosY"))
@@ -266,7 +339,7 @@ def main():
           f"{stats['rounds']} rounds, niveau {g.w('Level')}, "
           f"or {g.w('Gold')}, PX {g.hero(0, 'hr_Xp')}, "
           f"objets {inv_count(g)}, sorts {stats['spells']}, "
-          f"soins {stats['heals']}, "
+          f"soins {stats['heals']}, leviers {stats['levers']}, "
           f"fin {g.w('GameOver')}")
     for i in range(4):
         print(f"  {g.name(i):8s} PV {g.hero(i,'hr_Hp')}/{g.hero(i,'hr_HpMax')} "

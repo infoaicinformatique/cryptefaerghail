@@ -18,7 +18,18 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import test_game as T
 
-SCRW, SCRH, SCRBPL, DEPTH = 320, 256, 40, 4
+def read_equ(name, default):
+    """Une constante lue dans le source : le banc doit suivre le jeu
+    quand il passe de quatre a huit bitplanes."""
+    for line in open(os.path.join(ROOT, "src", "crawl.s")):
+        m = re.match(r"%s\s*=\s*(\d+)" % name, line)
+        if m:
+            return int(m.group(1))
+    return default
+
+
+SCRW, SCRH, SCRBPL = 320, 256, 40
+DEPTH = read_equ("DEPTH", 4)
 PLANESIZE = SCRBPL * SCRH
 
 
@@ -34,7 +45,8 @@ def read_palette():
         hi, lo = int(m.group(1), 16), int(m.group(2), 16)
         out.append(tuple(((hi >> s) & 0xf) << 4 | ((lo >> s) & 0xf)
                          for s in (8, 4, 0)))
-    assert len(out) == 16, f"{len(out)} couleurs lues"
+    assert len(out) >= 1 << DEPTH, f"{len(out)} couleurs pour "\
+                                   f"{DEPTH} bitplanes"
     return out
 
 

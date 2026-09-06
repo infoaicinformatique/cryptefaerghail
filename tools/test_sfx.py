@@ -180,6 +180,7 @@ def check_in_game(g, sfx, fails):
     if heard is not None and SFX_DOOR not in heard:
         fails.append("aucun grincement en ouvrant une porte")
 
+    P.pull_levers(g)                                  # ouvrir les herses
     heard = probe(lambda c: c & 0x30 == 0x20)         # un monstre
     if heard is None:
         fails.append("aucun monstre atteignable pour l'essai")

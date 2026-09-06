@@ -132,6 +132,7 @@ tools/shot68k.py     photographie les écrans dessinés par le processeur émul�
 tools/test_sfx.py    vérifie les bruitages aux registres de Paula
 tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
 tools/gen_score.py   générateur de la musique du jeu (data/crawlmus.mod)
+tools/palette.py     la palette 256 couleurs AGA, décrite matière par matière
 tools/test_layout.py contrôle qu'aucun panneau ne déborde de la vue
 disk/                fichiers écrits à la main pour la disquette
 scripts/make-disk.sh fabrique l'ADF amorçable et le .lha

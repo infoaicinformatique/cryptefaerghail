@@ -37,12 +37,28 @@ COMMANDES
 
   En combat :  A attaquer   S lancer un sort   F fuir   I sac
 
+LEVIERS ET HERSES
+  Certains couloirs sont barres par une herse de fer. Le levier qui la
+  commande est scelle dans un mur, ailleurs sur l'etage : mettez-vous
+  face a lui et pressez ESPACE. Un levier peut se remettre en place, et
+  la herse retombe. La carte montre les herses fermees en gris de fer
+  et les leviers en laiton.
+
 LES PORTRAITS
   Un visage par classe, dessine en trente-deux pixels de cote : le
   volume vient d'un eclairage venu d'en haut a gauche, les yeux, le nez
-  et la bouche sont poses au pixel. La palette de pierre n'avait aucune
-  teinte de peau : les quatre bruns du bois et du sol servent aussi de
-  carnation.
+  et la bouche sont poses au pixel.
+
+L'IMAGE
+  Le jeu tourne en huit bitplanes AGA : 256 couleurs choisies parmi
+  seize millions, chargees par le copper en huit banques de trente-deux
+  et ecrites deux fois pour les vingt-quatre bits. La palette est
+  decrite matiere par matiere -- pierre, mortier, terre, bois, fer,
+  acier, peau, mousse, or, sang, feu, os, cuir, ecailles, etoffes,
+  cheveux, magie -- chacune sous forme d'une gamme continue. Les murs
+  ne sont plus six gris mais vingt teintes de calcaire, les visages ont
+  une vraie carnation, et les cadres de l'interface sont du bronze
+  cisele avec un clou a chaque angle.
 
 LA CARTE
   M ouvre le releve du niveau. Seules apparaissent les cases que le
@@ -94,8 +110,9 @@ AGASCROLL et AGADEMO : deux demonstrations AGA (playfield 8 bitplanes
 en scrolling materiel, scroller sinusoidal sur barres copper, degrade
 copper 24 bits, musique ProTracker).
 
-Configuration : Amiga 1200 ou 4000 (AGA), 68020 minimum, Kickstart 3.0
-ou 3.1, environ 1 Mo de Chip RAM libre.
+Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
+palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 700 Ko de
+Chip RAM libre.
 
 Le tiroir Src contient tout le source. Graphismes, cartes, musique et
 bruitages sont generes par programme : rien n'est emprunte.

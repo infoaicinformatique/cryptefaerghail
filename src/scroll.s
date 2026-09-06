@@ -51,6 +51,17 @@ PANX_MIN	= 16
 PANX_AMP	= 288
 PANY_AMP	= 128
 
+; --- bande de scrolltext, en bas de l'ecran ---
+SPLITLINE	= 236			; le playfield occupe 44..235
+SCRTEXTH	= 64			; hauteur de la bande
+SCRBPL		= 48			; 384 pixels de large, un seul plan
+SCRMOD		= SCRBPL-FETCHBYTES
+SCROLL_XOFF	= 16			; le fetch commence 16 px avant l'ecran
+SCROLL_CHARS	= 22			; caracteres visibles au plus
+SCROLL_SPEED	= 2			; pixels par image
+SCROLL_BASEY	= 24			; ligne centrale de l'onde
+CHARW		= 16
+
 ; --- palette ---
 PALROT		= 240			; couleurs 0..239 en rotation
 PALBANKSZ	= 264			; taille d'une banque dans la copperlist
@@ -142,6 +153,7 @@ MainLoop:
 	move.l	BackRec,a0
 	bsr	UpdatePalette
 	bsr	MoveSprite
+	bsr	ScrollUpdate
 
 	btst	#6,CIAAPRA
 	bne	MainLoop
@@ -215,6 +227,7 @@ InitDemo:
 	lea	Rec2,a0
 	bsr	UpdatePalette
 	bsr	MoveSprite
+	bsr	ScrollInit
 
 	lea	CUSTOM,a5
 	move.l	FrontRec,a0
@@ -318,6 +331,40 @@ BuildCopperList:
 	move.w	#BPLCON1,(a2)+		; scroll fin (mis a jour par image)
 	move.l	a2,li_Con1(a0)
 	clr.w	(a2)+
+
+	; --- bascule vers la bande de scrolltext ---
+	; A partir de SPLITLINE le copper repasse a un seul bitplane, celui
+	; du scroller, avec ses propres couleurs. Rien n'est a restaurer
+	; ensuite : l'image suivante recharge tout depuis le haut de la liste.
+	move.w	#(SPLITLINE<<8)|$07,(a2)+
+	move.w	#$fffe,(a2)+
+	move.w	#BPLCON0,(a2)+
+	move.w	#$1201,(a2)+		; BPU = 1, COLOR, ECSENA
+	move.w	#BPLCON1,(a2)+
+	move.w	#$0000,(a2)+		; pas de scroll fin sur la bande
+	move.w	#BPL1MOD,(a2)+
+	move.w	#SCRMOD,(a2)+
+	move.l	#ScrollBitmap,d1
+	move.w	#BPL1PTH,(a2)+
+	move.l	d1,d2
+	swap	d2
+	move.w	d2,(a2)+
+	move.w	#BPL1PTH+2,(a2)+
+	move.w	d1,(a2)+
+	move.w	#BPLCON3,(a2)+
+	move.w	#$0000,(a2)+
+	move.w	#COLOR00,(a2)+
+	move.w	#$0001,(a2)+		; fond : bleu tres sombre
+	move.w	#COLOR01,(a2)+
+	move.w	#$0fff,(a2)+		; texte : blanc
+	move.w	#BPLCON3,(a2)+
+	move.w	#$0200,(a2)+
+	move.w	#COLOR00,(a2)+
+	move.w	#$0024,(a2)+
+	move.w	#COLOR01,(a2)+
+	move.w	#$0fff,(a2)+
+	move.w	#BPLCON3,(a2)+
+	move.w	#$0000,(a2)+
 
 	move.l	#$fffffffe,(a2)+	; fin de copperlist
 	movem.l	(sp)+,d0-d4/a0-a2
@@ -625,6 +672,161 @@ MoveSprite:
 	rts
 
 ;----------------------------------------------------------------------
+; ScrollInit : longueur du texte et position de depart
+;----------------------------------------------------------------------
+ScrollInit:
+	lea	ScrollText,a0
+	moveq	#0,d0
+.count:
+	tst.b	(a0)+
+	beq.s	.done
+	addq.w	#1,d0
+	bra.s	.count
+.done:
+	move.w	d0,ScrollLen
+	clr.w	ScrollChar
+	clr.w	ScrollFine
+	clr.w	ScrollPhase
+	rts
+
+;----------------------------------------------------------------------
+; ScrollUpdate : efface la bande et redessine les caracteres visibles
+;
+; L'onde est fixe dans l'espace : la hauteur d'un caractere ne depend que
+; de son abscisse, le texte la traverse. Chaque caractere est donc
+; redessine a chaque image, ce que le blitter fait sans effort : 22 blits
+; de 16 lignes sur deux mots, tous dans le VBlank.
+;----------------------------------------------------------------------
+ScrollUpdate:
+	movem.l	d0-d7/a0-a6,-(sp)
+	lea	CUSTOM,a6
+
+	move.w	ScrollFine,d0		; avance du texte
+	add.w	#SCROLL_SPEED,d0
+.advance:
+	cmp.w	#CHARW,d0
+	blt.s	.advanceDone
+	sub.w	#CHARW,d0
+	move.w	ScrollChar,d1
+	addq.w	#1,d1
+	cmp.w	ScrollLen,d1
+	blt.s	.charOk
+	moveq	#0,d1
+.charOk:
+	move.w	d1,ScrollChar
+	bra.s	.advance
+.advanceDone:
+	move.w	d0,ScrollFine
+
+	bsr	WaitBlit		; effacement de la bande : D seul,
+	move.w	#BLT_USED,BLTCON0(a6)	; minterme 0 donc on ecrit des zeros
+	clr.w	BLTCON1(a6)
+	clr.w	BLTDMOD(a6)
+	move.l	#ScrollBitmap,BLTDPT(a6)
+	move.w	#(SCRTEXTH<<6)|(SCRBPL/2),BLTSIZE(a6)
+
+	move.w	ScrollChar,d6		; caractere le plus a gauche
+	move.w	ScrollFine,d7
+	neg.w	d7
+	add.w	#SCROLL_XOFF,d7		; son abscisse dans le bitmap
+	moveq	#SCROLL_CHARS-1,d5
+.charLoop:
+	lea	ScrollText,a0
+	move.w	d6,d0
+	moveq	#0,d1
+	move.b	(a0,d0.w),d1
+	sub.w	#32,d1			; hors table : rien a dessiner
+	bmi.s	.skip
+	cmp.w	#96,d1
+	bge.s	.skip
+	lea	FontMap,a1
+	moveq	#0,d2
+	move.b	(a1,d1.w),d2
+	cmp.w	#$ff,d2
+	beq.s	.skip
+	lsl.w	#6,d2			; 64 octets par glyphe
+	lea	FontData,a0
+	add.w	d2,a0
+
+	move.w	d7,d3			; hauteur : sinus de l'abscisse
+	add.w	d3,d3
+	add.w	ScrollPhase,d3
+	and.w	#255,d3
+	lea	SinTab,a1
+	moveq	#0,d4
+	move.b	(a1,d3.w),d4
+	sub.w	#128,d4
+	muls.w	#3,d4
+	asr.w	#4,d4			; +/- 24 lignes
+	add.w	#SCROLL_BASEY,d4
+
+	move.w	d7,d0
+	move.w	d4,d1
+	bsr	BlitChar
+.skip:
+	add.w	#CHARW,d7
+	addq.w	#1,d6
+	cmp.w	ScrollLen,d6
+	blt.s	.wrapOk
+	moveq	#0,d6
+.wrapOk:
+	dbf	d5,.charLoop
+
+	move.w	ScrollPhase,d0		; derive lente de l'onde
+	addq.w	#1,d0
+	and.w	#255,d0
+	move.w	d0,ScrollPhase
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; BlitChar : un glyphe 16x16 dans la bande
+;   d0 = x, d1 = y, a0 = glyphe, a6 = CUSTOM
+;
+; Le decalage de 0 a 15 pixels est fait par le barrel shifter du canal A ;
+; c'est pour cela que la source fait deux mots de large, le second nul.
+; Minterme $FA : D = A OR C, le glyphe se superpose au fond.
+;----------------------------------------------------------------------
+BlitChar:
+	movem.l	d0-d4/a0,-(sp)
+	move.w	d0,d2
+	and.w	#15,d2
+	ror.w	#4,d2			; decalage dans les bits 15-12
+	or.w	#BLT_USEA|BLT_USEC|BLT_USED|BLT_A_OR_C,d2
+
+	move.w	d1,d3
+	mulu.w	#SCRBPL,d3		; y * octets par ligne
+	move.w	d0,d4
+	lsr.w	#4,d4
+	add.w	d4,d4			; mot de destination
+	ext.l	d4
+	add.l	d4,d3
+	add.l	#ScrollBitmap,d3
+
+	bsr	WaitBlit
+	move.w	d2,BLTCON0(a6)
+	clr.w	BLTCON1(a6)
+	move.w	#-1,BLTAFWM(a6)
+	move.w	#-1,BLTALWM(a6)
+	clr.w	BLTAMOD(a6)		; source : exactement deux mots
+	move.w	#SCRBPL-4,BLTCMOD(a6)
+	move.w	#SCRBPL-4,BLTDMOD(a6)
+	move.l	a0,BLTAPT(a6)
+	move.l	d3,BLTCPT(a6)
+	move.l	d3,BLTDPT(a6)
+	move.w	#(16<<6)|2,BLTSIZE(a6)	; ecrire BLTSIZE lance le blit
+	movem.l	(sp)+,d0-d4/a0
+	rts
+
+;----------------------------------------------------------------------
+WaitBlit:
+	tst.w	DMACONR(a6)		; lecture a vide : bug connu du 68000
+.wait:
+	btst	#6,DMACONR(a6)		; BBUSY
+	bne.s	.wait
+	rts
+
+;----------------------------------------------------------------------
 WaitVBlank:
 	move.l	d0,-(sp)
 .wait:
@@ -648,6 +850,15 @@ GfxName:	dc.b	"graphics.library",0
 	include	"sine.i"
 	include	"palette.i"
 
+ScrollText:
+	dc.b	"   BIENVENUE SUR AMIGA 1200 !   "
+	dc.b	"8 BITPLANES AGA, 256 COULEURS EN 24 BITS VRAIES, "
+	dc.b	"SCROLLING 100 POUR 100 MATERIEL, "
+	dc.b	"UN SPRITE, UN PLASMA ET PROTRACKER SUR PAULA...   "
+	dc.b	"LE COPPER FAIT LE RESTE.   "
+	dc.b	"BOUTON GAUCHE POUR SORTIR.        ",0
+	even
+
 ;======================================================================
 	SECTION	chipdata,DATA_C
 ;======================================================================
@@ -658,6 +869,8 @@ Sprite0:
 
 NullSprite:
 	dc.w	$0000,$0000
+
+	include	"font.i"		; source du blitter : doit etre en Chip
 
 ;======================================================================
 	SECTION	scrollbss,BSS
@@ -675,6 +888,10 @@ OldIntena:	ds.w	1
 OldDmacon:	ds.w	1
 FrameCnt:	ds.w	1
 PalRot:		ds.w	1
+ScrollLen:	ds.w	1
+ScrollChar:	ds.w	1
+ScrollFine:	ds.w	1
+ScrollPhase:	ds.w	1
 XAcc:		ds.w	1
 DiagAcc:	ds.w	1
 LineTerm:	ds.w	1
@@ -687,4 +904,5 @@ Scratch:	ds.b	16
 
 CopList1:	ds.b	COPMAXSIZE
 CopList2:	ds.b	COPMAXSIZE
+ScrollBitmap:	ds.b	SCRBPL*SCRTEXTH
 

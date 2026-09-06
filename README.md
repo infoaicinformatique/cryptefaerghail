@@ -6,7 +6,7 @@ assembleur Motorola pour `vasm`, liées en exécutables *hunk* Amiga par `vlink`
 | Programme | Contenu |
 |---|---|
 | `bin/AGADemo` | dégradé plein écran généré **ligne par ligne par le copper en 24 bits réels**, plus une boule en **sprite matériel** |
-| `bin/AGAScroll` | playfield **8 bitplanes (256 couleurs 24 bits)** de 640×384 pixels, parcouru par une caméra en **scrolling 100 % matériel** |
+| `bin/AGAScroll` | playfield **8 bitplanes (256 couleurs 24 bits)** de 640×384 pixels en **scrolling 100 % matériel**, plus un **scroller de texte sinusoïdal** au blitter dans une bande séparée |
 
 Les deux jouent un **module ProTracker 4 voies sur Paula** et se quittent par
 le bouton gauche de la souris.
@@ -76,9 +76,10 @@ src/hardware.i   equates des registres custom et LVO exec/graphics
 src/sine.i       table sinus 256 entrées                    (généré)
 src/sprite.i     boule 16×16, 2 plans                       (généré)
 src/palette.i    256 couleurs 24 bits (hauts / bas)         (généré)
+src/font.i       police 16x16 pour le scrolltext             (généré)
 src/ptreplay.i   replayer ProTracker 4 voies pour Paula
 data/music.mod   module ProTracker, samples et partition     (généré)
-tools/gen_data.py    générateur des trois .i de données
+tools/gen_data.py    générateur des quatre .i de données
 tools/gen_module.py  générateur du module ProTracker
 tools/render_mod.py  rejoue le module en Python et écrit un WAV
 tools/preview.py     modèle Python du pipeline de scroll.s : contrôles + aperçu
@@ -152,6 +153,34 @@ de contrôle de l'affichage, donc sous Workbench) par un chunky-to-planar par
 paquets de 16 pixels, en deux passes de 4 plans : `lsr.b` sort le bit dans X,
 `roxl.w` le récupère dans l'accumulateur du plan.
 
+## Points techniques — scroller sinusoïdal
+
+**Une bande à part, obtenue par un split copper.** À la ligne 236, le copper
+repasse `BPLCON0` à un seul bitplane (`BPU = 1`), pointe `BPL1PT` sur le
+bitmap du scroller, change le modulo et écrit ses propres `COLOR00`/`COLOR01`.
+Rien n'est à restaurer ensuite : l'image suivante recharge tout depuis le haut
+de la liste. Le playfield 8 plans occupe donc les lignes 44 à 235, la bande les
+64 dernières.
+
+**L'onde est fixe dans l'espace**, le texte la traverse : la hauteur d'un
+caractère ne dépend que de son abscisse, `y = 24 + sin(2x + phase) × 24/128`.
+C'est ce qui donne le mouvement classique — et cela impose de redessiner les
+caractères à chaque image, contrairement à la variante « vague solidaire du
+texte » qu'un simple scroll matériel suffirait à animer.
+
+**Le blitter fait le travail.** Un blit d'effacement (canal D seul, minterme 0)
+vide les 3 Ko de la bande, puis 22 blits de 16 lignes sur deux mots posent les
+caractères visibles. Le décalage horizontal de 0 à 15 pixels est fait par le
+barrel shifter du canal A — c'est pour cela que chaque ligne de glyphe occupe
+deux mots dont le second est nul. Minterme `$FA` (`D = A OR C`) pour superposer
+le glyphe au fond. Le tout tient largement dans le VBlank, ce qui compte :
+pendant l'affichage, 8 bitplanes en lores ne laissent quasiment aucun créneau
+DMA au blitter.
+
+**La police** est une 5×7 doublée en 16×16, générée par `tools/gen_data.py`
+avec sa table ASCII → glyphe. Le texte lui-même est en clair dans `scroll.s`,
+donc modifiable sans rien régénérer.
+
 ## Points techniques — musique (`src/ptreplay.i`)
 
 **Cadence.** `PT_Tick` est appelé une fois par image depuis la boucle
@@ -193,7 +222,8 @@ Les deux programmes s'assemblent et se lient (exécutables hunk valides, hunks
 Chip correctement marqués), et `tools/preview.py` rejoue en Python la
 disposition de la copperlist, les adresses patchées à chaque image, le
 chunky-to-planar et le calcul de scroll — c'est ce modèle qui produit
-`docs/preview.png`.
+`docs/preview.png` — bande de scrolltext comprise (position des caractères,
+décalage du barrel shifter, débordements hors bande).
 
 Côté musique, `tools/render_mod.py` rejoue le module avec exactement la même
 sémantique que le replayer 68k (mêmes effets, même cadence 50 Hz, mêmes règles
@@ -208,6 +238,7 @@ chipset ni celui de Paula.
 
 - Scrolling infini : bitmap de la largeur de l'écran + 16 pixels, avec une
   colonne redessinée au blitter à chaque franchissement de mot.
+- Étoiles ou barres copper dans la bande du scroller, derrière le texte.
 - Blitter : effacement, dessin de bobs avec masque (cookie-cut), lignes.
 - Interruption niveau 3 (VERTB / COPER) plutôt qu'une attente active.
 - Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que

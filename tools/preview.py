@@ -26,6 +26,11 @@ BMW, BMH, DEPTH = 640, 384, 8
 BMWB = BMW // 8
 PLSIZE = BMWB * BMH
 SCRW, SCRH = 320, 256
+MAINH = 192                              # lignes de playfield avant le split
+SCRBPL, SCRTEXTH = 48, 64                # bande de scrolltext
+SCROLL_XOFF, SCROLL_SPEED = 16, 2
+SCROLL_CHARS, CHARW, SCROLL_BASEY = 22, 16, 24
+SPLITLINE = 236
 FETCHWORDS = 21                      # DDFSTRT recule de 8 => un mot de plus
 PALROT = 240
 PALBANKSZ = 264
@@ -58,7 +63,19 @@ def parse_words(path):
 SIN = parse_bytes(os.path.join(ROOT, "src", "sine.i"))
 PAL = parse_words(os.path.join(ROOT, "src", "palette.i"))       # hi, lo, hi, lo...
 SPR = parse_words(os.path.join(ROOT, "src", "sprite.i"))
-assert len(SIN) == 256 and len(PAL) == 512
+FONT = parse_words(os.path.join(ROOT, "src", "font.i"))         # 2 mots par ligne
+FONTMAP = parse_bytes(os.path.join(ROOT, "src", "font.i"))
+assert len(SIN) == 256 and len(PAL) == 512 and len(FONTMAP) == 96
+
+
+def scroll_text():
+    """Recupere le message directement dans src/scroll.s."""
+    src = open(os.path.join(ROOT, "src", "scroll.s")).read()
+    block = src.split("ScrollText:", 1)[1].split(",0", 1)[0]
+    return "".join(re.findall(r'"([^"]*)"', block))
+
+
+TEXT = scroll_text()
 
 
 # --- 1. copperlist : on rejoue BuildCopperList ------------------------
@@ -96,6 +113,21 @@ def build_copper():
     w.append(BPLCON1)
     li_con1 = len(w) * 2
     w.append(0)
+
+    w += [(SPLITLINE << 8) | 0x07, 0xfffe]           # bascule scrolltext
+    move(BPLCON0, 0x1201)
+    move(BPLCON1, 0)
+    move(BPL1MOD, SCRBPL - FETCHWORDS * 2)
+    move(BPL1PTH, 0)
+    move(BPL1PTH + 2, 0)
+    move(BPLCON3, 0)
+    move(COLOR00, 0x0001)
+    move(COLOR00 + 2, 0x0fff)
+    move(BPLCON3, 0x0200)
+    move(COLOR00, 0x0024)
+    move(COLOR00 + 2, 0x0fff)
+    move(BPLCON3, 0)
+
     w += [0xffff, 0xfffe]
     return w, li_pal, li_ptrs, li_con1
 
@@ -140,6 +172,13 @@ def check_camera():
     print("camera et scroll : 256 images verifiees")
 
 
+def check_scroller():
+    """Le scroller doit rester dans sa bande sur un cycle complet du texte."""
+    for frame in range(0, (len(TEXT) * CHARW) // SCROLL_SPEED + 1, 7):
+        scroll_band(frame)
+    print(f"scrolltext : {len(TEXT)} caracteres, un defilement complet verifie")
+
+
 # --- 2. generation du playfield (meme formule + meme c2p que l'asm) ----
 def generate_planes():
     planes = [bytearray(PLSIZE) for _ in range(DEPTH)]
@@ -170,6 +209,31 @@ def camera(frame):
     return x, y
 
 
+def scroll_band(frame):
+    """Rejoue ScrollUpdate : bitmap 1 plan de 384x64 pixels."""
+    total = frame * SCROLL_SPEED
+    char0, fine = (total // CHARW) % len(TEXT), total % CHARW
+    phase = frame % 256
+    bitmap = [[0] * (SCRBPL * 8) for _ in range(SCRTEXTH)]
+    x = SCROLL_XOFF - fine
+    for i in range(SCROLL_CHARS):
+        code = ord(TEXT[(char0 + i) % len(TEXT)])
+        glyph = FONTMAP[code - 32] if 32 <= code < 128 else 0xff
+        y = SCROLL_BASEY + (((SIN[(2 * x + phase) & 255] - 128) * 3) >> 4)
+        assert 0 <= y <= SCRTEXTH - 16, f"glyphe hors bande : y={y}"
+        assert 0 <= x and (x >> 4) * 2 + 4 <= SCRBPL, f"glyphe hors bitmap : x={x}"
+        if glyph != 0xff:
+            shift = x & 15
+            for line in range(16):
+                word = FONT[(glyph * 16 + line) * 2] << 16    # + mot nul
+                word >>= shift                               # barrel shifter A
+                for b in range(32):
+                    if word & (0x80000000 >> b):
+                        bitmap[y + line][(x >> 4) * 16 + b] = 1
+        x += CHARW
+    return bitmap
+
+
 def render(planes, frame):
     x, y = camera(frame)
     word = (x - 1) >> 4                      # deplacement grossier
@@ -178,7 +242,7 @@ def render(planes, frame):
     assert y + SCRH <= BMH, "camera hors bitmap"
 
     screen = [[0] * SCRW for _ in range(SCRH)]
-    for l in range(SCRH):
+    for l in range(MAINH):
         off = (y + l) * BMWB + word * 2
         fetched = [0] * (FETCHWORDS * 16)
         for p in range(DEPTH):
@@ -192,6 +256,12 @@ def render(planes, frame):
 
     # la colonne 0 doit montrer exactement le pixel X de l'image
     assert screen[0][0] == plasma_pixel(x, y), "scroll : mauvais pixel en colonne 0"
+
+    # bande de scrolltext : 1 plan, couleurs propres, sous le playfield
+    band = scroll_band(frame)
+    for l in range(SCRTEXTH):
+        for sx in range(SCRW):
+            screen[MAINH + l][sx] = -1 - band[l][sx + SCROLL_XOFF]
 
     # sprite (couleurs 241..243, banque $F via BPLCON4)
     sx = 152 + (((SIN[(frame * 2) & 255] - 128) * 7) >> 3)
@@ -211,7 +281,12 @@ def plasma_pixel(x, y):
 
 
 # --- 4. sortie PNG -----------------------------------------------------
+BAND_COLOURS = {-1: (0x00, 0x02, 0x14), -2: (0xff, 0xff, 0xff)}
+
+
 def colour(index, rot):
+    if index < 0:                        # bande : COLOR00 / COLOR01 du split
+        return BAND_COLOURS[index]
     src = index if index >= PALROT else (index + rot) % PALROT
     hi, lo = PAL[src * 2], PAL[src * 2 + 1]
     return tuple(((hi >> s) & 15) << 4 | ((lo >> s) & 15) for s in (8, 4, 0))
@@ -240,6 +315,7 @@ if __name__ == "__main__":
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "preview.png")
     check_layout()
     check_camera()
+    check_scroller()
     planes = generate_planes()
     screen, x, y, delay = render(planes, frame)
     write_png(out, screen, frame % PALROT)

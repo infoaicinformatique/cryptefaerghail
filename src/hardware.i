@@ -45,6 +45,23 @@ BPL1PTH         = $0e0
 SPR0PTH         = $120
 SPR0PTL         = $122
 
+; --- blitter ---
+BLTCON0         = $040
+BLTCON1         = $042
+BLTAFWM         = $044
+BLTALWM         = $046
+BLTCPT          = $048
+BLTAPT          = $050
+BLTDPT          = $054
+BLTSIZE         = $058
+BLTCMOD         = $060
+BLTAMOD         = $064
+BLTDMOD         = $066
+BLT_USEA        = $0800         ; canaux utilises, dans BLTCON0
+BLT_USEC        = $0200
+BLT_USED        = $0100
+BLT_A_OR_C      = $00fa         ; minterme D = A OR C
+
 ; --- audio (Paula) : AUD0 en $DFF0A0, un canal tous les $10 ---
 AUD0LCH         = $0a0
 AUDx_LC         = 0             ; long : adresse du sample (Chip RAM)
@@ -54,6 +71,7 @@ AUDx_VOL        = 8             ; word : volume 0..64
 
 ; --- palette ---
 COLOR00         = $180
+COLOR01         = $182
 COLOR17         = $1a2
 COLOR18         = $1a4
 COLOR19         = $1a6

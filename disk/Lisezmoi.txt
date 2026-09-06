@@ -34,15 +34,27 @@ DANS LE SAC
   E equipe l'objet sous le curseur au heros courant, U l'utilise
   (potion, ou parchemin pour apprendre un sort), D le jette.
 
-REGLES
+REGLES (SRD 3.5, sous Open Game License)
   Attaque : 1d20 + bonus de base + modificateur de Force contre la
-  classe d'armure du monstre ; un 20 naturel touche toujours et double
-  les degats. Degats : des de l'arme + modificateur de Force. A l'arc,
-  c'est la Dexterite qui compte. Classe d'armure : 10 + modificateur de
-  Dexterite + armure + bouclier.
-  Six sorts, appris sur des parchemins, payes en points de magie :
-  trait magique, soins legers, mains brulantes, armure de mage, effroi,
-  eclair.
+  classe d'armure. Une attaque de plus, a -5, par tranche de 5 points de
+  bonus de base. Marge de critique et multiplicateur propres a chaque
+  arme, avec jet de confirmation. Degats : des de l'arme + Force ; a
+  l'arc, la Dexterite sert a toucher.
+  Classe d'armure : 10 + Dexterite + armure + bouclier.
+  Sauvegardes : Vigueur, Reflexes, Volonte, fortes ou faibles selon la
+  classe.
+  Magie : 16 sorts des niveaux 0 a 3, avec emplacements par niveau de
+  sort et emplacements bonus de caracteristique. Degre de difficulte =
+  10 + niveau du sort + modificateur de lancement ; les monstres font
+  leurs propres jets de sauvegarde.
+
+CLASSES
+  Guerrier, barbare, roublard, rodeur, paladin, clerc, magicien,
+  ensorceleur.
+
+BESTIAIRE
+  25 creatures du SRD avec leurs statistiques d'origine, du kobold au
+  geant des collines, reparties par niveau de donjon.
 
 LE DONJON
   Trois niveaux. Coffres, objets au sol, niches creusees dans les murs,

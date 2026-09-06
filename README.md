@@ -146,7 +146,9 @@ caractères, `TAB` bascule entre AZERTY et QWERTY.
 
 ### Règles
 
-Inspirées de D&D 3.5, avec ce que cela implique de vraies décisions :
+Reprises du **SRD 3.5** (le contenu de D&D 3.5 publié sous Open Game
+License) — les créatures « Product Identity » qui n'y figurent pas, comme le
+beholder ou le flagelleur mental, sont donc absentes :
 
 - **Modificateurs** : `(carac − 10) / 2`, arrondi vers le bas.
 - **Classe d'armure** : `10 + mod. Dextérité + armure + bouclier`.
@@ -155,10 +157,38 @@ Inspirées de D&D 3.5, avec ce que cela implique de vraies décisions :
   ailleurs. Un 20 naturel touche toujours et **double les dégâts**.
 - **Dégâts** : dés de l'arme + bonus magique + mod. Force. À l'arc, c'est la
   Dextérité qui sert à toucher.
-- **Points de vie** : dé de classe + mod. Constitution, à chaque niveau.
-- **Magie** : six sorts (trait magique, soins légers, mains brûlantes, armure
-  de mage, effroi, éclair) appris sur des **parchemins** et payés en points de
-  magie. Un clerc soigne mieux ; un éclaireur améliore les chances de fuite.
+- **Attaques multiples** : une attaque supplémentaire à −5 par tranche de 5
+  points de bonus de base, comme la règle d'attaque à outrance.
+- **Critiques par arme** : marge et multiplicateur du SRD (19-20/×2 pour les
+  épées, ×3 pour les haches et l'arc), avec **jet de confirmation**.
+- **Progression d'attaque** : complète, aux trois quarts ou de moitié selon la
+  classe.
+- **Sauvegardes** : Vigueur, Réflexes, Volonté — `2 + niveau/2` si la
+  sauvegarde est forte pour la classe, `niveau/3` sinon, plus le modificateur
+  de Constitution, Dextérité ou Sagesse.
+- **Points de vie** : dé de classe maximal au niveau 1, puis un jet par
+  niveau, plus le mod. Constitution.
+- **Magie** : 16 sorts du SRD répartis sur les niveaux 0 à 3, avec
+  **emplacements par niveau de sort** suivant la table de progression, plus
+  les emplacements bonus de caractéristique. Le degré de difficulté vaut
+  `10 + niveau du sort + mod. de lancement`, et les monstres y opposent leurs
+  propres sauvegardes — réussie, une boule de feu n'inflige que la moitié des
+  dégâts. Les sorts s'apprennent sur des **parchemins**.
+
+### Les huit classes
+
+Guerrier, barbare, roublard, rôdeur, paladin, clerc, magicien, ensorceleur —
+chacune avec son dé de vie, sa progression d'attaque, ses sauvegardes fortes
+et son type de lanceur (profane sur l'Intelligence, divin sur la Sagesse).
+
+### Le bestiaire
+
+25 créatures du SRD, avec leurs statistiques d'origine : kobold, gobelin, rat
+sanguin, squelette, orc, hobgobelin, zombi, loup, gnoll, goule, bugbear, worg,
+ombre, ogre, homme-lézard, gargouille, oursaloup, harpie, minotaure, troll,
+spectre, momie, hydre, géant des collines… Chaque monstre tire ses points de
+vie à ses dés de vie à l'apparition, et les rencontres sont réparties par
+niveau de donjon selon leur facteur de puissance.
 
 ### Commandes
 

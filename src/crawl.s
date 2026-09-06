@@ -79,7 +79,8 @@ hr_Armor	= 38
 hr_Shield	= 40
 hr_Spells	= 42			; masque des sorts connus
 hr_AcTemp	= 44			; bonus temporaire de CA
-hr_SIZEOF	= 46
+hr_Slots	= 46			; emplacements de sorts, niveaux 0 a 3
+hr_SIZEOF	= 54
 NHEROES		= 4
 NAMELEN		= 9
 
@@ -91,7 +92,9 @@ it_Faces	= 22
 it_Bonus	= 24
 it_Value	= 26
 it_Sfx		= 28
-it_SIZEOF	= 30
+it_Crit		= 30			; marge critique (19 = 19-20)
+it_Mult		= 32
+it_SIZEOF	= 34
 IT_WEAPON	= 0
 IT_ARMOR	= 1
 IT_SHIELD	= 2
@@ -99,41 +102,53 @@ IT_POTION	= 3
 IT_SCROLL	= 4
 IT_KEY		= 5
 IT_TREASURE	= 6
-NITEMS		= 28
 INVSIZE		= 24
 
 ; --- sorts ---
 sp_Name		= 0			; 20 octets
-sp_Cost		= 20
-sp_Kind		= 22			; 0 degats, 1 soin, 2 armure, 3 effroi
-sp_Dice		= 24
+sp_Level	= 20			; niveau de sort, 0 a 3
+sp_Kind		= 22			; 0 degats, 1 soin, 2 armure, 3 terreur,
+sp_Dice		= 24			; 4 benediction
 sp_Faces	= 26
 sp_Plus		= 28
-sp_SIZEOF	= 30
-NSPELLS		= 6
+sp_Cap		= 30			; plafond de des
+sp_Save		= 32			; 0 aucun, 1 Vig, 2 Ref, 3 Vol
+sp_Half		= 34
+sp_School	= 36			; 1 profane, 2 divin, 3 les deux
+sp_SIZEOF	= 38
+MAXSPLEVEL	= 4
 
 ; --- monstres ---
-mt_Name		= 0			; 12 octets
-mt_Hp		= 12
-mt_Ac		= 14
-mt_Atk		= 16
-mt_Dice		= 18
-mt_Faces	= 20
-mt_Xp		= 22
-mt_Gold		= 24
-mt_SIZEOF	= 26
+mt_Name		= 0			; 16 octets
+mt_Hd		= 16			; des de vie
+mt_HdF		= 18
+mt_HpB		= 20
+mt_Ac		= 22
+mt_Atk		= 24
+mt_Dice		= 26
+mt_Faces	= 28
+mt_Dmg		= 30
+mt_Crit		= 32
+mt_Mult		= 34
+mt_Fort		= 36
+mt_Ref		= 38
+mt_Will		= 40
+mt_Xp		= 42
+mt_Gold		= 44
+mt_Art		= 46
+mt_SIZEOF	= 48
 
 ; --- classes ---
 cl_Name		= 0			; 12 octets
 cl_Hd		= 12			; de de vie
-cl_Mp		= 14			; points de magie de base
-cl_Fast		= 16			; 1 = attaque a la vitesse d'un guerrier
-cl_SIZEOF	= 18
-NCLASSES	= 4
-CLS_GUERRIER	= 0
-CLS_BARBARE	= 1
-CLS_ECLAIREUR	= 2
-CLS_CLERC	= 3
+cl_Bab		= 14			; 0 complete, 1 trois quarts, 2 demie
+cl_Fort		= 16			; 1 = sauvegarde forte
+cl_Ref		= 18
+cl_Will		= 20
+cl_Cast		= 22			; 0 aucun, 1 profane (INT), 2 divin (SAG)
+cl_SIZEOF	= 24
+CLS_ROUBLARD	= 2
+CLS_CLERC	= 5
 
 ; --- effets sonores ---
 SFX_SWORD	= 0
@@ -1057,7 +1072,7 @@ DrawScene:
 
 	tst.w	InCombat
 	beq.s	.dungeon
-	move.w	MonKind,d0
+	move.w	MonArt,d0
 	add.w	d0,d0
 	add.w	AnimFrame,d0
 	add.w	#ART_MONSTER,d0
@@ -1513,20 +1528,143 @@ HeroAc:
 
 ; HeroBab : a6 = heros -> d0 = bonus de base a l'attaque
 HeroBab:
-	movem.l	d1/a0,-(sp)
+	movem.l	d1-d2/a0,-(sp)
+	bsr	ClassPtr
+	move.w	hr_Level(a6),d0
+	move.w	cl_Bab(a0),d2
+	beq.s	.done			; progression complete : un par niveau
+	cmp.w	#1,d2
+	bne.s	.half
+	move.w	d0,d1			; trois quarts
+	mulu.w	#3,d1
+	lsr.w	#2,d1
+	move.w	d1,d0
+	bra.s	.done
+.half:
+	lsr.w	#1,d0			; demie
+.done:
+	movem.l	(sp)+,d1-d2/a0
+	rts
+
+ClassPtr:				; a6 = heros -> a0 = sa classe
+	movem.l	d0,-(sp)
 	move.w	hr_Class(a6),d0
 	mulu.w	#cl_SIZEOF,d0
 	lea	ClassTable,a0
 	add.l	d0,a0
+	movem.l	(sp)+,d0
+	rts
+
+; HeroSave : d0 = 0 Vigueur, 1 Reflexes, 2 Volonte -> d0 = bonus total
+; Base du SRD : 2 + niveau/2 si la sauvegarde est forte, sinon niveau/3,
+; plus le modificateur de Constitution, Dexterite ou Sagesse.
+HeroSave:
+	movem.l	d1-d4/a0-a1,-(sp)
+	move.w	d0,d3
+	bsr	ClassPtr
+	move.w	d3,d1
+	add.w	d1,d1
+	lea	cl_Fort(a0),a1
+	move.w	(a1,d1.w),d2
 	move.w	hr_Level(a6),d0
-	tst.w	cl_Fast(a0)
-	bne.s	.done			; guerriers : un par niveau
-	move.w	d0,d1
-	mulu.w	#3,d1
-	lsr.w	#2,d1			; les autres : trois quarts
-	move.w	d1,d0
+	tst.w	d2
+	beq.s	.poor
+	lsr.w	#1,d0
+	addq.w	#2,d0
+	bra.s	.abil
+.poor:
+	and.l	#$0000ffff,d0
+	divu.w	#3,d0
+	and.l	#$0000ffff,d0
+.abil:
+	move.w	d0,d4
+	tst.w	d3
+	bne.s	.notFort
+	move.w	hr_Con(a6),d0
+	bra.s	.mod
+.notFort:
+	cmp.w	#1,d3
+	bne.s	.will
+	move.w	hr_Dex(a6),d0
+	bra.s	.mod
+.will:
+	move.w	hr_Wis(a6),d0
+.mod:
+	bsr	StatMod
+	add.w	d4,d0
+	movem.l	(sp)+,d1-d4/a0-a1
+	rts
+
+; CastMod : a6 = heros -> d0 = modificateur de lanceur, d1 = type (0 aucun)
+CastMod:
+	movem.l	d2/a0,-(sp)
+	bsr	ClassPtr
+	move.w	cl_Cast(a0),d1
+	beq.s	.none
+	cmp.w	#1,d1
+	bne.s	.divine
+	move.w	hr_Int(a6),d0
+	bra.s	.mod
+.divine:
+	move.w	hr_Wis(a6),d0
+.mod:
+	bsr	StatMod
+	bra.s	.done
+.none:
+	moveq	#0,d0
 .done:
-	movem.l	(sp)+,d1/a0
+	movem.l	(sp)+,d2/a0
+	rts
+
+; FillSlots : emplacements de sorts du niveau courant (a6 = heros)
+FillSlots:
+	movem.l	d0-d7/a0-a1,-(sp)
+	bsr	CastMod
+	move.w	d0,d4			; modificateur de lanceur
+	move.w	d1,d3			; type de lanceur
+	moveq	#0,d5
+	tst.w	d3
+	beq	.noMagic
+	move.w	hr_Level(a6),d0
+	cmp.w	#8,d0
+	ble.s	.lvlOk
+	moveq	#8,d0
+.lvlOk:
+	subq.w	#1,d0
+	lsl.w	#3,d0			; quatre mots par niveau
+	lea	SlotTable,a1
+	add.w	d0,a1
+	moveq	#0,d6
+.loop:
+	move.w	(a1)+,d2
+	beq.s	.store
+	tst.w	d6
+	beq.s	.store			; pas de bonus pour les sorts mineurs
+	cmp.w	d6,d4
+	blt.s	.store
+	addq.w	#1,d2			; emplacement bonus de caracteristique
+.store:
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	d2,hr_Slots(a6,d0.w)
+	add.w	d2,d5
+	addq.w	#1,d6
+	cmp.w	#MAXSPLEVEL,d6
+	blt.s	.loop
+	bra.s	.total
+.noMagic:
+	moveq	#0,d6
+.clear:
+	move.w	d6,d0
+	add.w	d0,d0
+	clr.w	hr_Slots(a6,d0.w)
+	addq.w	#1,d6
+	cmp.w	#MAXSPLEVEL,d6
+	blt.s	.clear
+.total:
+	move.w	d5,hr_Mp(a6)
+	move.w	d5,hr_MpMax(a6)
+	movem.l	(sp)+,d0-d7/a0-a1
 	rts
 
 ;----------------------------------------------------------------------
@@ -1685,6 +1823,25 @@ DrawSheet:
 	moveq	#1,d2
 	bsr	DrawText
 
+	lea	TmpStr,a1		; jets de sauvegarde
+	lea	TxtSavesLbl,a0
+	bsr	StrCopy
+	moveq	#0,d7
+.saveLoop:
+	move.w	d7,d0
+	bsr	HeroSave
+	bsr	StrSigned
+	move.b	#' ',(a1)+
+	addq.w	#1,d7
+	cmp.w	#3,d7
+	blt.s	.saveLoop
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#120,d1
+	moveq	#12,d2
+	bsr	DrawText
+
 	lea	TmpStr,a1		; sorts connus
 	lea	TxtSpells,a0
 	bsr	StrCopy
@@ -1711,7 +1868,7 @@ DrawSheet:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
-	move.w	#120,d1
+	move.w	#130,d1
 	moveq	#9,d2
 	bsr	DrawText
 .done:
@@ -1830,11 +1987,10 @@ DrawSpellMenu:
 	bsr	SpellPtr
 	move.l	a0,a2
 	bsr	StrCopy
-	move.b	#' ',(a1)+
-	move.w	sp_Cost(a2),d0
-	bsr	StrNum
-	lea	TxtPmSuffix,a0
+	lea	TxtSpLevel,a0
 	bsr	StrCopy
+	move.w	sp_Level(a2),d0
+	bsr	StrNum
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
@@ -1846,10 +2002,11 @@ DrawSpellMenu:
 	btst	d7,d3
 	beq.s	.dim
 	moveq	#13,d2
-	move.w	hr_Mp(a6),d3
-	cmp.w	sp_Cost(a2),d3
-	bge.s	.dim
-	moveq	#4,d2			; connu mais trop couteux
+	move.w	sp_Level(a2),d3		; reste-t-il un emplacement ?
+	add.w	d3,d3
+	tst.w	hr_Slots(a6,d3.w)
+	bne.s	.dim
+	moveq	#4,d2			; connu mais plus d'emplacement
 .dim:
 	bsr	DrawText
 	addq.w	#1,d7
@@ -1895,36 +2052,16 @@ RollHero:
 	mulu.w	#cl_SIZEOF,d0
 	lea	ClassTable,a0
 	add.l	d0,a0
-	moveq	#1,d0			; points de vie : de de classe
-	move.w	cl_Hd(a0),d1
-	bsr	RollDice
-	move.w	d0,d2
+	move.w	cl_Hd(a0),d2		; au niveau 1, le de de vie est maximal
 	move.w	CreCon,d0
 	bsr	StatMod
 	add.w	d0,d2
-	add.w	cl_Hd(a0),d2		; robustesse de depart
-	cmp.w	#6,d2
+	cmp.w	#1,d2
 	bge.s	.hpOk
-	moveq	#6,d2
+	moveq	#1,d2
 .hpOk:
 	move.w	d2,CreHp
-	move.w	cl_Mp(a0),d2		; points de magie
-	move.w	CreInt,d0
-	bsr	StatMod
-	move.w	d0,d3
-	move.w	CreWis,d0
-	bsr	StatMod
-	add.w	d3,d0
-	tst.w	d0
-	bpl.s	.mpOk
-	moveq	#0,d0
-.mpOk:
-	add.w	d0,d2
-	tst.w	cl_Mp(a0)
-	bne.s	.hasMagic
-	moveq	#0,d2			; guerriers et barbares : aucun sort
-.hasMagic:
-	move.w	d2,CreMp
+	clr.w	CreMp			; les emplacements sont calcules apres
 	movem.l	(sp)+,d0-d5/a0-a2
 	rts
 
@@ -1972,8 +2109,8 @@ CommitHero:
 	clr.w	hr_Xp(a6)
 	move.w	CreHp,hr_Hp(a6)
 	move.w	CreHp,hr_HpMax(a6)
-	move.w	CreMp,hr_Mp(a6)
-	move.w	CreMp,hr_MpMax(a6)
+	clr.w	hr_Mp(a6)
+	clr.w	hr_MpMax(a6)
 	lea	CreStr,a0
 	move.w	(a0)+,hr_Str(a6)
 	move.w	(a0)+,hr_Dex(a6)
@@ -1992,6 +2129,7 @@ CommitHero:
 	move.w	(a0)+,hr_Armor(a6)
 	move.w	(a0)+,hr_Shield(a6)
 	move.w	(a0),hr_Spells(a6)
+	bsr	FillSlots
 
 	addq.w	#1,CreIndex
 	clr.w	CreStep
@@ -2514,7 +2652,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	move.w	d4,d0
 	move.w	d5,d1
 	bsr	MapGetParam
-	and.w	#3,d0
+	cmp.w	#NMONSTERS,d0
+	blt.s	.kindOk
+	moveq	#0,d0
+.kindOk:
 	move.w	d0,MonKind
 	bsr	StartCombat
 	bra.s	.redraw
@@ -2805,7 +2946,17 @@ StartCombat:
 	lea	MonTypes,a2
 	add.l	d0,a2
 	move.l	a2,MonPtr
-	move.w	mt_Hp(a2),MonHp
+	move.w	mt_Hd(a2),d0		; les PV se tirent aux des de vie
+	move.w	mt_HdF(a2),d1
+	bsr	RollDice
+	add.w	mt_HpB(a2),d0
+	cmp.w	#1,d0
+	bge.s	.hpOk
+	moveq	#1,d0
+.hpOk:
+	move.w	d0,MonHp
+	move.w	mt_Art(a2),MonArt
+	clr.w	PartyBless
 	moveq	#SFX_GROWL,d0
 	bsr	SfxPlay
 	lea	TmpStr,a1
@@ -2845,33 +2996,61 @@ HeroAttack:
 	move.w	d0,d6			; modificateur
 	bsr	HeroBab
 	add.w	d0,d6
+	add.w	PartyBless,d6
+	move.w	d6,d4			; bonus d'attaque total
+	moveq	#0,d7
+	moveq	#0,d2			; numero d'attaque
+.attackLoop:
 	bsr	D20
 	move.w	d0,d5			; le de brut
-	add.w	d6,d0
+	add.w	d4,d0
 	cmp.w	#20,d5
 	beq.s	.hit			; un 20 touche toujours
 	cmp.w	mt_Ac(a2),d0
-	blt	.miss
+	blt	.next
 .hit:
 	move.w	it_Dice(a3),d0
 	move.w	it_Faces(a3),d1
 	bsr	RollDice
 	add.w	it_Bonus(a3),d0
-	move.w	hr_Str(a6),d1
-	move.w	d0,d7
-	move.w	d1,d0
+	move.w	d0,d1
+	move.w	hr_Str(a6),d0
 	bsr	StatMod
-	add.w	d0,d7
-	cmp.w	#20,d5
-	bne.s	.noCrit
-	add.w	d7,d7			; coup critique
+	add.w	d1,d0
+	move.w	d0,d1			; degats de ce coup
+	cmp.w	it_Crit(a3),d5		; dans la marge critique ?
+	blt.s	.noCrit
+	bsr	D20			; jet de confirmation
+	add.w	d4,d0
+	cmp.w	mt_Ac(a2),d0
+	blt.s	.noCrit
+	move.w	it_Mult(a3),d0		; degats multiplies
+	subq.w	#1,d0
+	move.w	d1,d3
+.critLoop:
+	tst.w	d0
+	beq.s	.noCrit
+	add.w	d3,d1
+	subq.w	#1,d0
+	bra.s	.critLoop
 .noCrit:
-	tst.w	d7
+	tst.w	d1
+	bgt.s	.addDmg
+	moveq	#1,d1
+.addDmg:
+	add.w	d1,d7
+.next:
+	addq.w	#1,d2			; attaque suivante : bonus reduit de 5
+	sub.w	#5,d4
+	move.w	d6,d0			; une attaque de plus tous les +5
+	sub.w	#1,d0
+	and.l	#$0000ffff,d0
+	divu.w	#5,d0
+	and.l	#$0000ffff,d0
+	cmp.w	d0,d2
 	bgt.s	.done
-	moveq	#1,d7
-	bra.s	.done
-.miss:
-	moveq	#0,d7
+	cmp.w	#4,d2			; quatre attaques au maximum
+	blt	.attackLoop
 .done:
 	move.w	d7,d0
 	movem.l	(sp)+,d1-d7/a0/a3
@@ -3132,11 +3311,7 @@ CheckLevel:				; a6 = heros
 .hpOk:
 	add.w	d3,hr_HpMax(a6)
 	move.w	hr_HpMax(a6),hr_Hp(a6)
-	tst.w	hr_MpMax(a6)
-	beq.s	.noMagic
-	addq.w	#2,hr_MpMax(a6)
-	move.w	hr_MpMax(a6),hr_Mp(a6)
-.noMagic:
+	bsr	FillSlots
 	moveq	#SFX_LEVEL,d0
 	bsr	SfxPlay
 	lea	TmpStr,a1
@@ -3153,7 +3328,7 @@ CheckLevel:				; a6 = heros
 
 CombatFlee:
 	movem.l	d0-d7/a0-a6,-(sp)
-	moveq	#CLS_ECLAIREUR,d0
+	moveq	#CLS_ROUBLARD,d0
 	bsr	CountClass
 	move.w	d1,d3
 	mulu.w	#15,d3
@@ -3222,15 +3397,19 @@ CastSpell:				; d0 = sort
 	move.w	d7,d0
 	bsr	SpellPtr
 	move.l	a0,a2
-	move.w	hr_Mp(a6),d0
-	cmp.w	sp_Cost(a2),d0
-	blt	.noMana
+	move.w	sp_Level(a2),d6		; niveau de sort
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	hr_Slots(a6,d0.w),d1
+	tst.w	d1
+	beq	.noSlot
+	subq.w	#1,d1			; un emplacement de consomme
+	move.w	d1,hr_Slots(a6,d0.w)
+	subq.w	#1,hr_Mp(a6)
 
-	move.w	sp_Cost(a2),d0
-	sub.w	d0,hr_Mp(a6)
 	moveq	#SFX_SPELL,d0
 	bsr	SfxPlay
-	lea	TmpStr,a1		; "MYRA LANCE ECLAIR."
+	lea	TmpStr,a1
 	move.l	a6,a0
 	bsr	StrCopy
 	lea	TxtCasts,a0
@@ -3242,39 +3421,98 @@ CastSpell:				; d0 = sort
 	lea	TmpStr,a0
 	bsr	LogAdd
 
-	move.w	sp_Kind(a2),d6
-	bne.s	.notDamage
-	move.w	sp_Dice(a2),d0		; --- degats
+	move.w	hr_Level(a6),d5		; niveau de lanceur
+	move.w	sp_Kind(a2),d4
+	bne	.notDamage
+
+	; --- degats : des selon le niveau de lanceur, plafonnes
+	move.w	sp_Dice(a2),d0
+	beq.s	.fixedDice
+	mulu.w	d5,d0			; tant de des par niveau
+	cmp.w	sp_Cap(a2),d0
+	ble.s	.diceOk
+	move.w	sp_Cap(a2),d0
+	bra.s	.diceOk
+.fixedDice:
+	tst.w	sp_Plus(a2)
+	beq.s	.capDice
+	move.w	d5,d0			; projectiles : un de plus tous les
+	addq.w	#1,d0			; deux niveaux
+	lsr.w	#1,d0
+	cmp.w	sp_Cap(a2),d0
+	ble.s	.diceOk
+	move.w	sp_Cap(a2),d0
+	bra.s	.diceOk
+.capDice:
+	move.w	sp_Cap(a2),d0
+.diceOk:
+	tst.w	d0
+	bne.s	.rollDmg
+	moveq	#1,d0
+.rollDmg:
+	move.w	d0,d3			; nombre de des
 	move.w	sp_Faces(a2),d1
 	bsr	RollDice
-	add.w	sp_Plus(a2),d0
-	move.w	d0,d5
-	sub.w	d5,MonHp
+	move.w	sp_Plus(a2),d1
+	mulu.w	d3,d1
+	add.w	d1,d0			; bonus par de (projectiles)
+	move.w	d0,d3			; degats bruts
+
+	tst.w	sp_Save(a2)		; le monstre peut-il resister ?
+	beq.s	.noSave
+	bsr	SpellDC
+	move.w	d0,d2
+	move.w	sp_Save(a2),d0
+	bsr	MonsterSave
+	tst.w	d0
+	beq.s	.noSave
+	tst.w	sp_Half(a2)
+	beq.s	.resisted
+	lsr.w	#1,d3			; sauvegarde reussie : moitie des degats
+	lea	TxtHalfSave,a0
+	bsr	LogAdd
+	bra.s	.noSave
+.resisted:
+	lea	TxtResisted,a0
+	bsr	LogAdd
+	bra	.after
+.noSave:
+	sub.w	d3,MonHp
 	lea	TmpStr,a1
 	lea	TxtSpellHit,a0
 	bsr	StrCopy
-	move.w	d5,d0
+	move.w	d3,d0
 	bsr	StrNum
 	lea	TxtDamage,a0
 	bsr	StrCopy
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
-	bra.s	.after
+	bra	.after
+
 .notDamage:
-	cmp.w	#1,d6
+	cmp.w	#1,d4
 	bne.s	.notHeal
-	move.w	sp_Dice(a2),d0		; --- soin du plus blesse
+	move.w	d6,d0			; --- soin : un de par niveau de sort
+	tst.w	d0
+	bne.s	.healDice
+	moveq	#1,d0
+.healDice:
 	move.w	sp_Faces(a2),d1
 	bsr	RollDice
-	add.w	sp_Plus(a2),d0
+	move.w	d5,d1			; plus le niveau de lanceur, plafonne
+	cmp.w	sp_Cap(a2),d1
+	ble.s	.healCap
+	move.w	sp_Cap(a2),d1
+.healCap:
+	add.w	d1,d0
 	move.w	d0,d5
 	bsr	HealWeakest
-	bra.s	.after
+	bra	.after
 .notHeal:
-	cmp.w	#2,d6
+	cmp.w	#2,d4
 	bne.s	.notShield
-	lea	Heroes,a0		; --- armure de mage sur tout le groupe
+	lea	Heroes,a0		; --- armure : tout le groupe
 	moveq	#NHEROES-1,d1
 .shieldLoop:
 	move.w	sp_Plus(a2),d2
@@ -3283,9 +3521,26 @@ CastSpell:				; d0 = sort
 	dbf	d1,.shieldLoop
 	lea	TxtShieldUp,a0
 	bsr	LogAdd
-	bra.s	.after
+	bra	.after
 .notShield:
-	move.w	#1,MonStun		; --- effroi
+	cmp.w	#4,d4
+	bne.s	.fear
+	move.w	sp_Plus(a2),PartyBless	; --- benediction
+	lea	TxtBlessed,a0
+	bsr	LogAdd
+	bra.s	.after
+.fear:
+	bsr	SpellDC			; --- terreur : jet de Volonte
+	move.w	d0,d2
+	moveq	#3,d0
+	bsr	MonsterSave
+	tst.w	d0
+	beq.s	.feared
+	lea	TxtResisted,a0
+	bsr	LogAdd
+	bra.s	.after
+.feared:
+	move.w	#1,MonStun
 	lea	TxtFear,a0
 	bsr	LogAdd
 .after:
@@ -3300,8 +3555,8 @@ CastSpell:				; d0 = sort
 	lea	TxtUnknownSpell,a0
 	bsr	LogAdd
 	bra.s	.done
-.noMana:
-	lea	TxtNoMana,a0
+.noSlot:
+	lea	TxtNoSlot,a0
 	bsr	LogAdd
 	bra.s	.done
 .cannot:
@@ -3311,6 +3566,37 @@ CastSpell:				; d0 = sort
 	clr.w	UiMode
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; SpellDC : a6 = lanceur, a2 = sort -> d0 = degre de difficulte
+; 10 + niveau du sort + modificateur de la caracteristique de lancement
+SpellDC:
+	movem.l	d1-d2,-(sp)
+	bsr	CastMod
+	add.w	sp_Level(a2),d0
+	add.w	#10,d0
+	movem.l	(sp)+,d1-d2
+	rts
+
+; MonsterSave : d0 = type (1 Vig, 2 Ref, 3 Vol), d2 = DD
+;               -> d0 = 1 si le monstre resiste
+MonsterSave:
+	movem.l	d1-d3/a0-a2,-(sp)
+	move.l	MonPtr,a2
+	lea	mt_Fort(a2),a0
+	subq.w	#1,d0
+	add.w	d0,d0
+	move.w	(a0,d0.w),d3		; bonus de sauvegarde
+	bsr	D20
+	add.w	d3,d0
+	cmp.w	d2,d0
+	bge.s	.saved
+	moveq	#0,d0
+	bra.s	.done
+.saved:
+	moveq	#1,d0
+.done:
+	movem.l	(sp)+,d1-d3/a0-a2
 	rts
 
 HealWeakest:				; d5 = points rendus
@@ -3814,7 +4100,10 @@ TxtPvSuffix:	dc.b	" PV.",0
 TxtShieldUp:	dc.b	"UNE AURA PROTEGE LE GROUPE.",0
 TxtFear:	dc.b	"LE MONSTRE EST TERRIFIE !",0
 TxtUnknownSpell: dc.b	"CE SORT VOUS EST INCONNU.",0
-TxtNoMana:	dc.b	"PAS ASSEZ DE MAGIE.",0
+TxtNoSlot:	dc.b	"PLUS D'EMPLACEMENT A CE NIVEAU.",0
+TxtHalfSave:	dc.b	"IL ESQUIVE EN PARTIE !",0
+TxtResisted:	dc.b	"LE MONSTRE RESISTE AU SORT.",0
+TxtBlessed:	dc.b	"UNE BENEDICTION GUIDE VOS COUPS.",0
 TxtHeroDown:	dc.b	"CE HEROS EST HORS DE COMBAT.",0
 TxtEquips:	dc.b	" EQUIPE ",0
 TxtCannotEquip:	dc.b	"CELA NE S'EQUIPE PAS.",0
@@ -3826,6 +4115,7 @@ TxtNoHero:	dc.b	"AUCUN HEROS ICI.",0
 TxtBag:		dc.b	"SAC A DOS",0
 TxtChooseSpell:	dc.b	"QUEL SORT ?",0
 TxtPmSuffix:	dc.b	"PM",0
+TxtSpLevel:	dc.b	" NIV ",0
 TxtPv:		dc.b	"PV ",0
 TxtPm:		dc.b	"PM ",0
 TxtNiv:		dc.b	"NIV ",0
@@ -3839,6 +4129,7 @@ TxtArmorLbl:	dc.b	"ARM: ",0
 TxtBare:	dc.b	"POINGS NUS",0
 TxtNone:	dc.b	"AUCUNE",0
 TxtSpells:	dc.b	"SORTS : ",0
+TxtSavesLbl:	dc.b	"VIG/REF/VOL ",0
 TxtNiveau:	dc.b	"NIVEAU ",0
 TxtOr:		dc.b	"   OR ",0
 TxtKeys:	dc.b	"   CLES ",0
@@ -3912,6 +4203,8 @@ Gold:		ds.w	1
 KeyCount:	ds.w	1
 InCombat:	ds.w	1
 MonKind:	ds.w	1
+MonArt:		ds.w	1
+PartyBless:	ds.w	1
 MonHp:		ds.w	1
 MonStun:	ds.w	1
 AnimFrame:	ds.w	1

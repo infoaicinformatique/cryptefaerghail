@@ -455,6 +455,13 @@ MAPW = MAPH = 24
 FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
+# Rencontres par niveau : indices dans MonTypes (gen_tables.py)
+ENCOUNTERS = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16],
+    [13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+]
+
 # Objets : doivent suivre exactement ItemTable dans src/crawl.s
 ITEMS = {
     "DAGUE": 1, "EPEE COURTE": 2, "EPEE LONGUE": 3, "HACHE": 4,
@@ -543,10 +550,10 @@ def build_level(level, seed):
     for x, y in take(3 + level):                     # objets au sol
         grid[y][x] |= ITEM
         par[y][x] = ITEMS[rnd.choice(loot)]
-    for i, (x, y) in enumerate(take(7 + 3 * level)):  # monstres postes
-        kind = min(3, (i + level) % 4)
+    tier = ENCOUNTERS[level]                         # bestiaire du niveau
+    for i, (x, y) in enumerate(take(8 + 3 * level)):  # monstres postes
         grid[y][x] = (grid[y][x] & 0x0f) | MONSTER
-        par[y][x] = kind
+        par[y][x] = tier[(i * 3 + level) % len(tier)]
     for x, y in take(2 + level):                     # portes ordinaires
         if grid[y][x] == FLOOR:
             grid[y][x] = DOOR

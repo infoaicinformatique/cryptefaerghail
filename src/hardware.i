@@ -54,6 +54,10 @@ COLOR19         = $1a6
 ; --- AGA ---
 FMODE           = $1fc          ; 0 = fetch 16 bits (compat OCS)
 
+; --- bits MEMF (AllocMem) ---
+MEMF_CHIP       = $00000002
+MEMF_CLEAR      = $00010000
+
 ; --- bits DMACON ---
 DMAF_SETCLR     = $8000
 DMAF_BLITTER    = $0040
@@ -67,6 +71,8 @@ CIAAPRA         = $bfe001       ; bit 6 = bouton gauche souris (0 = appuye)
 
 ; --- LVO exec.library ---
 _LVOForbid      = -132
+_LVOAllocMem    = -198
+_LVOFreeMem     = -210
 _LVOPermit      = -138
 _LVOOpenLibrary = -552
 _LVOCloseLibrary = -414

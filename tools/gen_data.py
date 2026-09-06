@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Genere src/sine.i (table sinus 256 entrees) et src/sprite.i (boule 16x16).
+"""Genere les donnees incluses par les sources assembleur :
+
+    src/sine.i     table sinus 256 entrees
+    src/sprite.i   boule 16x16, 2 plans
+    src/palette.i  palette AGA de 256 couleurs 24 bits
 
 Les fichiers generes sont commites : la compilation ne depend donc pas de
 Python. Relancer uniquement pour changer les donnees :
@@ -62,7 +66,37 @@ def write_sprite(path):
         f.write("\tdc.w\t$0000,$0000\t\t; fin du sprite\n")
 
 
+def palette():
+    """256 couleurs 24 bits : arc-en-ciel cyclique sur 0..239, entrees
+    240..255 reservees (dont 241..243 pour le sprite)."""
+    cols = []
+    for i in range(240):
+        a = 2 * math.pi * i / 240
+        cols.append(tuple(
+            int(round(127.5 + 127.0 * math.sin(a + phase)))
+            for phase in (0.0, 2 * math.pi / 3, 4 * math.pi / 3)))
+    cols += [(0, 0, 0)] * 16
+    cols[241] = (0xff, 0xff, 0xff)              # sprite : haute lumiere
+    cols[242] = (0x70, 0xa0, 0xff)              # sprite : bleu clair
+    cols[243] = (0x10, 0x20, 0x60)              # sprite : bleu sombre
+    return cols
+
+
+def write_palette(path):
+    with open(path, "w") as f:
+        f.write(HEADER.format(name=os.path.basename(path)))
+        f.write("; Une entree = deux mots : quartets hauts, puis quartets bas.\n")
+        f.write("; Les deux sont ecrits dans le meme registre COLORxx, le second\n")
+        f.write("; avec BPLCON3 LOCT = 1 : c'est ainsi qu'on obtient 24 bits sur AGA.\n")
+        f.write("PaletteTab:\n")
+        for i, (r, g, b) in enumerate(palette()):
+            hi = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+            lo = ((r & 15) << 8) | ((g & 15) << 4) | (b & 15)
+            f.write(f"\tdc.w\t${hi:04x},${lo:04x}\t\t; couleur {i}\n")
+
+
 here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 write_sine(os.path.join(here, "src", "sine.i"))
 write_sprite(os.path.join(here, "src", "sprite.i"))
-print("src/sine.i et src/sprite.i generes")
+write_palette(os.path.join(here, "src", "palette.i"))
+print("src/sine.i, src/sprite.i et src/palette.i generes")

@@ -2,37 +2,46 @@
 # Demo AGA pour Amiga 1200 - cross-compilation depuis Linux/macOS
 #
 #   make toolchain   telecharge et compile vasm + vlink dans tools/bin
-#   make             assemble et lie bin/AGADemo (executable hunk Amiga)
-#   make data        regenere src/sine.i et src/sprite.i (Python 3)
+#   make             assemble bin/AGADemo et bin/AGAScroll (hunks Amiga)
+#   make data        regenere les .i de donnees (Python 3)
+#   make check       verifie l'arithmetique du scroll et de la copperlist
+#   make preview     rend une image de AGAScroll dans docs/preview.png
 #   make clean       nettoie build/ et bin/
 #-----------------------------------------------------------------------
 
-NAME    := AGADemo
 CPU     := -m68020
 
 VASM    ?= $(if $(wildcard tools/bin/vasmm68k_mot),tools/bin/vasmm68k_mot,vasmm68k_mot)
 VLINK   ?= $(if $(wildcard tools/bin/vlink),tools/bin/vlink,vlink)
 
-SRC     := src/demo.s
-INCS    := src/hardware.i src/sine.i src/sprite.i
-OBJ     := build/demo.o
-TARGET  := bin/$(NAME)
+INCS    := src/hardware.i src/sine.i src/sprite.i src/palette.i
+TARGETS := bin/AGADemo bin/AGAScroll
 
-.PHONY: all clean data toolchain
+.PHONY: all clean data check preview toolchain
 
-all: $(TARGET)
+all: $(TARGETS)
 
-$(TARGET): $(OBJ)
+bin/%: build/%.o
 	@mkdir -p bin
 	$(VLINK) -bamigahunk -Bstatic -s -o $@ $<
 	@echo "==> $@ pret : copiez-le sur l'Amiga (ou dans un repertoire monte par FS-UAE)"
 
-$(OBJ): $(SRC) $(INCS)
+build/AGADemo.o: src/demo.s $(INCS)
 	@mkdir -p build
-	$(VASM) $(CPU) -Fhunk -I src -o $@ $(SRC)
+	$(VASM) $(CPU) -Fhunk -I src -o $@ src/demo.s
+
+build/AGAScroll.o: src/scroll.s $(INCS)
+	@mkdir -p build
+	$(VASM) $(CPU) -Fhunk -I src -o $@ src/scroll.s
 
 data:
 	python3 tools/gen_data.py
+
+check:
+	python3 tools/preview.py 40 /dev/null
+
+preview:
+	python3 tools/preview.py 40 docs/preview.png
 
 toolchain:
 	sh scripts/get-toolchain.sh

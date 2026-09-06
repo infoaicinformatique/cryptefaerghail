@@ -1,0 +1,24 @@
+ILLUSTRATIONS DU DOMAINE PUBLIC
+===============================
+
+tools/fetch_pd_art.py va chercher sur Wikimedia Commons des images du
+domaine public, et tools/pd_to_sprite.py les convertit en 96x96 dans la
+palette du jeu.
+
+Pourquoi pas d'illustrations D&D : l'Open Game License couvre le texte
+des regles et des blocs de statistiques, pas les illustrations, qui
+restent sous droits. Le jeu etant publie, il n'embarque que des images
+qu'il a le droit de redistribuer.
+
+Resultat de la recolte automatique : sur treize illustrations
+recuperees, deux seulement etaient exploitables (une harpie tiree de la
+Monstrorum Historia d'Aldrovandi, 1642, et un squelette de Podkowinski).
+Les autres etaient des scenes entieres, des couvertures ou des
+caricatures : illisibles une fois reduites a 96x96 en seize couleurs.
+Les creatures du jeu sont donc dessinees par tools/gen_dungeon.py.
+
+Pour ajouter une illustration a la main : deposer un fichier dans ce
+dossier, verifier soi-meme sa licence, et lancer pd_to_sprite.py. Le
+script de recolte, lui, refuse tout ce que Commons ne declare pas dans
+le domaine public, et ecarte les oeuvres posterieures a 1900 dont
+l'auteur n'est pas un maitre ancien identifie.

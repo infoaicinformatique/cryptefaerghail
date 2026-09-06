@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Genere src/sine.i (table sinus 256 entrees) et src/sprite.i (boule 16x16).
+"""Genere les donnees incluses par les sources assembleur :
+
+    src/sine.i     table sinus 256 entrees
+    src/sprite.i   boule 16x16, 2 plans
+    src/palette.i  palette AGA de 256 couleurs 24 bits
+    src/font.i     police 16x16 pour le scrolltext (5x7 double)
+    src/bars.i     degrades des barres copper de la bande de texte
 
 Les fichiers generes sont commites : la compilation ne depend donc pas de
 Python. Relancer uniquement pour changer les donnees :
@@ -62,7 +68,154 @@ def write_sprite(path):
         f.write("\tdc.w\t$0000,$0000\t\t; fin du sprite\n")
 
 
-here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-write_sine(os.path.join(here, "src", "sine.i"))
-write_sprite(os.path.join(here, "src", "sprite.i"))
-print("src/sine.i et src/sprite.i generes")
+def palette():
+    """256 couleurs 24 bits : arc-en-ciel cyclique sur 0..239, entrees
+    240..255 reservees (dont 241..243 pour le sprite)."""
+    cols = []
+    for i in range(240):
+        a = 2 * math.pi * i / 240
+        cols.append(tuple(
+            int(round(127.5 + 127.0 * math.sin(a + phase)))
+            for phase in (0.0, 2 * math.pi / 3, 4 * math.pi / 3)))
+    cols += [(0, 0, 0)] * 16
+    cols[241] = (0xff, 0xff, 0xff)              # sprite : haute lumiere
+    cols[242] = (0x70, 0xa0, 0xff)              # sprite : bleu clair
+    cols[243] = (0x10, 0x20, 0x60)              # sprite : bleu sombre
+    return cols
+
+
+def write_palette(path):
+    with open(path, "w") as f:
+        f.write(HEADER.format(name=os.path.basename(path)))
+        f.write("; Une entree = deux mots : quartets hauts, puis quartets bas.\n")
+        f.write("; Les deux sont ecrits dans le meme registre COLORxx, le second\n")
+        f.write("; avec BPLCON3 LOCT = 1 : c'est ainsi qu'on obtient 24 bits sur AGA.\n")
+        f.write("PaletteTab:\n")
+        for i, (r, g, b) in enumerate(palette()):
+            hi = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4)
+            lo = ((r & 15) << 8) | ((g & 15) << 4) | (b & 15)
+            f.write(f"\tdc.w\t${hi:04x},${lo:04x}\t\t; couleur {i}\n")
+
+
+# Police 5x7 : 7 lignes de 5 colonnes par glyphe, doublee en 16x16.
+GLYPHS = {
+    " ": ("     ", "     ", "     ", "     ", "     ", "     ", "     "),
+    "A": (".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"),
+    "B": ("####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."),
+    "C": (".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."),
+    "D": ("####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."),
+    "E": ("#####", "#....", "#....", "###..", "#....", "#....", "#####"),
+    "F": ("#####", "#....", "#....", "###..", "#....", "#....", "#...."),
+    "G": (".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###."),
+    "H": ("#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"),
+    "I": ("#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####"),
+    "J": ("....#", "....#", "....#", "....#", "#...#", "#...#", ".###."),
+    "K": ("#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"),
+    "L": ("#....", "#....", "#....", "#....", "#....", "#....", "#####"),
+    "M": ("#...#", "##.##", "#.#.#", "#.#.#", "#...#", "#...#", "#...#"),
+    "N": ("#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#"),
+    "O": (".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."),
+    "P": ("####.", "#...#", "#...#", "####.", "#....", "#....", "#...."),
+    "Q": (".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"),
+    "R": ("####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"),
+    "S": (".###.", "#...#", "#....", ".###.", "....#", "#...#", ".###."),
+    "T": ("#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."),
+    "U": ("#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."),
+    "V": ("#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."),
+    "W": ("#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"),
+    "X": ("#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"),
+    "Y": ("#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."),
+    "Z": ("#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"),
+    "0": (".###.", "#...#", "#..##", "#.#.#", "##..#", "#...#", ".###."),
+    "1": ("..#..", ".##..", "..#..", "..#..", "..#..", "..#..", ".###."),
+    "2": (".###.", "#...#", "....#", "...#.", "..#..", ".#...", "#####"),
+    "3": ("#####", "...#.", "..##.", "....#", "....#", "#...#", ".###."),
+    "4": ("...#.", "..##.", ".#.#.", "#..#.", "#####", "...#.", "...#."),
+    "5": ("#####", "#....", "####.", "....#", "....#", "#...#", ".###."),
+    "6": ("..##.", ".#...", "#....", "####.", "#...#", "#...#", ".###."),
+    "7": ("#####", "....#", "...#.", "..#..", ".#...", ".#...", ".#..."),
+    "8": (".###.", "#...#", "#...#", ".###.", "#...#", "#...#", ".###."),
+    "9": (".###.", "#...#", "#...#", ".####", "....#", "...#.", ".##.."),
+    ".": ("     ", "     ", "     ", "     ", "     ", ".##..", ".##.."),
+    ",": ("     ", "     ", "     ", "     ", ".##..", ".##..", ".#..."),
+    "!": ("..#..", "..#..", "..#..", "..#..", "..#..", "     ", "..#.."),
+    "?": (".###.", "#...#", "....#", "...#.", "..#..", "     ", "..#.."),
+    "-": ("     ", "     ", "     ", "#####", "     ", "     ", "     "),
+    ":": ("     ", ".##..", ".##..", "     ", ".##..", ".##..", "     "),
+    "'": ("..#..", "..#..", "..#..", "     ", "     ", "     ", "     "),
+    "(": ("...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."),
+    ")": (".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."),
+    "/": ("....#", "...#.", "...#.", "..#..", ".#...", ".#...", "#...."),
+    "+": ("     ", "..#..", "..#..", "#####", "..#..", "..#..", "     "),
+    "=": ("     ", "     ", "#####", "     ", "#####", "     ", "     "),
+}
+
+
+def write_font(path):
+    """Chaque glyphe : 16 lignes de deux mots (donnees + mot nul).
+
+    Le mot nul sert au blitter : le decalage de 0 a 15 pixels fait sortir
+    les bits du premier mot vers le second, il faut donc que la source
+    fasse deux mots de large."""
+    order = list(GLYPHS)
+    with open(path, "w") as f:
+        f.write(HEADER.format(name=os.path.basename(path)))
+        f.write("; Police 16x16 (5x7 doublee), glyphe cale sur les pixels 2 a 11.\n")
+        f.write("FontData:\n")
+        for ch in order:
+            f.write(f"\t; '{ch}'\n")
+            for row in GLYPHS[ch]:
+                bits = 0
+                for x, c in enumerate(row):
+                    if c == "#":
+                        bits |= 0b11 << (14 - 2 * (x + 1))   # x2, decale d'une colonne
+                f.write(f"\tdc.w\t${bits:04x},$0000\n" * 2)   # x2 en vertical
+            f.write("\tdc.w\t$0000,$0000\n" * 2)             # 16e et 15e ligne
+        f.write("\n; ASCII 32..127 -> numero de glyphe, $ff = caractere inconnu\n")
+        f.write("FontMap:\n")
+        table = []
+        for code in range(32, 128):
+            ch = chr(code).upper()
+            table.append(order.index(ch) if ch in GLYPHS else 0xff)
+        for i in range(0, 96, 16):
+            row = ",".join(f"${v:02x}" for v in table[i:i + 16])
+            f.write(f"\tdc.b\t{row}\n")
+    return len(order)
+
+
+# Barres copper : couleur de coeur et demi-hauteur, en lignes.
+BARS = [((255, 55, 40), 14), ((60, 255, 110), 14), ((90, 90, 255), 14)]
+BARSTEPS = 32                   # entrees par degrade (distance au centre)
+
+
+def write_bars(path):
+    """Un degrade par barre : BARSTEPS entrees de 4 octets (0, R, V, B).
+
+    Le replay additionne les trois barres ligne par ligne, d'ou des
+    couleurs qui saturent vers le blanc la ou elles se croisent."""
+    with open(path, "w") as f:
+        f.write(HEADER.format(name=os.path.basename(path)))
+        f.write("; Indexe par la distance au centre de la barre, en lignes.\n")
+        for n, ((r, g, b), half) in enumerate(BARS):
+            f.write(f"BarGrad{n}:\n")
+            for d in range(BARSTEPS):
+                if d >= half:
+                    inten, shine = 0.0, 0.0
+                else:
+                    inten = (1.0 - (d / half) ** 1.6)
+                    shine = 0.45 * max(0.0, 1.0 - d / 3.0)   # reflet au coeur
+                vals = [min(255, int(round(c * inten + 255 * shine)))
+                        for c in (r, g, b)]
+                f.write(f"\tdc.b\t$00,${vals[0]:02x},${vals[1]:02x},${vals[2]:02x}\n")
+            f.write("\n")
+
+
+if __name__ == "__main__":
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    write_sine(os.path.join(here, "src", "sine.i"))
+    write_sprite(os.path.join(here, "src", "sprite.i"))
+    write_palette(os.path.join(here, "src", "palette.i"))
+    n = write_font(os.path.join(here, "src", "font.i"))
+    write_bars(os.path.join(here, "src", "bars.i"))
+    print(f"src/sine.i, src/sprite.i, src/palette.i, src/font.i ({n} glyphes) "
+          f"et src/bars.i ({len(BARS)} barres) generes")

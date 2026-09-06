@@ -1,0 +1,205 @@
+LA CRYPTE DE FAERGHAIL - ET DEUX DEMOS AGA
+==========================================
+
+A lancer depuis le Shell (pas depuis le Workbench : ces programmes ne
+gerent pas le message WBStartup).
+
+AGACRAWL - LA CRYPTE DE FAERGHAIL
+---------------------------------
+Dungeon crawler en vue subjective, dans l'esprit de Black Crypt, avec
+des regles inspirees de D&D 3.5.
+
+L'ACCUEIL
+  Le jeu s'ouvre sur le portail de la crypte.
+    1    commencer une nouvelle partie
+    2    reprendre la partie sauvee
+    ESC  quitter
+  La partie se sauve toute seule : des que le groupe est forme, a
+  chaque etage franchi, et quand vous abandonnez par ESC. Le fichier
+  s'appelle AGACrawl.sav et se range a cote du programme (PROGDIR:) ;
+  effacez-le pour repartir de zero.
+
+CREATION DU GROUPE
+  Quatre aventuriers, chacun d'une des huit classes :
+    GUERRIER    de de vie 10, attaque a chaque niveau, epee et cotte
+    BARBARE     de de vie 12, tres resistant, hache
+    ROUBLARD    agile, la fuite lui reussit bien mieux
+    RODEUR      arc et quelques sorts des bois
+    PALADIN     la lame et la foi, bonnes sauvegardes
+    CLERC       soins et sorts divins, potions plus efficaces
+    MAGICIEN    fragile, mais l'eventail de sorts le plus large
+    ENSORCELEUR magie innee
+  Les fleches deplacent le curseur, ENTREE ou le chiffre choisit. Les
+  six caracteristiques sont tirees a 4d6 en gardant les trois meilleurs
+  des ; R relance le jet, ENTREE valide. Le nom se tape au clavier (TAB
+  bascule AZERTY / QWERTY) ou se choisit aux fleches.
+
+COMMANDES
+  Fleches haut/bas      avancer, reculer
+  Fleches gauche/droite tourner
+  ESPACE                ouvrir une porte, fouiller une niche,
+                        entrer a l'echoppe, desamorcer un piege
+  C                     fiche d'aventure du heros courant
+  I                     sac a dos
+  M                     carte du niveau, telle que vous l'avez parcouru
+  L                     grimoire du heros choisi
+  P                     reglages du jeu
+  S                     lancer un sort (soins, protections) hors combat
+  1 a 4                 choisir le heros courant
+  ESC                   fermer un ecran ; deux fois de suite, quitter
+
+  En combat :  A attaquer   S lancer un sort   F fuir   I sac
+
+LE PANNEAU DU GROUPE
+  Un bloc par aventurier : son nom en tete, sur toute la largeur, avec
+  son niveau cale a droite ; son portrait dessous ; a cote, ses points
+  de vie et la jauge qui va avec, puis ses emplacements de sorts et
+  leur jauge -- ou, pour qui ne lance pas de sorts, sa classe d'armure.
+  Le nom du heros choisi passe a l'or. Sous la moitie de ses points de
+  vie, le compte et la jauge virent au rouge.
+
+LEVIERS ET HERSES
+  Certains couloirs sont barres par une herse de fer. Le levier qui la
+  commande est scelle dans un mur, ailleurs sur l'etage : mettez-vous
+  face a lui et pressez ESPACE. Un levier peut se remettre en place, et
+  la herse retombe. La carte montre les herses fermees en gris de fer
+  et les leviers en laiton.
+
+LA SOURIS
+  Le pointeur est un sprite du materiel : il ne coute rien et ne laisse
+  aucune trace. Dans la vue, l'ecran fait office de rose des vents --
+  cliquez en haut pour avancer, en bas pour reculer, a gauche ou a
+  droite pour tourner, au centre pour agir. En combat, cliquer c'est
+  frapper.
+
+  Un clic sur le bloc d'un aventurier le choisit. Dans une liste -- le
+  sac, l'echoppe, le grimoire, les reglages -- le premier clic pose le
+  curseur sur la ligne, le second conclut.
+
+  Le bouton droit referme un panneau. Dans la vue il agit, comme
+  ESPACE : il ne quitte pas le jeu, ce serait trop facile a faire par
+  megarde.
+
+L'ECHOPPE
+  Un marchand par etage, scelle dans un mur comme une niche, jamais
+  loin du depart. Mettez-vous face a son etal et pressez ESPACE. Huit
+  articles choisis pour l'etage, au prix de l'objet ; TAB passe de
+  l'autre cote du comptoir, ou il rachete votre butin a moitie prix.
+  Les fleches choisissent la ligne, ENTREE conclut, ESC vous fait
+  sortir. Ce que vous lui achetez, il ne l'a plus : l'etal est garde
+  dans la partie sauvee.
+
+  C'est le seul emploi de l'or. Ramassez-en.
+
+LES DALLES PIEGEES
+  Quatre au premier etage, huit au dernier, et rien ne les distingue du
+  dallage. En marchant dessus, chacun de vos aventuriers debout a une
+  chance de la voir a temps -- le roublard bien plus que les autres.
+  Reperee, elle porte une croix a la craie et le groupe s'arrete net :
+  pressez ESPACE pour la desamorcer, avec le heros que vous aurez
+  choisi. Reussi, tout le monde y gagne de l'experience. Rate de peu,
+  la main tremble et vous pouvez recommencer ; rate de loin, elle vous
+  saute au visage.
+
+  Non reperee, elle se detend : dards, lame de faux, fosse a pieux ou
+  nuage acide, un de de degats par etage plus un, moitie moins pour qui
+  reussit sa sauvegarde. Un ressort ne sert qu'une fois.
+
+  Rien n'oblige a desamorcer : on peut toujours enjamber une dalle
+  reperee, en sachant ce qu'on fait.
+
+LES PORTRAITS
+  Un visage par classe, dessine en trente-deux pixels de cote : le
+  volume vient d'un eclairage venu d'en haut a gauche, les yeux, le nez
+  et la bouche sont poses au pixel.
+
+LES SURFACES
+  Murs, sol et voute partagent la meme pierre et la meme loi de
+  lumiere : plus c'est loin, plus c'est sombre, et le couloir s'eteint
+  sur les cotes comme sous une torche portee. Le sol est dalle de la
+  meme pierre que les murs, avec de la terre dans les joints et de la
+  mousse le long des parois ; la voute porte ses nervures et la suie
+  des torches.
+
+L'IMAGE
+  Le jeu tourne en huit bitplanes AGA : 256 couleurs choisies parmi
+  seize millions, chargees par le copper en huit banques de trente-deux
+  et ecrites deux fois pour les vingt-quatre bits. La palette est
+  decrite matiere par matiere -- pierre, mortier, terre, bois, fer,
+  acier, peau, mousse, or, sang, feu, os, cuir, ecailles, etoffes,
+  cheveux, magie -- chacune sous forme d'une gamme continue. Les murs
+  ne sont plus six gris mais vingt teintes de calcaire, les visages ont
+  une vraie carnation, et les cadres de l'interface sont du bronze
+  cisele avec un clou a chaque angle.
+
+LE GRIMOIRE
+  L ouvre le livre de sorts du heros choisi : les seize sorts, ceux
+  qu'il connait en clair, les autres en gris. Les fleches font defiler,
+  et le bas de la page donne le detail du sort vise -- son niveau, son
+  ecole, ce qu'il inflige ou rend, la sauvegarde qu'il autorise et les
+  emplacements qu'il vous reste a ce niveau. 1 a 4 change de heros.
+
+LES REGLAGES
+  P ouvre les reglages, en pleine partie : la musique, les bruitages,
+  la disposition du clavier (AZERTY ou QWERTY), une sauvegarde
+  immediate, et le retour a l'accueil. Les fleches choisissent la
+  ligne, ENTREE la change.
+
+LA CARTE
+  M ouvre le releve du niveau. Seules apparaissent les cases que le
+  groupe a longees. Les couleurs : sol parcouru en gris, murs en bleu
+  sombre, porte en brun, porte a runes en bleu, porte verrouillee en
+  rouge sombre, escalier en jaune, monstre en rouge, objet en clair,
+  et le groupe en blanc. Le titre rappelle l'etage et la direction.
+
+DANS LE SAC
+  E equipe l'objet sous le curseur au heros courant, U l'utilise
+  (potion, ou parchemin pour apprendre un sort), D le jette.
+
+REGLES (SRD 3.5, sous Open Game License)
+  Attaque : 1d20 + bonus de base + modificateur de Force contre la
+  classe d'armure. Une attaque de plus, a -5, par tranche de 5 points de
+  bonus de base. Marge de critique et multiplicateur propres a chaque
+  arme, avec jet de confirmation. Degats : des de l'arme + Force ; a
+  l'arc, la Dexterite sert a toucher.
+  Classe d'armure : 10 + Dexterite + armure + bouclier.
+  Sauvegardes : Vigueur, Reflexes, Volonte, fortes ou faibles selon la
+  classe.
+  Magie : 16 sorts des niveaux 0 a 3, avec emplacements par niveau de
+  sort et emplacements bonus de caracteristique. Degre de difficulte =
+  10 + niveau du sort + modificateur de lancement ; les monstres font
+  leurs propres jets de sauvegarde.
+
+CLASSES
+  Guerrier, barbare, roublard, rodeur, paladin, clerc, magicien,
+  ensorceleur.
+
+BESTIAIRE
+  25 creatures du SRD avec leurs statistiques d'origine, du kobold au
+  geant des collines, reparties par niveau de donjon.
+
+LE DONJON
+  Trois niveaux. Coffres, objets au sol, niches creusees dans les murs,
+  portes ordinaires et portes verrouillees qui demandent une cle.
+  Onze armes, cinq protections, potions, parchemins et tresors.
+  Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
+
+MUSIQUE ET BRUITAGES
+  Deux partitions, deux modules ProTracker quatre voies, tous deux en
+  re mineur. Devant le portail : une procession lente et depouillee,
+  bourdon tenu, cor solitaire, choeur, une frappe sourde par phrase.
+  Dans la crypte : une marche, cuivres, choeur, cordes et timbales. La quatrieme voie est
+  pretee aux bruitages -- coup d'epee, hache, corde d'arc, impact,
+  grincement de porte, coffre, potion, sort, grognement, montee de
+  niveau, pas et rale -- puis rendue a la musique.
+
+AGASCROLL et AGADEMO : deux demonstrations AGA (playfield 8 bitplanes
+en scrolling materiel, scroller sinusoidal sur barres copper, degrade
+copper 24 bits, musique ProTracker).
+
+Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
+palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 700 Ko de
+Chip RAM libre.
+
+Le tiroir Src contient tout le source. Graphismes, cartes, musique et
+bruitages sont generes par programme : rien n'est emprunte.

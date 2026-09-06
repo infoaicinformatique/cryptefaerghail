@@ -62,8 +62,10 @@ Start:
 	move.w	#$7fff,DMACON(a5)	; tout le DMA coupe
 
 	bsr	InitDemo
+	lea	PT_ModuleData,a0	; module ProTracker
+	bsr	PT_Init
 
-	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER,DMACON(a5)
+	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 
 ;----------------------------------------------------------------------
 ; Boucle principale : une image = un echange de copperlist + un rendu
@@ -83,14 +85,17 @@ MainLoop:
 	move.l	d1,FrontPtrTab
 	move.l	d0,BackPtrTab
 
+	bsr	PT_Tick			; un tick de musique par image
+
 	addq.w	#2,FrameCnt
 	move.l	BackPtrTab,a0
 	bsr	BuildGradient		; on remplit la liste cachee
 	bsr	MoveSprite
 
 	btst	#6,CIAAPRA		; bouton gauche souris ?
-	bne.s	MainLoop
+	bne	MainLoop
 
+	bsr	PT_Stop
 	bsr	RestoreSystem
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
@@ -350,6 +355,9 @@ WaitVBlank:
 	move.l	(sp)+,d0
 	rts
 
+; --- replayer ProTracker : son code reste dans cette section ---
+	include	"ptreplay.i"
+
 ;======================================================================
 	SECTION	demodata,DATA
 ;======================================================================
@@ -427,3 +435,4 @@ PtrTab2:	ds.l	NUMLINES
 
 CopList1:	ds.b	COPMAXSIZE
 CopList2:	ds.b	COPMAXSIZE
+

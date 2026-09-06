@@ -1,3 +1,8 @@
 build/
 tools/bin/
 tools/.build/
+music.wav
+build/disk/
+__pycache__/
+art/pd/*.jpg
+art/pd/*_96.png

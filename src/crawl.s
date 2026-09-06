@@ -37,6 +37,7 @@ T_DOOR		= 2
 T_STAIRS	= 3
 T_LOCKED	= 4
 T_NICHE		= 5
+T_RUNE		= 6
 ; --- contenu, quartet haut ---
 C_CHEST		= $10
 C_MONSTER	= $20
@@ -156,6 +157,8 @@ UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
 UI_SPELL	= 3
+UI_RIDDLE	= 4
+rd_SIZEOF	= 28
 
 ; --- codes clavier bruts ---
 KEY_UP		= $4c
@@ -862,6 +865,11 @@ Rnd:
 	rts
 
 RndMod:					; d1 = borne -> d0 = 0..d1-1
+	tst.w	d1			; borne nulle : pas de division
+	bne.s	.ok
+	moveq	#0,d0
+	rts
+.ok:
 	movem.l	d1-d2,-(sp)
 	move.l	d1,d2
 	bsr	Rnd
@@ -969,6 +977,8 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_NICHE,d2
 	beq.s	.yes
+	cmp.w	#T_RUNE,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1031,6 +1041,11 @@ DrawScene:
 	bsr	DrawInventory
 	bra	.done
 .notInv:
+	cmp.w	#UI_RIDDLE,d0
+	bne.s	.notRiddle
+	bsr	DrawRiddle
+	bra	.done
+.notRiddle:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1077,6 +1092,8 @@ DrawScene:
 	cmp.w	#T_DOOR,d4
 	beq.s	.asDoor
 	cmp.w	#T_LOCKED,d4
+	beq.s	.asDoor
+	cmp.w	#T_RUNE,d4
 	bne.s	.stone
 .asDoor:
 	cmp.w	#4,d7
@@ -2396,6 +2413,8 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.shut
 	cmp.w	#T_LOCKED,d0
 	beq	.locked
+	cmp.w	#T_RUNE,d0
+	beq	.rune
 
 	move.w	d4,PosX
 	move.w	d5,PosY
@@ -2425,6 +2444,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bra	.redraw
 .locked:
 	lea	TxtLocked,a0
+	bsr	LogAdd
+	bra	.redraw
+.rune:
+	lea	TxtRuneDoor,a0
 	bsr	LogAdd
 	bra	.redraw
 
@@ -2530,6 +2553,8 @@ DoAction:
 	beq	.lockedDoor
 	cmp.w	#T_NICHE,d0
 	beq	.niche
+	cmp.w	#T_RUNE,d0
+	beq	.rune
 	lea	TxtNothing,a0
 	bsr	LogAdd
 	bra	.done
@@ -2557,11 +2582,11 @@ DoAction:
 	bsr	SfxPlay
 	lea	TxtUnlock,a0
 	bsr	LogAdd
-	bra.s	.done
+	bra	.done
 .noKey:
 	lea	TxtNeedKey,a0
 	bsr	LogAdd
-	bra.s	.done
+	bra	.done
 .niche:
 	move.w	d4,d0
 	move.w	d5,d1
@@ -2587,11 +2612,159 @@ DoAction:
 	bsr	LogItem
 	move.w	d7,d0
 	bsr	CheckKey
-	bra.s	.done
+	bra	.done
 .emptyNiche:
 	lea	TxtNicheEmpty,a0
 	bsr	LogAdd
+	bra	.done
+.rune:
+	move.w	d4,d0			; l'enigme gravee sur la porte
+	move.w	d5,d1
+	bsr	MapGetParam
+	cmp.w	#3,d0
+	blt.s	.riddleOk
+	moveq	#0,d0
+.riddleOk:
+	move.w	d0,RiddleIdx
+	move.w	d4,RiddleX
+	move.w	d5,RiddleY
+	move.w	#UI_RIDDLE,UiMode
 .done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Enigmes des portes a runes
+;----------------------------------------------------------------------
+DrawRiddle:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	moveq	#0,d4
+	bsr	FillRect
+	lea	TxtRuneTitle,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	moveq	#14,d2
+	bsr	DrawText
+
+	move.w	RiddleIdx,d0
+	mulu.w	#rd_SIZEOF,d0
+	lea	RiddleTable,a2
+	add.l	d0,a2
+	moveq	#0,d7
+.qLoop:				; trois lignes de question
+	move.w	d7,d0
+	lsl.w	#2,d0
+	move.l	(a2,d0.w),a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#11,d1
+	add.w	#38,d1
+	moveq	#13,d2
+	bsr	DrawText
+	addq.w	#1,d7
+	cmp.w	#3,d7
+	blt.s	.qLoop
+
+	moveq	#0,d7
+.aLoop:				; trois reponses numerotees
+	lea	TmpStr,a1
+	move.w	d7,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	lea	TxtDash,a0
+	bsr	StrCopy
+	move.w	d7,d0
+	addq.w	#3,d0
+	lsl.w	#2,d0
+	move.l	(a2,d0.w),a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#13,d1
+	add.w	#84,d1
+	moveq	#12,d2
+	bsr	DrawText
+	addq.w	#1,d7
+	cmp.w	#3,d7
+	blt.s	.aLoop
+
+	lea	TxtRuneAsk,a0
+	moveq	#3,d0
+	move.w	#128,d1
+	moveq	#14,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+AnswerRiddle:				; d0 = reponse donnee (0..2)
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	d0,d7
+	move.w	RiddleIdx,d0
+	mulu.w	#rd_SIZEOF,d0
+	lea	RiddleTable,a2
+	add.l	d0,a2
+	cmp.w	24(a2),d7
+	bne.s	.wrong
+	move.w	RiddleX,d0		; la porte s'ouvre
+	move.w	RiddleY,d1
+	moveq	#T_FLOOR,d2
+	bsr	MapSet
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtRuneOk,a0
+	bsr	LogAdd
+	lea	Heroes,a6		; un peu d'experience pour la sagacite
+	moveq	#NHEROES-1,d6
+.xpLoop:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpNext
+	add.w	#15,hr_Xp(a6)
+	bsr	CheckLevel
+.xpNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.xpLoop
+	bra.s	.done
+.wrong:
+	moveq	#SFX_HIT,d0
+	bsr	SfxPlay
+	lea	TxtRuneBad,a0
+	bsr	LogAdd
+	moveq	#NHEROES,d1		; la rune mord celui qui se trompe
+	bsr	RndMod
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq.s	.done
+	moveq	#1,d0
+	moveq	#6,d1
+	bsr	RollDice
+	move.w	d0,d5
+	sub.w	d5,hr_Hp(a6)
+	tst.w	hr_Hp(a6)
+	bgt.s	.alive
+	clr.w	hr_Hp(a6)
+.alive:
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtRuneBurn,a0
+	bsr	StrCopy
+	move.w	d5,d0
+	bsr	StrNum
+	lea	TxtPvSuffix,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bsr	CheckWipe
+.done:
+	clr.w	UiMode
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -3369,8 +3542,19 @@ HandleKey:
 	tst.w	GameOver
 	bne	.done
 
-	move.w	UiMode,d1		; --- choix d'un sort
-	cmp.w	#UI_SPELL,d1
+	move.w	UiMode,d1		; --- reponse a une enigme
+	cmp.w	#UI_RIDDLE,d1
+	bne.s	.notRiddleUi
+	move.w	d0,d2
+	sub.w	#KEY_1,d2
+	bmi	.done
+	cmp.w	#3,d2
+	bge	.done
+	move.w	d2,d0
+	bsr	AnswerRiddle
+	bra	.done
+.notRiddleUi:
+	cmp.w	#UI_SPELL,d1		; --- choix d'un sort
 	bne.s	.notSpellUi
 	move.w	d0,d2
 	sub.w	#KEY_1,d2
@@ -3553,6 +3737,14 @@ DirTable:
 
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
+
+RiddleTable:				; trois lignes, trois reponses, la bonne
+	dc.l	TxtR0Q1,TxtR0Q2,TxtR0Q3,TxtR0A1,TxtR0A2,TxtR0A3
+	dc.w	0,0
+	dc.l	TxtR1Q1,TxtR1Q2,TxtR1Q3,TxtR1A1,TxtR1A2,TxtR1A3
+	dc.w	1,0
+	dc.l	TxtR2Q1,TxtR2Q2,TxtR2Q3,TxtR2A1,TxtR2A2,TxtR2A3
+	dc.w	1,0
 StatNames:
 	dc.l	TxtFor,TxtDex,TxtCon,TxtInt,TxtSag,TxtCha
 StatOffsets:
@@ -3650,6 +3842,31 @@ TxtSpells:	dc.b	"SORTS : ",0
 TxtNiveau:	dc.b	"NIVEAU ",0
 TxtOr:		dc.b	"   OR ",0
 TxtKeys:	dc.b	"   CLES ",0
+TxtRuneDoor:	dc.b	"UNE PORTE COUVERTE DE RUNES.",0
+TxtRuneTitle:	dc.b	"LA PORTE VOUS PARLE",0
+TxtRuneAsk:	dc.b	"REPONDEZ : 1, 2 OU 3",0
+TxtRuneOk:	dc.b	"LES RUNES S'EFFACENT. PASSAGE !",0
+TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLERE.",0
+TxtRuneBurn:	dc.b	" EST BRULE, ",0
+TxtR0Q1:	dc.b	"JE PARLE SANS BOUCHE",0
+TxtR0Q2:	dc.b	"ET J'ENTENDS SANS",0
+TxtR0Q3:	dc.b	"OREILLE. QUI SUIS-JE ?",0
+TxtR0A1:	dc.b	"L'ECHO",0
+TxtR0A2:	dc.b	"LE VENT",0
+TxtR0A3:	dc.b	"LA PIERRE",0
+TxtR1Q1:	dc.b	"PLUS ON EN PREND,",0
+TxtR1Q2:	dc.b	"PLUS ON EN LAISSE",0
+TxtR1Q3:	dc.b	"DERRIERE SOI. QUOI ?",0
+TxtR1A1:	dc.b	"DES PIECES D'OR",0
+TxtR1A2:	dc.b	"DES PAS",0
+TxtR1A3:	dc.b	"DES ANNEES",0
+TxtR2Q1:	dc.b	"J'AI UN OEIL",0
+TxtR2Q2:	dc.b	"MAIS JE NE VOIS RIEN.",0
+TxtR2Q3:	dc.b	"QUI SUIS-JE ?",0
+TxtR2A1:	dc.b	"LE BORGNE",0
+TxtR2A2:	dc.b	"L'AIGUILLE",0
+TxtR2A3:	dc.b	"LA TOUR DE GUET",0
+TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR REPONDRE  ESC",0
 TxtHelpCreate:	dc.b	"1-4 CLASSE  R DES  ENTREE OK  ESC",0
 TxtHelpMove:	dc.b	"FLECHES  ESPACE  C FICHE  I SAC  ESC",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
@@ -3709,6 +3926,9 @@ UiMode:		ds.w	1
 SelHero:	ds.w	1
 InvCursor:	ds.w	1
 InvTop:		ds.w	1
+RiddleIdx:	ds.w	1
+RiddleX:	ds.w	1
+RiddleY:	ds.w	1
 CreIndex:	ds.w	1
 CreStep:	ds.w	1
 CreClass:	ds.w	1

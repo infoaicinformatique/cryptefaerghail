@@ -452,7 +452,7 @@ def build_art():
 
 # --- donjon -------------------------------------------------------------
 MAPW = MAPH = 24
-FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE = 0, 1, 2, 3, 4, 5
+FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
 # Objets : doivent suivre exactement ItemTable dans src/crawl.s
@@ -550,6 +550,33 @@ def build_level(level, seed):
     for x, y in take(2 + level):                     # portes ordinaires
         if grid[y][x] == FLOOR:
             grid[y][x] = DOOR
+    # Serrures et cles : une serrure posee au hasard peut couper le niveau
+    # en deux des le depart. On les place donc loin, et les cles pres.
+    dist = distances(grid, start)
+    far_cells = [c for c in free if dist.get(c, 99) >= 12]
+    near_cells = [c for c in free if 2 <= dist.get(c, 99) <= 7]
+    for x, y in far_cells[:1]:                       # une porte a runes
+        if grid[y][x] == FLOOR:
+            grid[y][x] = RUNE
+            par[y][x] = level
+            free.remove((x, y))
+    placed = 0
+    for x, y in far_cells[1:]:
+        if placed >= 1 + level:
+            break
+        if grid[y][x] == FLOOR:
+            grid[y][x] = LOCKED
+            free.remove((x, y))
+            placed += 1
+    keys = 0
+    for x, y in near_cells:
+        if keys >= placed + 2:
+            break
+        if grid[y][x] == FLOOR:
+            grid[y][x] |= ITEM
+            par[y][x] = ITEMS["CLE DE FER"]
+            free.remove((x, y))
+            keys += 1
 
     # niches : un mur borde par un couloir, avec une offrande dedans
     niches = 0
@@ -574,6 +601,7 @@ def build_maps():
     for lv in range(3):
         grid, par, start, stairs = build_level(lv, 1000 + lv * 77)
         check_reachable(grid, start)
+        check_solvable(grid, par, start)
         levels.append((grid, par, start, stairs))
         out += bytes((start[0], start[1], 1, 0))
         for y in range(MAPH):
@@ -581,6 +609,50 @@ def build_maps():
         for y in range(MAPH):
             out += bytes(par[y][x] & 0xff for x in range(MAPW))
     return bytes(out), levels
+
+
+def distances(grid, start):
+    """Distance de chaque case au depart, murs exclus."""
+    import collections
+    dist = {start: 0}
+    q = collections.deque([start])
+    while q:
+        x, y = q.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if (nx, ny) in dist or not (0 <= nx < MAPW and 0 <= ny < MAPH):
+                continue
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE):
+                continue
+            dist[(nx, ny)] = dist[(x, y)] + 1
+            q.append((nx, ny))
+    return dist
+
+
+def check_solvable(grid, par, start):
+    """Le niveau doit rester finissable : au moins une cle atteignable
+    sans forcer une serrure, ou l'escalier accessible directement."""
+    import collections
+    seen, q = {start}, collections.deque([start])
+    keys, stairs = 0, False
+    while q:
+        x, y = q.popleft()
+        cell = grid[y][x]
+        if (cell & 0x0f) == STAIRS:
+            stairs = True
+        if (cell & 0x30) == ITEM and par[y][x] == ITEMS["CLE DE FER"]:
+            keys += 1
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
+                continue
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED):
+                continue
+            seen.add((nx, ny))
+            q.append((nx, ny))
+    assert stairs or keys > 0, \
+        "niveau bloque : ni escalier ni cle sans forcer une serrure"
+    return len(seen), keys, stairs
 
 
 def check_reachable(grid, start):
@@ -659,7 +731,9 @@ if __name__ == "__main__":
     print(f"dgnart.bin : {len(pieces)} morceaux, {len(art)} octets")
     for i, (grid, par, start, stairs) in enumerate(levels):
         reach, _ = check_reachable(grid, start)
+        open_cells, keys, direct = check_solvable(grid, par, start)
         print(f"  niveau {i + 1} : depart {start}, escalier {stairs}, "
-              f"{reach} cases accessibles")
+              f"{reach} cases ; sans forcer les serrures {open_cells} cases, "
+              f"{keys} cles, escalier {'direct' if direct else 'derriere une porte'}")
     print(f"dgnmap.bin : {len(levels)} niveaux, {len(maps)} octets")
     print(f"font8.i    : {n} glyphes")

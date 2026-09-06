@@ -176,7 +176,15 @@ Inspirées de D&D 3.5, avec ce que cela implique de vraies décisions :
 
 Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
 clés, trésors), 4 monstres animés sur deux poses, coffres, objets au sol,
-niches creusées dans les murs, portes ordinaires et portes verrouillées.
+niches creusées dans les murs, portes ordinaires, portes verrouillées — et
+une **porte à runes** par niveau, qui pose une énigme à trois réponses :
+juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
+un aventurier.
+
+Le générateur **vérifie que chaque niveau reste finissable** : il place les
+serrures loin du départ et les clés près, puis contrôle par parcours en
+largeur qu'on atteint l'escalier ou au moins une clé sans forcer une serrure.
+Ce contrôle a déjà attrapé un niveau coupé en deux dès la deuxième case.
 
 ### Rendu
 

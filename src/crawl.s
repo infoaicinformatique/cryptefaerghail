@@ -1453,16 +1453,11 @@ DrawParty:
 	bsr	DrawText
 	bra	.heroNext
 .exists:
-	move.w	hr_Class(a6),d0		; portrait
-	add.w	#ART_PORTRAIT,d0
-	moveq	#0,d1
-	move.w	d5,d2
-	mulu.w	#SCRBPL,d2
-	add.w	#28,d2
-	bsr	BlitPieceAt
-
-	move.l	a6,a0			; nom
-	move.w	#32,d0
+	; --- le nom prend toute la largeur du panneau, le niveau se range
+	; a sa droite : plus besoin d'abreger, et le portrait descend
+	; sous cette ligne.
+	move.l	a6,a0
+	move.w	#29,d0
 	move.w	d5,d1
 	move.w	#C_TEXT,d2
 	tst.w	hr_Hp(a6)
@@ -1471,37 +1466,61 @@ DrawParty:
 .alive:
 	cmp.w	SelHero,d7
 	bne.s	.notSel
-	move.w	#C_HILITE,d2		; heros selectionne : en or
+	move.w	#C_HILITE,d2		; heros choisi : en or
 .notSel:
 	bsr	DrawText
 
-	lea	TmpStr,a1		; points de vie
-	lea	TxtPv,a0
-	bsr	StrCopy
-	move.w	hr_Hp(a6),d0
+	lea	TmpStr,a1		; niveau, cale sur le bord droit
+	move.w	hr_Level(a6),d0
 	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	move.w	#37,d0
+	cmp.w	#10,hr_Level(a6)
+	blt.s	.lvlOne
+	subq.w	#1,d0			; deux chiffres : une colonne de plus
+.lvlOne:
+	move.w	d5,d1
+	move.w	#C_PARCHD,d2		; l'or est reserve au heros choisi
+	bsr	DrawText
+
+	move.w	hr_Class(a6),d0		; portrait, sous le nom
+	add.w	#ART_PORTRAIT,d0
+	moveq	#0,d1
+	move.w	d5,d2
+	addq.w	#8,d2
+	mulu.w	#SCRBPL,d2
+	add.w	#28,d2
+	bsr	BlitPieceAt
+
+	lea	TmpStr,a1		; points de vie, sans etiquette :
+	move.w	hr_Hp(a6),d0		; la jauge dit deja de quoi il s'agit
+	bsr	StrNum
+	cmp.w	#100,hr_HpMax(a6)	; au-dela de cent, le total ne tient
+	bge.s	.hpShort		; pas dans le panneau
 	move.b	#'/',(a1)+
 	move.w	hr_HpMax(a6),d0
 	bsr	StrNum
+.hpShort:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	move.w	#32,d0
 	move.w	d5,d1
-	addq.w	#8,d1
+	add.w	#10,d1
 	move.w	#C_HEALTH,d2
 	move.w	hr_Hp(a6),d3
 	add.w	d3,d3
 	cmp.w	hr_HpMax(a6),d3
 	bge.s	.hpOk
-	move.w	#C_ALERT,d2
+	move.w	#C_ALERT,d2		; sous la moitie : en rouge
 .hpOk:
 	move.w	d2,d6			; on garde la teinte pour la jauge
 	bsr	DrawText
 
 	movem.l	d5-d6,-(sp)		; d5 porte la ligne du bloc
-	move.w	#256,d0			; jauge de vie, sous le compte
+	move.w	#256,d0
 	move.w	d5,d1
-	add.w	#17,d1
+	add.w	#19,d1
 	moveq	#48,d2
 	move.w	hr_Hp(a6),d3
 	move.w	hr_HpMax(a6),d4
@@ -1509,11 +1528,23 @@ DrawParty:
 	bsr	DrawGauge
 	movem.l	(sp)+,d5-d6
 
-	tst.w	hr_MpMax(a6)		; points de magie, si la classe en a
-	beq.s	.noMp
-	lea	TmpStr,a1
-	lea	TxtPm,a0
+	tst.w	hr_MpMax(a6)		; la magie, si la classe en a
+	bne.s	.hasMp
+	lea	TmpStr,a1		; sinon la classe d'armure, qui
+	lea	TxtCa,a0		; comblait un blanc pour rien
 	bsr	StrCopy
+	bsr	HeroAc
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	move.w	#32,d0
+	move.w	d5,d1
+	add.w	#23,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	bra	.heroNext
+.hasMp:
+	lea	TmpStr,a1
 	move.w	hr_Mp(a6),d0
 	bsr	StrNum
 	move.b	#'/',(a1)+
@@ -1523,34 +1554,20 @@ DrawParty:
 	lea	TmpStr,a0
 	move.w	#32,d0
 	move.w	d5,d1
-	add.w	#22,d1
+	add.w	#23,d1
 	move.w	#C_MANA,d2
 	bsr	DrawText
 
-	movem.l	d5-d6,-(sp)		; jauge de magie
+	movem.l	d5-d6,-(sp)
 	move.w	#256,d0
 	move.w	d5,d1
-	add.w	#31,d1
+	add.w	#32,d1
 	moveq	#48,d2
 	move.w	hr_Mp(a6),d3
 	move.w	hr_MpMax(a6),d4
 	move.w	#C_MANA,d5
 	bsr	DrawGauge
 	movem.l	(sp)+,d5-d6
-	bra.s	.heroNext
-.noMp:
-	lea	TmpStr,a1
-	lea	TxtNiv,a0
-	bsr	StrCopy
-	move.w	hr_Level(a6),d0
-	bsr	StrNum
-	clr.b	(a1)
-	lea	TmpStr,a0
-	move.w	#32,d0
-	move.w	d5,d1
-	add.w	#22,d1
-	move.w	#C_TEXTDIM,d2
-	bsr	DrawText
 .heroNext:
 	lea	hr_SIZEOF(a6),a6
 	addq.w	#1,d7

@@ -37,6 +37,14 @@ COMMANDES
 
   En combat :  A attaquer   S lancer un sort   F fuir   I sac
 
+LE PANNEAU DU GROUPE
+  Un bloc par aventurier : son nom en tete, sur toute la largeur, avec
+  son niveau cale a droite ; son portrait dessous ; a cote, ses points
+  de vie et la jauge qui va avec, puis ses emplacements de sorts et
+  leur jauge -- ou, pour qui ne lance pas de sorts, sa classe d'armure.
+  Le nom du heros choisi passe a l'or. Sous la moitie de ses points de
+  vie, le compte et la jauge virent au rouge.
+
 LEVIERS ET HERSES
   Certains couloirs sont barres par une herse de fer. Le levier qui la
   commande est scelle dans un mur, ailleurs sur l'etage : mettez-vous

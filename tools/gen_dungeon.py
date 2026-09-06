@@ -596,6 +596,19 @@ def draw_hood(p, tones, cx=FACE_CX, cy=FACE_CY, rx=FACE_RX, ry=FACE_RY, shade=Tr
                 p.set(x, y, ramp(SKIN, 0.86))
 
 
+PORTRAIT_TOP, PORTRAIT_H = 3, 26         # rognage : on garde la tete
+
+
+def crop(p, top, height):
+    """Rogne un morceau en hauteur, en gardant sa largeur."""
+    out = Piece(p.x0, p.y0, p.w, height)
+    for y in range(height):
+        src = top + y
+        if 0 <= src < p.h:
+            out.px[y] = list(p.px[src])
+    return out
+
+
 def make_portrait(cls):
     """Portrait 32x32, un par classe : meme tete eclairee, coiffee,
     casquee ou encapuchonnee selon le metier."""
@@ -954,7 +967,11 @@ def build_art():
     ART_INDEX["ART_NICHE"] = len(pieces)
     pieces += [make_niche()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
-    pieces += [make_portrait(c) for c in range(NCLASSPORTRAIT)]
+    # Le portrait est dessine sur un carre de trente-deux, puis rogne :
+    # le nom du heros prend toute la largeur du panneau au-dessus de
+    # lui, ce qui laisse la place d'ecrire les points sans abreger.
+    pieces += [crop(make_portrait(c), PORTRAIT_TOP, PORTRAIT_H)
+               for c in range(NCLASSPORTRAIT)]
     ART_INDEX["ART_ICON"] = len(pieces)
     pieces += [make_icon(k) for k in range(5)]
 

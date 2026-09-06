@@ -44,20 +44,8 @@ C_MONSTER	= $20
 C_ITEM		= $30
 C_MASK		= $30
 
-; --- morceaux de decor (ordre de data/dgnart.bin) ---
-ART_BG		= 0
-ART_FRONT	= 1			; distances 1 a 4
-ART_LEFT	= 5			; profondeurs 0 a 3
-ART_RIGHT	= 9
-ART_DOOR	= 13			; distances 1 a 3
-ART_MONSTER	= 16			; 4 monstres x 2 poses
-ART_FRONTL	= 24			; fond d'un passage a gauche
-ART_FRONTR	= 28
-ART_OUTERL	= 32			; mur exterieur, profondeurs 2 et 3
-ART_OUTERR	= 34
-ART_NICHE	= 36
-ART_PORTRAIT	= 37			; 4 classes
-ART_ICON	= 41			; arme, armure, potion, parchemin, cle
+; --- morceaux de decor : indices generes avec l'art lui-meme ---
+	include	"artidx.i"
 
 ; --- heros ---
 hr_Name		= 0			; 10 octets

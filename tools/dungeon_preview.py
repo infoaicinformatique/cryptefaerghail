@@ -14,6 +14,7 @@ l'ecran sans passer par un Amiga.
     python3 tools/dungeon_preview.py [niveau] [x] [y] [direction] [sortie.png]
 """
 import os
+import re
 import struct
 import sys
 import zlib
@@ -28,9 +29,22 @@ MAPW = MAPH = 24
 DIRS = ((0, -1), (1, 0), (0, 1), (-1, 0))            # N, E, S, O
 
 # morceaux, dans l'ordre ou build_art les empile
-BG, FRONT, LEFT, RIGHT, DOOR, MONSTER = 0, 1, 5, 9, 13, 16
-FRONTL, FRONTR, OUTERL, OUTERR = 24, 28, 32, 34
-NICHE, PORTRAIT, ICON = 36, 37, 41
+def art_index():
+    """Les indices viennent de src/artidx.i, genere avec l'art."""
+    idx = {}
+    for line in open(os.path.join(ROOT, "src", "artidx.i")):
+        m = re.match(r"(ART_\w+|NMONSTERART)\s*=\s*(\d+)", line)
+        if m:
+            idx[m.group(1)] = int(m.group(2))
+    return idx
+
+
+_A = art_index()
+BG, FRONT, LEFT, RIGHT = _A["ART_BG"], _A["ART_FRONT"], _A["ART_LEFT"], _A["ART_RIGHT"]
+DOOR, MONSTER = _A["ART_DOOR"], _A["ART_MONSTER"]
+FRONTL, FRONTR = _A["ART_FRONTL"], _A["ART_FRONTR"]
+OUTERL, OUTERR = _A["ART_OUTERL"], _A["ART_OUTERR"]
+NICHE, PORTRAIT, ICON = _A["ART_NICHE"], _A["ART_PORTRAIT"], _A["ART_ICON"]
 
 
 def load_art():

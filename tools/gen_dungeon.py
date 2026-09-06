@@ -26,6 +26,7 @@ CX, CY = VIEW_W // 2, VIEW_H // 2        # point de fuite
 F = 64.0                                 # demi-taille d'un mur a distance 1
 SCRBPL = 40                              # octets par ligne d'un plan d'ecran
 DEPTHS = 4
+NMONSTERART = 9                          # familles de silhouettes
 
 # --- palette 16 couleurs ------------------------------------------------
 PALETTE = [
@@ -349,53 +350,177 @@ def ellipse(p, cx, cy, rx, ry, idx):
                 p.set(x, y, idx)
 
 
+def limb(p, x0, y0, x1, y1, thick, idx):
+    """Trait epais : membres, cous, armes."""
+    steps = max(abs(x1 - x0), abs(y1 - y0), 1)
+    for i in range(steps + 1):
+        x = x0 + (x1 - x0) * i / steps
+        y = y0 + (y1 - y0) * i / steps
+        for dx in range(-thick, thick + 1):
+            for dy in range(-thick, thick + 1):
+                if dx * dx + dy * dy <= thick * thick:
+                    p.set(int(x) + dx, int(y) + dy, idx)
+
+
+def eyes(p, cx, cy, spread, idx=15, size=2):
+    for e in (-spread, spread):
+        ellipse(p, cx + e, cy, size, size, idx)
+
+
 def make_monster(kind, frame=0):
-    """Silhouettes 80x80, deux poses par monstre pour l'animation."""
-    w = h = 80
+    """Neuf familles de creatures, deux poses chacune. Les couleurs
+    restent dans la palette du donjon : gris de pierre, vert, rouge,
+    ocre, blanc.  Chaque famille sert plusieurs entrees du bestiaire."""
+    w, h = 96, 88                                    # largeur multiple de 16
     x0 = ((CX - w // 2) // 16) * 16
-    p = Piece(x0, CY - h // 2 + 8, w, h)
-    cx, cy = x0 + w // 2, CY - h // 2 + 8 + h // 2
-    cy += 2 if frame else 0                           # respiration
-    lift = -4 if frame else 0                         # bras / ailes levees
-    if kind == 0:                                    # rat geant
-        ellipse(p, cx, cy + 12, 28, 16, 4)
-        ellipse(p, cx, cy + 8, 22, 11, 3)
-        ellipse(p, cx - 22, cy + 4, 12, 10, 4)       # tete
-        ellipse(p, cx - 30, cy - 4, 5, 6, 5)         # oreille
-        p.set(cx - 27, cy + 2, 15), p.set(cx - 26, cy + 2, 15)
-        for t in range(30):                          # queue qui fouette
-            p.set(cx + 26 + t // 2, cy + 12 - t + (t * lift) // 12, 5)
-    elif kind == 1:                                  # squelette
-        ellipse(p, cx, cy - 22, 12, 14, 13)          # crane
-        for e in (-5, 5):
-            ellipse(p, cx + e, cy - 24, 3, 4, 0)
-        ellipse(p, cx, cy + 8, 14, 20, 13)           # cage thoracique
-        for r in range(-12, 14, 6):
-            for x in range(cx - 13, cx + 14):
-                p.set(x, cy + r, 6)
-        for s in (-1, 1):                            # bras
-            for t in range(24):
-                p.set(cx + s * (14 + t // 3), cy - 8 + t + (lift if s > 0 else 0), 13)
-    elif kind == 2:                                  # orc
-        ellipse(p, cx, cy + 12, 24, 24, 12)          # torse
-        ellipse(p, cx, cy - 18, 15, 15, 12)          # tete
-        for e in (-6, 6):
-            ellipse(p, cx + e, cy - 20, 3, 3, 14)    # yeux
-        for e in (-5, 5):
-            p.set(cx + e, cy - 10, 13), p.set(cx + e, cy - 9, 13)
-        for s in (-1, 1):                            # bras
-            ellipse(p, cx + s * 26, cy + 8 + (lift if s > 0 else 0), 8, 18, 12)
-        ellipse(p, cx + 30, cy - 10 + lift * 2, 4, 16, 3)   # arme brandie
-    else:                                            # dragon
-        ellipse(p, cx, cy + 14, 26, 20, 15)          # corps
-        ellipse(p, cx, cy - 16, 18, 16, 15)          # tete
-        for s in (-1, 1):                            # ailes qui battent
-            ellipse(p, cx + s * 34, cy - 4 + lift, 16, 26 + lift, 9)
-            ellipse(p, cx + s * 34, cy - 4 + lift, 12, 21 + lift, 15)
-        for e in (-7, 7):
-            ellipse(p, cx + e, cy - 20, 4, 4, 14)    # yeux
-        for t in range(8):                           # crocs
-            p.set(cx - 8 + 2 * t, cy - 4 + (t % 2), 13)
+    p = Piece(x0, CY - h // 2 + 6, w, h)
+    cx = x0 + w // 2
+    cy = CY - h // 2 + 6 + h // 2
+    f = 1 if frame else 0                            # deuxieme pose
+    sway = 2 if frame else -2
+
+    if kind == 0:                                    # --- bete a quatre pattes
+        body, dark = 4, 6
+        ellipse(p, cx + 2, cy + 10, 26, 15, body)
+        ellipse(p, cx + 2, cy + 6, 24, 11, 3)        # dos eclaire
+        for s, off in ((-1, -16), (-1, 8), (1, -12), (1, 12)):
+            limb(p, cx + off, cy + 18, cx + off + s * 3, cy + 28 + f * 2, 3, dark)
+        ellipse(p, cx - 26, cy + 2, 13, 11, body)    # tete
+        ellipse(p, cx - 34, cy + 4, 6, 5, 3)         # museau
+        limb(p, cx - 31, cy - 8, cx - 27, cy - 2, 2, dark)   # oreilles
+        limb(p, cx - 24, cy - 10, cx - 22, cy - 3, 2, dark)
+        eyes(p, cx - 29, cy - 1, 0, 15, 1)
+        for t in range(26):                          # queue
+            p.set(cx + 27 + t // 2, cy + 6 - t + (t * sway) // 14, dark)
+        for t in range(-6, 7):                       # crocs
+            if t % 3 == 0:
+                p.set(cx - 36 + abs(t) // 2, cy + 8, 13)
+
+    elif kind == 1:                                  # --- squelette
+        bone, shade = 13, 2
+        ellipse(p, cx, cy - 24, 11, 13, bone)        # crane
+        for e in (-4, 4):
+            ellipse(p, cx + e, cy - 26, 3, 4, 0)
+        for t in range(-4, 5, 2):                    # machoire
+            p.set(cx + t, cy - 14, 0)
+        limb(p, cx, cy - 12, cx, cy + 14, 3, bone)   # colonne
+        for r in range(-8, 12, 5):                   # cotes
+            for x in range(-12, 13):
+                if abs(x) > 3:
+                    p.set(cx + x, cy + r + abs(x) // 4, shade)
+        limb(p, cx - 12, cy - 8, cx - 20 - f * 3, cy + 6 - f * 8, 2, bone)
+        limb(p, cx + 12, cy - 8, cx + 20, cy + 10, 2, bone)
+        limb(p, cx - 6, cy + 16, cx - 9, cy + 34, 3, bone)
+        limb(p, cx + 6, cy + 16, cx + 9, cy + 34, 3, bone)
+        limb(p, cx + 20, cy + 10, cx + 26, cy - 16, 2, 4)     # arme
+        for t in range(6):
+            p.set(cx + 26 + t // 3, cy - 18 - t, 2)
+
+    elif kind == 2:                                  # --- petit humanoide
+        skin, cloth = 12, 9
+        ellipse(p, cx, cy + 8, 13, 16, skin)         # corps
+        ellipse(p, cx, cy - 12, 11, 11, skin)        # tete
+        limb(p, cx - 9, cy - 18, cx - 14, cy - 24, 2, skin)   # oreilles
+        limb(p, cx + 9, cy - 18, cx + 14, cy - 24, 2, skin)
+        eyes(p, cx, cy - 13, 4, 14, 2)
+        for t in range(-4, 5, 2):
+            p.set(cx + t, cy - 6, 13)                # dents
+        limb(p, cx - 12, cy + 4, cx - 18 - f * 2, cy + 16, 3, skin)
+        limb(p, cx + 12, cy + 2, cx + 18, cy - 10 - f * 4, 3, skin)
+        limb(p, cx + 18, cy - 26 - f * 4, cx + 18, cy + 14, 1, 4)  # lance
+        limb(p, cx - 6, cy + 22, cx - 8, cy + 34, 3, cloth)
+        limb(p, cx + 6, cy + 22, cx + 8, cy + 34, 3, cloth)
+
+    elif kind == 3:                                  # --- humanoide arme
+        skin, dark = 12, 6
+        ellipse(p, cx, cy + 10, 20, 20, skin)
+        ellipse(p, cx, cy + 6, 17, 15, 3)            # torse eclaire
+        ellipse(p, cx, cy - 16, 13, 13, skin)
+        eyes(p, cx, cy - 18, 5, 14, 2)
+        for t in (-5, 5):                            # defenses
+            p.set(cx + t, cy - 8, 13), p.set(cx + t, cy - 7, 13)
+        limb(p, cx - 18, cy + 4, cx - 26, cy + 18 - f * 4, 4, skin)
+        limb(p, cx + 18, cy + 2, cx + 26, cy - 12 - f * 6, 4, skin)
+        limb(p, cx + 26, cy - 14 - f * 6, cx + 34, cy - 30 - f * 6, 2, 4)
+        for t in range(10):                          # lame de la hache
+            p.set(cx + 30 + t // 2, cy - 32 - f * 6 + t, 2)
+            p.set(cx + 36 - t // 3, cy - 30 - f * 6 + t, 1)
+        limb(p, cx - 8, cy + 28, cx - 11, cy + 40, 4, dark)
+        limb(p, cx + 8, cy + 28, cx + 11, cy + 40, 4, dark)
+
+    elif kind == 4:                                  # --- grand brutal
+        skin, dark = 3, 5
+        ellipse(p, cx, cy + 14, 27, 26, skin)
+        ellipse(p, cx, cy + 10, 23, 20, 2)
+        ellipse(p, cx, cy - 18, 16, 15, skin)
+        limb(p, cx - 14, cy - 30, cx - 20, cy - 38, 3, 13)    # cornes
+        limb(p, cx + 14, cy - 30, cx + 20, cy - 38, 3, 13)
+        eyes(p, cx, cy - 20, 6, 15, 2)
+        for t in range(-6, 7, 3):
+            p.set(cx + t, cy - 10, 13)
+        limb(p, cx - 24, cy + 6, cx - 34, cy + 22 - f * 4, 5, skin)
+        limb(p, cx + 24, cy + 4, cx + 32, cy - 14 - f * 6, 5, skin)
+        limb(p, cx + 32, cy - 16 - f * 6, cx + 38, cy - 36 - f * 8, 4, 9)
+        ellipse(p, cx + 38, cy - 38 - f * 8, 8, 8, 9)         # masse
+        limb(p, cx - 10, cy + 36, cx - 13, cy + 42, 6, dark)
+        limb(p, cx + 10, cy + 36, cx + 13, cy + 42, 6, dark)
+
+    elif kind == 5:                                  # --- spectre
+        for r in range(30, 7, -3):                   # voile en degrade
+            idx = 5 if r > 20 else (6 if r > 12 else 7)
+            ellipse(p, cx, cy + 6 + f, max(2, r - 6), r, idx)
+        for t in range(24):                          # lambeaux
+            p.set(cx - 22 + t, cy + 34 + (t % 5) - f * 2, 6)
+        ellipse(p, cx, cy - 16, 12, 13, 7)           # capuche
+        ellipse(p, cx, cy - 14, 9, 10, 0)
+        eyes(p, cx, cy - 16, 4, 12, 2)
+        limb(p, cx - 14, cy - 2, cx - 24 - f * 2, cy - 12, 2, 6)
+        limb(p, cx + 14, cy - 2, cx + 24, cy - 14 - f * 2, 2, 6)
+
+    elif kind == 6:                                  # --- momie
+        wrap, shade = 2, 4
+        ellipse(p, cx, cy + 12, 18, 24, wrap)
+        ellipse(p, cx, cy - 16, 12, 14, wrap)
+        for r in range(-28, 36, 5):                  # bandelettes
+            for x in range(-20, 21):
+                if abs(x) < 19 - abs(r) // 6:
+                    p.set(cx + x + (r // 4) % 3, cy + r, shade)
+        ellipse(p, cx - 4, cy - 18, 3, 3, 0)
+        ellipse(p, cx + 4, cy - 18, 3, 3, 0)
+        limb(p, cx - 16, cy + 2, cx - 30, cy - 6 - f * 3, 4, wrap)
+        limb(p, cx + 16, cy + 2, cx + 30, cy - 4 - f * 3, 4, wrap)
+        for t in range(8):                           # bandelettes qui pendent
+            p.set(cx - 30 + t % 3, cy + 2 + t, shade)
+            p.set(cx + 30 - t % 3, cy + 4 + t, shade)
+
+    elif kind == 7:                                  # --- creature ailee
+        body, wing = 6, 5
+        for s in (-1, 1):                            # ailes
+            for i in range(5):
+                limb(p, cx + s * 10, cy - 4,
+                     cx + s * (30 + i * 2), cy - 22 + i * 9 + f * 4, 2, wing)
+            ellipse(p, cx + s * 24, cy - 4 + f * 2, 13, 20 - f * 3, wing)
+        ellipse(p, cx, cy + 8, 14, 18, body)
+        ellipse(p, cx, cy - 14, 11, 11, body)
+        limb(p, cx - 10, cy - 22, cx - 14, cy - 30, 2, body)  # cornes
+        limb(p, cx + 10, cy - 22, cx + 14, cy - 30, 2, body)
+        eyes(p, cx, cy - 15, 4, 14, 2)
+        limb(p, cx - 6, cy + 24, cx - 10, cy + 34, 3, body)   # serres
+        limb(p, cx + 6, cy + 24, cx + 10, cy + 34, 3, body)
+
+    else:                                            # --- hydre
+        ellipse(p, cx, cy + 22, 24, 14, 12)          # corps
+        ellipse(p, cx, cy + 18, 20, 10, 3)
+        necks = ((-30, -18), (-16, -30), (0, -36), (16, -30), (30, -16))
+        for i, (hx, hy) in enumerate(necks):
+            wob = f * (2 if i % 2 else -2)
+            limb(p, cx, cy + 16, cx + hx, cy + hy + wob, 3, 12)
+            ellipse(p, cx + hx, cy + hy + wob, 8, 6, 12)
+            ellipse(p, cx + hx + (2 if hx > 0 else -2), cy + hy + wob + 2,
+                    5, 3, 15)
+            eyes(p, cx + hx, cy + hy + wob - 2, 3, 14, 1)
+        for t in range(20):                          # queue
+            p.set(cx + 24 + t // 2, cy + 28 + t // 3, 12)
     return p
 
 
@@ -420,23 +545,39 @@ def encode(piece):
     return bytes(out), wwords
 
 
+ART_INDEX = {}                           # rempli par build_art
+
+
 def build_art():
     pieces = [make_background()]
-    pieces += [make_front(k) for k in (1, 2, 3, 4)]              # 1..4
-    pieces += [make_side(i, -0.5) for i in range(DEPTHS)]        # 5..8
-    pieces += [make_side(i, 0.5) for i in range(DEPTHS)]         # 9..12
-    pieces += [make_front(k, door=True) for k in (1, 2, 3)]      # 13..15
-    for k in range(4):                                           # 16..23
+    ART_INDEX["ART_BG"] = 0
+    ART_INDEX["ART_FRONT"] = len(pieces)
+    pieces += [make_front(k) for k in (1, 2, 3, 4)]
+    ART_INDEX["ART_LEFT"] = len(pieces)
+    pieces += [make_side(i, -0.5) for i in range(DEPTHS)]
+    ART_INDEX["ART_RIGHT"] = len(pieces)
+    pieces += [make_side(i, 0.5) for i in range(DEPTHS)]
+    ART_INDEX["ART_DOOR"] = len(pieces)
+    pieces += [make_front(k, door=True) for k in (1, 2, 3)]
+    ART_INDEX["ART_MONSTER"] = len(pieces)
+    for k in range(NMONSTERART):                                 # deux poses
         pieces += [make_monster(k, 0), make_monster(k, 1)]
     # de quoi habiller les passages lateraux : la face du fond du passage
     # et son mur exterieur, sans quoi une ouverture n'est qu'un trou noir
-    pieces += [make_front(k, offset=-1) for k in (1, 2, 3, 4)]   # 24..27
-    pieces += [make_front(k, offset=1) for k in (1, 2, 3, 4)]    # 28..31
-    pieces += [make_side(i, -1.5) for i in (2, 3)]               # 32..33
-    pieces += [make_side(i, 1.5) for i in (2, 3)]                # 34..35
-    pieces += [make_niche()]                                     # 36
-    pieces += [make_portrait(c) for c in range(4)]               # 37..40
-    pieces += [make_icon(k) for k in range(5)]                   # 41..45
+    ART_INDEX["ART_FRONTL"] = len(pieces)
+    pieces += [make_front(k, offset=-1) for k in (1, 2, 3, 4)]
+    ART_INDEX["ART_FRONTR"] = len(pieces)
+    pieces += [make_front(k, offset=1) for k in (1, 2, 3, 4)]
+    ART_INDEX["ART_OUTERL"] = len(pieces)
+    pieces += [make_side(i, -1.5) for i in (2, 3)]
+    ART_INDEX["ART_OUTERR"] = len(pieces)
+    pieces += [make_side(i, 1.5) for i in (2, 3)]
+    ART_INDEX["ART_NICHE"] = len(pieces)
+    pieces += [make_niche()]
+    ART_INDEX["ART_PORTRAIT"] = len(pieces)
+    pieces += [make_portrait(c) for c in range(4)]
+    ART_INDEX["ART_ICON"] = len(pieces)
+    pieces += [make_icon(k) for k in range(5)]
 
     blobs, descs = [], []
     offset = 2 + len(pieces) * 12
@@ -731,6 +872,18 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
     art, pieces = build_art()
     open(os.path.join(ROOT, "data", "dgnart.bin"), "wb").write(art)
+    with open(os.path.join(ROOT, "src", "artidx.i"), "w") as f:
+        f.write(";----------------------------------------------------------\n")
+        f.write("; artidx.i - GENERE PAR tools/gen_dungeon.py\n")
+        f.write("; Indices des morceaux de decor : ils bougent des qu'on en\n")
+        f.write("; ajoute, d'ou leur generation plutot qu'une liste tenue a\n")
+        f.write("; la main dans le source.\n")
+        f.write(";----------------------------------------------------------\n\n")
+        for k in ("ART_BG", "ART_FRONT", "ART_LEFT", "ART_RIGHT", "ART_DOOR",
+                  "ART_MONSTER", "ART_FRONTL", "ART_FRONTR", "ART_OUTERL",
+                  "ART_OUTERR", "ART_NICHE", "ART_PORTRAIT", "ART_ICON"):
+            f.write(f"{k}\t= {ART_INDEX[k]}\n")
+        f.write(f"NMONSTERART\t= {NMONSTERART}\n")
     maps, levels = build_maps()
     open(os.path.join(ROOT, "data", "dgnmap.bin"), "wb").write(maps)
     write_palette(os.path.join(ROOT, "src", "dgnpal.i"))

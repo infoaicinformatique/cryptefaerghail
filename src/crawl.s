@@ -169,6 +169,8 @@ UI_INV		= 2
 UI_SPELL	= 3
 UI_RIDDLE	= 4
 UI_MAP		= 5
+UI_BOOK		= 6			; le grimoire
+UI_OPTS		= 7			; les reglages
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
 MAP_X		= 2			; carte : colonne octet du coin
@@ -195,6 +197,7 @@ KEY_E		= $12
 KEY_F		= $23
 KEY_I		= $17
 KEY_P		= $19
+KEY_L		= $28			; meme place en AZERTY et en QWERTY
 KEY_R		= $13
 KEY_S		= $21
 KEY_M_QW	= $37			; M sur un clavier anglais
@@ -253,6 +256,8 @@ Start:
 	bsr	InitScreen
 	bsr	NewGame
 	move.w	#PHASE_TITLE,Phase	; on arrive par l'accueil
+	move.w	#1,OptMusic
+	move.w	#1,OptSfx
 	bsr	PT_Init
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 
@@ -364,6 +369,8 @@ RestoreSystem:
 ; reboucle depuis le dernier appel : cela marche a n'importe quel
 ; moment de la trame.
 MusicPoll:
+	tst.w	OptMusic		; coupee dans les reglages
+	beq.s	.muted
 	movem.l	d0-d1/a5,-(sp)
 	lea	CUSTOM,a5
 	move.l	VPOSR(a5),d0
@@ -376,6 +383,7 @@ MusicPoll:
 	bsr	PT_Tick			; le balayage a reboucle
 .done:
 	movem.l	(sp)+,d0-d1/a5
+.muted:
 	rts
 
 ;----------------------------------------------------------------------
@@ -386,6 +394,8 @@ MusicPoll:
 ; pendant le nombre de tics indique dans la table.
 ;----------------------------------------------------------------------
 SfxPlay:
+	tst.w	OptSfx			; coupes dans les reglages
+	beq.s	.off
 	movem.l	d0-d3/a0-a2/a6,-(sp)
 	cmp.w	#SFX_STEP,d0		; le pas ne coupe pas un bruit en cours,
 	bne.s	.play			; sinon la melodie hoquete quand on
@@ -412,6 +422,7 @@ SfxPlay:
 	move.w	10(a1),PT_SfxLock
 .skip:
 	movem.l	(sp)+,d0-d3/a0-a2/a6
+.off:
 	rts
 
 RasterWait:				; environ deux lignes
@@ -1224,6 +1235,16 @@ DrawScene:
 	bsr	DrawMap
 	bra	.done
 .notMap:
+	cmp.w	#UI_BOOK,d0
+	bne.s	.notBook
+	bsr	DrawBook
+	bra	.done
+.notBook:
+	cmp.w	#UI_OPTS,d0
+	bne.s	.notOpts
+	bsr	DrawOptions
+	bra	.done
+.notOpts:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1678,8 +1699,18 @@ DrawStatus:
 	bra.s	.help
 .helpMap:
 	cmp.w	#UI_MAP,d0
-	bne.s	.helpOther
+	bne.s	.helpBook
 	lea	TxtHelpMap,a0
+	bra.s	.help
+.helpBook:
+	cmp.w	#UI_BOOK,d0
+	bne.s	.helpOpts
+	lea	TxtHelpBook,a0
+	bra.s	.help
+.helpOpts:
+	cmp.w	#UI_OPTS,d0
+	bne.s	.helpOther
+	lea	TxtHelpOpts,a0
 	bra.s	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
@@ -1697,6 +1728,384 @@ DrawStatus:
 	move.w	#C_TEXTLOW,d2
 	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+BOOKROWS	= 8			; sorts visibles a la fois
+
+;----------------------------------------------------------------------
+; Grimoire : les seize sorts, ceux que le heros connait en clair, les
+; autres en gris, et le detail complet de celui que vise le curseur.
+;----------------------------------------------------------------------
+DrawBook:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+
+	lea	TmpStr,a1		; GRIMOIRE DE <nom>
+	lea	TxtBookTitle,a0
+	bsr	StrCopy
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	move.l	a6,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#18,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	move.w	BookCursor,d0		; garder le curseur dans la page
+	move.w	BookTop,d1
+	cmp.w	d1,d0
+	bge.s	.notAbove
+	move.w	d0,BookTop
+	bra.s	.pageOk
+.notAbove:
+	sub.w	d1,d0
+	cmp.w	#BOOKROWS,d0
+	blt.s	.pageOk
+	move.w	BookCursor,d0
+	sub.w	#BOOKROWS-1,d0
+	move.w	d0,BookTop
+.pageOk:
+	moveq	#0,d7			; ligne affichee
+.listLoop:
+	move.w	BookTop,d6
+	add.w	d7,d6			; numero du sort
+	cmp.w	#NSPELLS,d6
+	bge	.listDone
+	lea	TmpStr,a1
+	move.w	d6,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	move.b	#' ',(a1)+
+	move.w	d6,d0
+	bsr	SpellPtr
+	move.l	a0,a2
+	bsr	StrCopy
+	clr.b	(a1)
+
+	move.w	#C_TEXTLOW,d2		; sort inconnu : en gris
+	move.w	hr_Spells(a6),d0
+	btst	d6,d0
+	beq.s	.dim
+	move.w	#C_TEXT,d2
+.dim:
+	cmp.w	BookCursor,d6
+	bne.s	.notHere
+	move.w	#C_HILITE,d2		; celui que vise le curseur
+.notHere:
+	lea	TmpStr,a0
+	moveq	#4,d0
+	move.w	d7,d1
+	mulu.w	#10,d1
+	add.w	#32,d1
+	bsr	DrawText
+	cmp.w	BookCursor,d6
+	bne.s	.noMark
+	lea	TxtBookMark,a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#10,d1
+	add.w	#32,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+.noMark:
+	addq.w	#1,d7
+	cmp.w	#BOOKROWS,d7
+	blt	.listLoop
+.listDone:
+	move.w	#24,d0			; un filet sous la liste ; HLine veut
+	move.w	#114,d1			; des pixels, pas des colonnes
+	move.w	#176,d2
+	move.w	#C_FRAME,d3
+	bsr	HLine
+
+	move.w	BookCursor,d0		; --- le detail du sort vise
+	bsr	SpellPtr
+	move.l	a0,a2
+	lea	TmpStr,a1
+	lea	TxtBookLevel,a0
+	bsr	StrCopy
+	move.w	sp_Level(a2),d0
+	bsr	StrNum
+	lea	TxtBookSchool,a0
+	bsr	StrCopy
+	move.w	sp_School(a2),d0
+	lsl.w	#2,d0
+	lea	SchoolNames-4,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	lea	TxtBookSlots,a0		; ce qu'il reste a ce niveau de sort
+	bsr	StrCopy
+	move.w	sp_Level(a2),d0
+	add.w	d0,d0
+	move.w	hr_Slots(a6,d0.w),d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#120,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+
+	lea	TmpStr,a1		; effet et des
+	move.w	sp_Kind(a2),d0
+	lsl.w	#2,d0
+	lea	KindNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.w	sp_Dice(a2),d0
+	beq.s	.fixed
+	bsr	StrNum
+	lea	TxtBookPerLvl,a0
+	bsr	StrCopy
+	bra.s	.faces
+.fixed:
+	move.w	sp_Cap(a2),d0
+	beq.s	.noDice
+	bsr	StrNum
+.faces:
+	move.b	#'D',(a1)+
+	move.w	sp_Faces(a2),d0
+	bsr	StrNum
+	move.w	sp_Plus(a2),d0
+	beq.s	.noDice
+	move.b	#'+',(a1)+
+	bsr	StrNum
+.noDice:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#130,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+
+	lea	TmpStr,a1		; sauvegarde et emplacements
+	move.w	sp_Save(a2),d0
+	beq.s	.noSave
+	lea	TxtBookSave,a0
+	bsr	StrCopy
+	move.w	sp_Save(a2),d0
+	lsl.w	#2,d0
+	lea	SaveNames-4,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	tst.w	sp_Half(a2)
+	beq.s	.noHalf
+	lea	TxtBookHalf,a0
+	bsr	StrCopy
+.noHalf:
+	bra.s	.slots
+.noSave:
+	lea	TxtBookNoSave,a0
+	bsr	StrCopy
+.slots:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#140,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+BookKey:				; d0 = touche
+	movem.l	d1-d7/a0-a6,-(sp)
+	cmp.w	#KEY_UP,d0
+	bne.s	.notUp
+	move.w	BookCursor,d1
+	subq.w	#1,d1
+	bpl.s	.set
+	moveq	#0,d1
+	bra.s	.set
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.done
+	move.w	BookCursor,d1
+	addq.w	#1,d1
+	cmp.w	#NSPELLS,d1
+	blt.s	.set
+	move.w	#NSPELLS-1,d1
+.set:
+	move.w	d1,BookCursor
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d1-d7/a0-a6
+	rts
+
+OPTROWS		= 5			; lignes de reglage
+
+;----------------------------------------------------------------------
+; Reglages, accessibles en cours de partie.
+;----------------------------------------------------------------------
+DrawOptions:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	lea	TxtOptTitle,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	moveq	#0,d7
+.loop:
+	lea	TmpStr,a1
+	move.w	d7,d0			; le libelle
+	lsl.w	#2,d0
+	lea	OptNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.w	d7,d0			; puis la valeur
+	bsr	OptValue
+	move.l	d0,a0
+	tst.l	a0
+	beq.s	.noValue
+	bsr	StrCopy
+.noValue:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#4,d0
+	move.w	d7,d1
+	mulu.w	#18,d1
+	add.w	#44,d1
+	move.w	#C_TEXT,d2
+	cmp.w	OptCursor,d7
+	bne.s	.notHere
+	move.w	#C_HILITE,d2
+.notHere:
+	bsr	DrawText
+	cmp.w	OptCursor,d7
+	bne.s	.next
+	lea	TxtBookMark,a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#18,d1
+	add.w	#44,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+.next:
+	addq.w	#1,d7
+	cmp.w	#OPTROWS,d7
+	blt	.loop
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+OptValue:				; d0 = ligne -> d0 = texte, 0 si aucun
+	movem.l	d1,-(sp)
+	move.w	d0,d1
+	moveq	#0,d0
+	tst.w	d1
+	bne.s	.notMusic
+	move.l	#TxtOptOff,d0
+	tst.w	OptMusic
+	beq.s	.done
+	move.l	#TxtOptOn,d0
+	bra.s	.done
+.notMusic:
+	cmp.w	#1,d1
+	bne.s	.notSfx
+	move.l	#TxtOptOff,d0
+	tst.w	OptSfx
+	beq.s	.done
+	move.l	#TxtOptOn,d0
+	bra.s	.done
+.notSfx:
+	cmp.w	#2,d1
+	bne.s	.done
+	move.l	#TxtOptAzerty,d0
+	tst.w	KbLayout
+	beq.s	.done
+	move.l	#TxtOptQwerty,d0
+.done:
+	movem.l	(sp)+,d1
+	rts
+
+OptToggle:				; agit sur la ligne visee
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	OptCursor,d0
+	tst.w	d0
+	bne.s	.notMusic
+	eor.w	#1,OptMusic
+	tst.w	OptMusic
+	bne.s	.redraw
+	lea	CUSTOM+AUD0LCH,a0	; on coupe le son tout de suite
+	moveq	#3,d1
+.silence:
+	clr.w	AUDx_VOL(a0)
+	lea	16(a0),a0
+	dbf	d1,.silence
+	bra.s	.redraw
+.notMusic:
+	cmp.w	#1,d0
+	bne.s	.notSfx
+	eor.w	#1,OptSfx
+	bra.s	.redraw
+.notSfx:
+	cmp.w	#2,d0
+	bne.s	.notKb
+	eor.w	#1,KbLayout
+	bra.s	.redraw
+.notKb:
+	cmp.w	#3,d0
+	bne.s	.notSave
+	bsr	SaveGame
+	lea	TxtSaved,a0
+	bsr	LogAdd
+	bra.s	.redraw
+.notSave:
+	bsr	SaveGame		; retour a l'accueil
+	clr.w	UiMode
+	move.w	#PHASE_TITLE,Phase
+	bsr	ClearScreens
+.redraw:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+OptKey:					; d0 = touche
+	movem.l	d1-d7/a0-a6,-(sp)
+	cmp.w	#KEY_UP,d0
+	bne.s	.notUp
+	move.w	OptCursor,d1
+	subq.w	#1,d1
+	bpl.s	.set
+	moveq	#0,d1
+	bra.s	.set
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notDown
+	move.w	OptCursor,d1
+	addq.w	#1,d1
+	cmp.w	#OPTROWS,d1
+	blt.s	.set
+	move.w	#OPTROWS-1,d1
+	bra.s	.set
+.notDown:
+	cmp.w	#KEY_RETURN,d0
+	beq.s	.act
+	cmp.w	#KEY_LEFT,d0
+	beq.s	.act
+	cmp.w	#KEY_RIGHT,d0
+	bne.s	.done
+.act:
+	bsr	OptToggle
+	bra.s	.done
+.set:
+	move.w	d1,OptCursor
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
 ;----------------------------------------------------------------------
@@ -4864,6 +5273,39 @@ HandleKey:
 	move.w	#UI_INV,UiMode
 	bra	.redraw
 .notInv:
+	cmp.w	#KEY_L,d0		; grimoire
+	bne.s	.notBookKey
+	move.w	#UI_BOOK,d1
+	cmp.w	UiMode,d1
+	bne.s	.openBook
+	clr.w	UiMode
+	bra	.redraw
+.openBook:
+	move.w	#UI_BOOK,UiMode
+	bra	.redraw
+.notBookKey:
+	cmp.w	#KEY_P,d0		; reglages
+	bne.s	.notOptsKey
+	move.w	#UI_OPTS,d1
+	cmp.w	UiMode,d1
+	bne.s	.openOpts
+	clr.w	UiMode
+	bra	.redraw
+.openOpts:
+	move.w	#UI_OPTS,UiMode
+	bra	.redraw
+.notOptsKey:
+	move.w	UiMode,d1		; les deux ecrans ont leurs fleches
+	cmp.w	#UI_BOOK,d1
+	bne.s	.notInBook
+	bsr	BookKey
+	bra	.done
+.notInBook:
+	cmp.w	#UI_OPTS,d1
+	bne.s	.notInOpts
+	bsr	OptKey
+	bra	.done
+.notInOpts:
 	cmp.w	#KEY_M_QW,d0		; carte du niveau
 	beq.s	.mapKey
 	cmp.w	#KEY_M_AZ,d0
@@ -5038,6 +5480,18 @@ SaveList:
 	dc.l	MapSeen,MAPBYTES
 	dc.l	0,0
 
+OptNames:
+	dc.l	TxtOptMusic,TxtOptSfx,TxtOptKb,TxtOptSave,TxtOptTitleBack
+
+SchoolNames:				; 1 profane, 2 divin, 3 les deux
+	dc.l	TxtSchoolArc,TxtSchoolDiv,TxtSchoolBoth
+
+KindNames:				; l'effet du sort, dans l'ordre sp_Kind
+	dc.l	TxtKindDmg,TxtKindHeal,TxtKindWard,TxtKindFear,TxtKindBless
+
+SaveNames:				; 1 Vigueur, 2 Reflexes, 3 Volonte
+	dc.l	TxtSaveFort,TxtSaveRef,TxtSaveWill
+
 DirNames:
 	dc.l	TxtNord,TxtEst,TxtSud,TxtOuest
 
@@ -5205,7 +5659,7 @@ TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
 TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR REPONDRE  ESC",0
 TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTREE OK  ESC",0
-TxtHelpMove:	dc.b	"FLECHES ESPACE C FICHE I SAC M CARTE",0
+TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P REGLAGES",0
 TxtRaised:	dc.b	" SE RELEVE.",0
 TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
 TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
@@ -5215,6 +5669,38 @@ TxtMenuQuit:	dc.b	"ESC QUITTER",0
 TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ETAGE",0
 TxtResumed:	dc.b	"VOUS REPRENEZ VOTRE DESCENTE.",0
 TxtSaved:	dc.b	"LA PARTIE EST SAUVEE.",0
+TxtOptTitle:	dc.b	"REGLAGES",0
+TxtOptMusic:	dc.b	"MUSIQUE       ",0
+TxtOptSfx:	dc.b	"BRUITAGES     ",0
+TxtOptKb:	dc.b	"CLAVIER       ",0
+TxtOptSave:	dc.b	"SAUVEGARDER MAINTENANT",0
+TxtOptTitleBack:	dc.b	"RETOUR A L'ACCUEIL",0
+TxtOptOn:	dc.b	"OUI",0
+TxtOptOff:	dc.b	"NON",0
+TxtOptAzerty:	dc.b	"AZERTY",0
+TxtOptQwerty:	dc.b	"QWERTY",0
+TxtHelpOpts:	dc.b	"FLECHES  ENTREE CHANGE  P OU ESC",0
+TxtBookTitle:	dc.b	"GRIMOIRE DE ",0
+TxtBookMark:	dc.b	">",0
+TxtBookLevel:	dc.b	"NIV ",0
+TxtBookSchool:	dc.b	" ",0
+TxtBookPerLvl:	dc.b	" PAR NIV. ",0
+TxtBookSave:	dc.b	"JET ",0
+TxtBookHalf:	dc.b	", MOITIE",0
+TxtBookNoSave:	dc.b	"SANS JET",0
+TxtBookSlots:	dc.b	"  RESTE ",0
+TxtSchoolArc:	dc.b	"PROFANE",0
+TxtSchoolDiv:	dc.b	"DIVIN",0
+TxtSchoolBoth:	dc.b	"MIXTE",0
+TxtKindDmg:	dc.b	"DEGATS ",0
+TxtKindHeal:	dc.b	"SOINS ",0
+TxtKindWard:	dc.b	"PROTECTION +",0
+TxtKindFear:	dc.b	"TERREUR ",0
+TxtKindBless:	dc.b	"BENEDICTION +",0
+TxtSaveFort:	dc.b	"VIGUEUR",0
+TxtSaveRef:	dc.b	"REFLEXES",0
+TxtSaveWill:	dc.b	"VOLONTE",0
+TxtHelpBook:	dc.b	"FLECHES  1-4 HEROS  L OU ESC FERMER",0
 TxtMapTitle:	dc.b	"CARTE NIVEAU ",0
 TxtDash2:	dc.b	" - ",0
 TxtNord:	dc.b	"NORD",0
@@ -5233,7 +5719,7 @@ TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
 TxtHelpInv:	dc.b	"E EQUIPER U UTILISER D JETER 1-4",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
-TxtHelpSheet:	dc.b	"1-4 HEROS I SAC S SORT M CARTE",0
+TxtHelpSheet:	dc.b	"1-4 HEROS  I SAC  L LIVRE  P REGLAGES",0
 	even
 
 ;======================================================================
@@ -5282,6 +5768,11 @@ MonStun:	ds.w	1
 AtkMax:		ds.w	1
 QuitArm:	ds.w	1
 HasSave:	ds.w	1
+BookCursor:	ds.w	1
+BookTop:	ds.w	1
+OptCursor:	ds.w	1
+OptMusic:	ds.w	1
+OptSfx:	ds.w	1
 SpellCount:	ds.w	1
 SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1

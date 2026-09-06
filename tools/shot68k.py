@@ -111,6 +111,14 @@ if __name__ == "__main__":
     g.key(T.K_I); g.key(T.K_S)
     shoot(g, "sorts")
     g.key(T.K_ESC)
+    g.key(0x28)                           # L : le grimoire
+    shoot(g, "grimoire")
+    g.key(T.K_DOWN); g.key(T.K_DOWN)
+    shoot(g, "grimoire2")
+    g.key(0x28)
+    g.key(0x19)                           # P : les reglages
+    shoot(g, "reglages")
+    g.key(0x19)
     import play_game as P                 # marcher jusqu'a un monstre
     grid = P.terrain(g)
     path = P.bfs(grid, (g.w("PosX"), g.w("PosY")),

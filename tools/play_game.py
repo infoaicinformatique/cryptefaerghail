@@ -190,6 +190,16 @@ def exercise_ui(g, fails, stats):
         g.key(0x37)
         if g.w("UiMode"):
             fails.append("la carte ne se referme pas")
+        g.key(0x28)                       # grimoire
+        if g.w("UiMode") != 6:
+            fails.append("le grimoire ne s'ouvre pas (L)")
+        for _ in range(4):
+            g.key(T.K_DOWN)
+        g.key(0x28)
+        g.key(0x19)                       # reglages
+        if g.w("UiMode") != 7:
+            fails.append("les reglages ne s'ouvrent pas (P)")
+        g.key(0x19)
         g.key(T.K_S)                      # sorts hors combat
         if g.w("UiMode") == 3:  # noqa: E501
             stats["menus"] += 1

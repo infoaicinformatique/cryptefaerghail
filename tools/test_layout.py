@@ -100,7 +100,14 @@ if __name__ == "__main__":
     shot(g, "sorts", fails)
     g.key(T.K_ESC); g.key(0x37)
     shot(g, "carte", fails)
-    g.key(0x37)
+    g.key(0x37); g.key(0x28)              # L : le grimoire
+    shot(g, "grimoire", fails)
+    for _ in range(12):                   # jusqu'au dernier sort
+        g.key(T.K_DOWN)
+    shot(g, "grimoire-bas", fails)
+    g.key(0x28); g.key(0x19)              # P : les reglages
+    shot(g, "reglages", fails)
+    g.key(0x19)
 
     import play_game as P                 # une enigme, si on en trouve une
     grid = P.terrain(g)

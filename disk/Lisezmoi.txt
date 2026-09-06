@@ -41,6 +41,8 @@ COMMANDES
   C                     fiche d'aventure du heros courant
   I                     sac a dos
   M                     carte du niveau, telle que vous l'avez parcouru
+  L                     grimoire du heros choisi
+  P                     reglages du jeu
   S                     lancer un sort (soins, protections) hors combat
   1 a 4                 choisir le heros courant
   ESC                   fermer un ecran ; deux fois de suite, quitter
@@ -85,6 +87,19 @@ L'IMAGE
   ne sont plus six gris mais vingt teintes de calcaire, les visages ont
   une vraie carnation, et les cadres de l'interface sont du bronze
   cisele avec un clou a chaque angle.
+
+LE GRIMOIRE
+  L ouvre le livre de sorts du heros choisi : les seize sorts, ceux
+  qu'il connait en clair, les autres en gris. Les fleches font defiler,
+  et le bas de la page donne le detail du sort vise -- son niveau, son
+  ecole, ce qu'il inflige ou rend, la sauvegarde qu'il autorise et les
+  emplacements qu'il vous reste a ce niveau. 1 a 4 change de heros.
+
+LES REGLAGES
+  P ouvre les reglages, en pleine partie : la musique, les bruitages,
+  la disposition du clavier (AZERTY ou QWERTY), une sauvegarde
+  immediate, et le retour a l'accueil. Les fleches choisissent la
+  ligne, ENTREE la change.
 
 LA CARTE
   M ouvre le releve du niveau. Seules apparaissent les cases que le

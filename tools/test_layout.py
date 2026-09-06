@@ -11,6 +11,7 @@ pixels un par un.
     python3 tools/test_layout.py
 """
 import os
+import random
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -93,7 +94,8 @@ def shot(g, name, fails, ring=True):
 
 
 if __name__ == "__main__":
-    fails = []
+    random.seed(5)                        # le parcours vers l'enigme doit
+    fails = []                            # tomber pareil a chaque fois
     g = T.Game()
     print("--- ecrans, avec les textes les plus larges des tables ---")
     shot(g, "titre", fails, ring=False)
@@ -149,6 +151,53 @@ if __name__ == "__main__":
         if g.w("UiMode") == 4:
             shot(g, "enigme", fails)
             g.key(T.K_1)
+    print("--- une icone par type d'objet ---")
+    # Le jeu n'avait que cinq icones pour sept types et ramenait le
+    # reste sur la derniere : une potion montrait un parchemin, un
+    # parchemin montrait une cle. On pose un type a la fois en tete du
+    # sac et on releve la premiere ligne : les bandes se chevauchent
+    # sinon, une icone depassant la hauteur d'une ligne.
+    items = g.addr("ItemTable")
+    premier = {}
+    for n in range(1, 29):
+        premier.setdefault(g.mem.r16(items + (n - 1) * 34 + 18), n)
+    inv = g.addr("Inventory")
+    # L'epreuve ne doit pas dependre de ce que la precedente a laisse :
+    # le trajet vers l'enigme peut finir en combat ou coucher le groupe,
+    # et le jeu cesse alors de redessiner -- toutes les empreintes se
+    # valaient, et le banc criait au loup une fois sur deux.
+    g.setw("InCombat", 0)
+    g.setw("GameOver", 0)
+    g.setw("UiMode", 0)
+    for h in range(4):
+        base = g.addr("Heroes") + h * T.HR["hr_SIZEOF"]
+        g.mem.w16(base + T.HR["hr_Hp"], g.hero(h, "hr_HpMax"))
+    empreintes = {}
+    for t in sorted(premier):
+        for i in range(24):
+            g.mem.w8(inv + i, premier[t] if i == 0 else 0)
+        g.setw("InvTop", 0)
+        g.setw("InvCursor", 0)
+        g.key(T.K_I)                      # ouvrir, pour que le jeu redessine
+        px = S.grab(g, "ShowBuf")
+        empreintes[t] = tuple(sorted({px[y * SCRW + x] for y in range(32, 43)
+                                      for x in range(16, 32)
+                                      if px[y * SCRW + x]}))
+        if not empreintes[t]:
+            fails.append(f"le sac ne se dessine pas pour le type {t} "
+                         f"(UiMode={g.w('UiMode')})")
+        g.key(T.K_I)
+    for t, vus in empreintes.items():
+        if not vus:
+            fails.append(f"le type d'objet {t} ne dessine aucune icone")
+    doublons = [(a, b) for a in empreintes for b in empreintes
+                if a < b and empreintes[a] == empreintes[b]]
+    if doublons:
+        fails.append(f"deux types d'objet partagent la meme icone : "
+                     f"{doublons}")
+    print(f"  {len(empreintes)} types d'objet, "
+          f"{len(set(empreintes.values()))} icones distinctes")
+
     print()
     if fails:
         print(f"{len(fails)} debordement(s) :")

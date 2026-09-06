@@ -1048,40 +1048,102 @@ def make_portrait(cls):
 
 
 def make_icon(kind):
-    """Icone 16x16 pour l'inventaire."""
+    """Icone 16x16 pour le sac et l'echoppe, une par type d'objet.
+
+    Elles etaient dessinees dans la table de compatibilite seize
+    couleurs, et il n'y en avait que cinq pour sept types : le jeu
+    ramenait tout ce qui depassait sur la derniere. Une potion montrait
+    un parchemin, un parchemin montrait une cle."""
     p = Piece(0, 0, 16, 16)
-    if kind == 0:                                     # arme
-        for y in range(2, 12):
-            p.set(8, y, 2), p.set(7, y, 1)
-        for x in range(5, 12):
-            p.set(x, 12, 9)
-        p.set(8, 14, 9), p.set(8, 13, 9)
-    elif kind == 1:                                   # armure
-        for y in range(3, 13):
-            for x in range(4, 12):
-                if abs(x - 8) < 4 - abs(y - 8) // 4:
-                    p.set(x, y, 4)
-        for y in range(4, 12):
-            p.set(8, y, 2)
-    elif kind == 2:                                   # potion
-        ellipse(p, 8, 10, 4, 4, 15)
-        for y in range(3, 7):
-            p.set(7, y, 2), p.set(9, y, 2)
-        p.set(8, 2, 8)
-    elif kind == 3:                                   # parchemin
-        for y in range(3, 13):
+    if kind == 0:                                     # epee
+        for y in range(2, 11):                        # lame, arete claire
+            p.set(7, y, pal.lit("STEEL", 0.22))
+            p.set(8, y, pal.lit("STEEL", 0.48))
+            p.set(9, y, pal.lit("STEEL", 0.70))
+        p.set(8, 1, pal.lit("STEEL", 0.14))
+        for x in range(4, 13):                        # garde
+            p.set(x, 11, pal.lit("GOLD", 0.30))
+        for y in range(12, 15):                       # poignee
+            p.set(8, y, pal.lit("WOOD", 0.40))
+        p.set(8, 15, pal.lit("GOLD", 0.24))           # pommeau
+
+    elif kind == 1:                                   # cotte de mailles
+        for y in range(3, 14):
             for x in range(3, 13):
-                p.set(x, y, 1)
-        for y in (5, 7, 9):
-            for x in range(5, 11):
-                p.set(x, y, 6)
-    else:                                             # cle
-        ellipse(p, 6, 6, 3, 3, 14)
-        p.set(6, 6, 0)
-        for x in range(7, 13):
-            p.set(x, 8, 14)
-        p.set(11, 9, 14), p.set(12, 10, 14)
+                if abs(x - 8) < 5 - abs(y - 8) // 5:
+                    t = 0.34 + 0.30 * ((x + y) % 2) + 0.10 * (y - 3) / 10.0
+                    p.set(x, y, pal.lit("IRON", min(1.0, t)))
+        for y in range(4, 8):                         # encolure
+            p.set(8, y, pal.lit("IRON", 0.86))
+
+    elif kind == 2:                                   # bouclier
+        for y in range(2, 15):
+            for x in range(3, 13):
+                u = (x - 8) / 5.0
+                v = (y - 7) / 6.5
+                if u * u + v * v > 1.0:
+                    continue
+                if y > 11 and abs(u) > 0.55 - (y - 11) * 0.18:
+                    continue                          # la pointe du bas
+                p.set(x, y, pal.lit("WOOD", 0.30 + 0.40 * abs(u)))
+        for y in range(3, 13):                        # bande de fer
+            p.set(8, y, pal.lit("IRON", 0.24))
+        for x in range(4, 13):
+            p.set(x, 6, pal.lit("IRON", 0.30))
+
+    elif kind == 3:                                   # fiole
+        for y in range(6, 15):                        # panse
+            for x in range(4, 12):
+                u, v = (x - 8) / 4.0, (y - 10) / 4.5
+                if u * u + v * v <= 1.0:
+                    p.set(x, y, pal.lit("BLOOD", 0.26 + 0.46 * (u * u + v * v)))
+        for y in range(3, 7):                         # col
+            p.set(7, y, pal.lit("STEEL", 0.60))
+            p.set(8, y, pal.lit("STEEL", 0.44))
+        p.set(7, 2, pal.lit("WOOD", 0.34))            # bouchon
+        p.set(8, 2, pal.lit("WOOD", 0.34))
+        p.set(6, 8, pal.lit("WHITE", 0.0))            # reflet
+
+    elif kind == 4:                                   # parchemin roule
+        for y in range(4, 13):
+            for x in range(2, 14):
+                p.set(x, y, pal.lit("PARCH", 0.10 + 0.05 * abs(y - 8)))
+        for y in (6, 8, 10):                          # l'ecriture
+            for x in range(4, 12, 2):
+                p.set(x, y, pal.lit("INK", 0.0))
+        for y in range(3, 14):                        # les deux rouleaux
+            p.set(1, y, pal.lit("WOOD", 0.36))
+            p.set(14, y, pal.lit("WOOD", 0.52))
+
+    elif kind == 5:                                   # cle
+        for y in range(3, 10):                        # anneau
+            for x in range(3, 10):
+                u, v = (x - 6) / 3.2, (y - 6) / 3.2
+                d = u * u + v * v
+                if 0.30 <= d <= 1.0:
+                    p.set(x, y, pal.lit("GOLD", 0.24 + 0.42 * d))
+        for x in range(7, 14):                        # tige
+            p.set(x, 11, pal.lit("GOLD", 0.34))
+        p.set(12, 12, pal.lit("GOLD", 0.30))          # panneton
+        p.set(13, 12, pal.lit("GOLD", 0.30))
+        p.set(12, 13, pal.lit("GOLD", 0.42))
+
+    else:                                             # tresor
+        for y in range(5, 14):                        # gemme taillee
+            for x in range(3, 13):
+                u, v = (x - 8) / 5.0, (y - 9) / 4.5
+                if abs(u) + abs(v) <= 1.0:
+                    p.set(x, y, pal.lit("MAGIC", 0.18 + 0.52 * (abs(u) + abs(v))))
+        for x in range(5, 12):                        # table du haut
+            p.set(x, 6, pal.lit("MAGIC", 0.08))
+        p.set(7, 8, pal.lit("WHITE", 0.0))            # eclat
+        for x in range(2, 14):                        # or repandu
+            if x % 3:
+                p.set(x, 14, pal.lit("GOLD", 0.26 + 0.10 * (x % 3)))
     return p
+
+
+NICONS = 7                               # un par type d'objet
 
 
 # --- monstres -----------------------------------------------------------
@@ -1490,11 +1552,19 @@ def build_art():
     pieces += [crop(make_portrait(c), PORTRAIT_TOP, PORTRAIT_H)
                for c in range(NCLASSPORTRAIT)]
     ART_INDEX["ART_ICON"] = len(pieces)
-    pieces += [make_icon(k) for k in range(5)]
+    pieces += [make_icon(k) for k in range(NICONS)]
 
-    pieces = [pieces[0]] + [trim(p) for p in pieces[1:]]   # le fond couvre
-    blobs, descs = [], []                                  # tout : rien a
-    offset = 2 + len(pieces) * 12                          # y recadrer
+    # On ne recadre que ce que le decor pose a sa propre place. Les
+    # portraits et les icones sont blittes a une destination calculee
+    # par l'appelant -- une ligne de liste, un bloc d'aventurier -- et
+    # rogner leur boite decalerait ce que cette arithmetique attend :
+    # les icones se sont retrouvees les unes sur les autres. Le fond,
+    # lui, couvre toute la vue : il n'y a rien a y gagner.
+    fixed = ART_INDEX["ART_PORTRAIT"]
+    pieces = ([pieces[0]] + [trim(p) for p in pieces[1:fixed]]
+              + pieces[fixed:])
+    blobs, descs = [], []
+    offset = 2 + len(pieces) * 12
     for p in pieces:
         data, wwords = encode(p)
         dst = (VIEW_Y + p.y0) * SCRBPL + (VIEW_X + p.x0) // 8
@@ -1988,6 +2058,7 @@ if __name__ == "__main__":
         for k, v in ART_INDEX.items():
             f.write(f"{k}\t= {v}\n")
         f.write(f"NMONSTERART\t= {NMONSTERART}\n")
+        f.write(f"NICONS\t\t= {NICONS}\n")
     maps, levels = build_maps()
     open(os.path.join(ROOT, "data", "dgnmap.bin"), "wb").write(maps)
     write_palette(os.path.join(ROOT, "src", "dgnpal.i"))

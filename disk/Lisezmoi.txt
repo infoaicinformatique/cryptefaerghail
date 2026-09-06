@@ -207,14 +207,14 @@ MUSIQUE ET BRUITAGES
   Deux partitions, deux modules ProTracker quatre voies, tous deux en
   re mineur. Devant le portail : une procession lente et depouillee,
   bourdon tenu, cor solitaire, choeur, une frappe sourde par phrase.
-  Dans la crypte : une marche, cuivres, choeur, cordes et timbales. La quatrieme voie est
+  Dans la crypte : une marche, cuivres, choeur, cordes et timbales.
+  Dans les profondeurs, a partir du quatrieme etage : le gong et
+  l'orgue, une octave plus bas, sans la marche.
+
+  La quatrieme voie est
   pretee aux bruitages -- coup d'epee, hache, corde d'arc, impact,
   grincement de porte, coffre, potion, sort, grognement, montee de
-  niveau, pas et rale -- puis rendue a la musique.
-
-AGASCROLL et AGADEMO : deux demonstrations AGA (playfield 8 bitplanes
-en scrolling materiel, scroller sinusoidal sur barres copper, degrade
-copper 24 bits, musique ProTracker).
+  niveau, pas, rale, piege et pieces -- puis rendue a la musique.
 
 Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
 palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 700 Ko de

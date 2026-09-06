@@ -13,17 +13,24 @@ seul l'affichage manque, pas la logique.
     python3 tools/test_game.py
 """
 import collections
+import atexit
 import os
 import random
 import struct
 import subprocess
 import sys
+import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
 import run68k as R
 
-DBG = "/tmp/AGACrawl.dbg"
+# Un fichier par processus : les bancs se lancent volontiers en
+# parallele, et ils reliaient tous vers le meme chemin -- l'un lisait
+# la table des symboles pendant qu'un autre l'ecrivait, d'ou des
+# adresses fausses et des echecs qui ne se reproduisaient pas seuls.
+DBG = os.path.join(tempfile.gettempdir(), f"AGACrawl-{os.getpid()}.dbg")
+atexit.register(lambda: os.path.exists(DBG) and os.unlink(DBG))
 
 K_1, K_RET, K_ESC, K_SPACE, K_TAB = 0x01, 0x44, 0x45, 0x40, 0x42
 K_UP, K_DOWN, K_RIGHT, K_LEFT = 0x4c, 0x4d, 0x4e, 0x4f

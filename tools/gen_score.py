@@ -29,6 +29,7 @@ import struct
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data", "crawlmus.mod")
 OUT_TITLE = os.path.join(ROOT, "data", "titlemus.mod")
+OUT_DEEP = os.path.join(ROOT, "data", "deepmus.mod")
 
 NOTE_NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#",
               "A-", "A#", "B-"]
@@ -527,6 +528,101 @@ def assemble(title, patterns, order):
     return bytes(out)
 
 
+# --- les profondeurs : les deux derniers etages ----------------------
+# Meme re mineur, mais une octave plus bas et sans la marche : le
+# groupe n'avance plus, il s'enfonce. La sensible du mineur harmonique
+# revient sans cesse sans jamais resoudre, et le demi-ton do-re bemol
+# grince sous le theme.
+DEEP_SECTIONS = [
+    [(["D-1", "A-1", "D-1"], ["D-2", "F-2", "A-2"]),
+     (["C#1", "A-1", "C#1"], ["C#2", "E-2", "A-2"]),
+     (["D-1", "A#1", "D-1"], ["D-2", "F-2", "A#2"]),
+     (["A-1", "E-1", "C#1"], ["A-2", "C#3", "E-3"])],
+    [(["D-1", "F-1", "D-1"], ["D-2", "F-2", "A-2"]),
+     (["A#1", "F-1", "A#1"], ["A#2", "D-3", "F-3"]),
+     (["G-1", "D-1", "G-1"], ["G-2", "A#2", "D-3"]),
+     (["A-1", "C#1", "E-1"], ["A-2", "C#3", "E-3"])],
+]
+DEEP_THEMES = [
+    [["D-2", None, None, None, None, None, None, None,
+      "C#2", None, None, None, None, None, None, None],
+     ["E-2", None, None, None, None, None, "F-2", None,
+      None, None, None, None, "E-2", None, None, None],
+     ["D-2", None, None, None, None, None, None, None,
+      "A#1", None, None, None, None, None, None, None],
+     ["A-1", None, None, None, "C#2", None, None, None,
+      None, None, None, None, None, None, None, None]],
+    [["A-1", None, None, None, None, None, "D-2", None,
+      None, None, None, None, None, None, None, None],
+     ["F-2", None, None, None, "E-2", None, None, None,
+      "D-2", None, None, None, None, None, None, None],
+     ["A#1", None, None, None, None, None, "G-1", None,
+      None, None, None, None, "A#1", None, None, None],
+     ["C#2", None, None, None, None, None, None, None,
+      "D-2", None, None, None, None, None, None, None]],
+]
+
+
+def build_deep_pattern(section, theme, opening=False):
+    """Un motif des profondeurs.
+
+    Trois voies tenues et une percussion qui ne marque plus le pas :
+    le gong tombe une fois par phrase, la ou la marche du donjon frappe
+    quatre fois par mesure. C'est ce qui change tout -- le groupe
+    n'avance plus au meme rythme, il descend."""
+    rows = [[cell() for _ in range(4)] for _ in range(64)]
+    for bar, (bass, chord) in enumerate(section):
+        base = bar * 16
+        for step in range(16):
+            row = base + step
+            if step == 0:                        # bourdon tres bas
+                rows[row][0] = cell(bass[0], DRONE)
+            elif step == 5:
+                rows[row][0] = cell(None, 0, FX_TREM, 0x14)
+            elif step == 9:                      # sa quinte, a la viole
+                rows[row][0] = cell(bass[1], VIOL)
+
+            note = theme[bar][step]
+            if note:
+                held = 1
+                while step + held < 16 and not theme[bar][step + held]:
+                    held += 1
+                rows[row][1] = cell(note, ORGAN if bar % 2 else HORN)
+                if held >= 5 and step + 4 < 16:
+                    rows[base + step + 4][1] = cell(None, 0, FX_VIB, 0x22)
+                if held >= 8 and step + held - 3 < 16:
+                    rows[base + step + held - 3][1] = cell(
+                        None, 0, FX_VOLSLIDE, 0x01)
+
+            if step == 0:                        # choeur, tres en arriere
+                rows[row][2] = cell(chord[0], CHOIR)
+            elif step == 2:
+                rows[row][2] = cell(None, 0, FX_EXT, E_FINEVOLDN | 6)
+            elif step == 6:
+                rows[row][2] = cell(None, 0, FX_VIB, 0x12)
+            elif step == 11 and bar % 2 == 1:    # une harpe lointaine
+                rows[row][2] = cell(chord[2], HARP, FX_EXT, E_FINEVOLDN | 8)
+
+            if step == 0 and bar % 2 == 0:       # le gong, une fois par phrase
+                rows[row][3] = cell("C-1", GONG)
+            elif step == 12 and bar == 3:        # et un coup sourd a la chute
+                rows[row][3] = cell("C-2", TAIKO, FX_EXT, E_FINEVOLDN | 4)
+    if opening:
+        rows[0][3] = cell("C-1", GONG)
+    rows[62][0] = cell(None, 0, FX_EXT, E_PATTDELAY | 2)   # la fin s'etire
+    rows[0][0] = cell(section[0][0][0], DRONE, FX_SPEED, 14)
+    return rows
+
+
+def build_deep():
+    patterns = [
+        pattern_bytes(build_deep_pattern(DEEP_SECTIONS[0], DEEP_THEMES[0],
+                                         opening=True)),
+        pattern_bytes(build_deep_pattern(DEEP_SECTIONS[1], DEEP_THEMES[1])),
+    ]
+    return assemble("Les profondeurs", patterns, [0, 1, 0, 1])
+
+
 def build_title():
     patterns = [
         pattern_bytes(build_title_pattern(TITLE_SECTIONS[0], TITLE_THEMES[0],
@@ -557,3 +653,7 @@ if __name__ == "__main__":
     open(OUT_TITLE, "wb").write(data)
     print(f"{OUT_TITLE} : {len(data)} octets, 2 motifs, "
           f"{len(INSTRUMENTS)} instruments, 2 positions")
+    data = build_deep()
+    open(OUT_DEEP, "wb").write(data)
+    print(f"{OUT_DEEP} : {len(data)} octets, 2 motifs, "
+          f"{len(INSTRUMENTS)} instruments, 4 positions")

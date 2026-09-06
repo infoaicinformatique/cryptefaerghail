@@ -965,6 +965,9 @@ PT_ModuleData:
 PT_TitleModule:				; devant le portail, avant la descente
 	incbin	"data/titlemus.mod"
 	even
+PT_DeepModule:				; les deux derniers etages
+	incbin	"data/deepmus.mod"
+	even
 	endif
 
 ;======================================================================

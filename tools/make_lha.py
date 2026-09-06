@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Ecrit dist/AGADemos.lha : archive LHA en-tete niveau 0, methode -lh0-.
+"""Ecrit dist/Faerghail.lha : archive LHA en-tete niveau 0, methode -lh0-.
 
 -lh0- veut dire "stocke sans compression" : c'est la variante la plus
 simple a produire et toutes les versions de LhA sur Amiga la lisent. Les
@@ -12,7 +12,7 @@ import sys
 import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(ROOT, "dist", "AGADemos.lha")
+OUT = os.path.join(ROOT, "dist", "Faerghail.lha")
 
 
 def crc16(data):
@@ -57,14 +57,12 @@ def build(files):
 
 def collect():
     files = [(os.path.join(ROOT, "bin", "AGACrawl"), "AGACrawl"),
-             (os.path.join(ROOT, "bin", "AGAScroll"), "AGAScroll"),
-             (os.path.join(ROOT, "bin", "AGADemo"), "AGADemo"),
              (os.path.join(ROOT, "disk", "Lisezmoi.txt"), "Lisezmoi.txt"),
              (os.path.join(ROOT, "disk", "S", "Startup-Sequence"),
-              "S/Startup-Sequence"),
-             (os.path.join(ROOT, "data", "music.mod"), "Src/data/music.mod"),
-             (os.path.join(ROOT, "data", "dgnart.bin"), "Src/data/dgnart.bin"),
-             (os.path.join(ROOT, "data", "dgnmap.bin"), "Src/data/dgnmap.bin")]
+              "S/Startup-Sequence")]
+    for blob in ("dgnart.bin", "dgnmap.bin", "sfx.bin",
+                 "crawlmus.mod", "titlemus.mod", "deepmus.mod"):
+        files.append((os.path.join(ROOT, "data", blob), f"Src/data/{blob}"))
     src = os.path.join(ROOT, "src")
     for name in sorted(os.listdir(src)):
         if name.endswith((".s", ".i")):

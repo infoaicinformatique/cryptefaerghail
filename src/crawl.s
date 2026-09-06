@@ -205,6 +205,13 @@ UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
 
+; Les trois partitions. La musique change quand on s'enfonce : sur cinq
+; etages, deux morceaux tournaient trop.
+MUS_TITLE	= 0
+MUS_DUNGEON	= 1
+MUS_DEEP	= 2			; a partir de DEEP_LEVEL
+DEEP_LEVEL	= 3			; le quatrieme etage, compte depuis zero
+
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
 MAP_X		= 2			; carte : colonne octet du coin
@@ -315,7 +322,7 @@ Start:
 	move.w	d0,MouseRawY
 	bsr	MoveSprite
 	move.w	#-1,CurMusic		; l'accueil a sa propre musique
-	moveq	#0,d0
+	moveq	#MUS_TITLE,d0
 	bsr	PlayMusic
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO|DMAF_SPRITE,DMACON(a5)
 
@@ -2671,16 +2678,31 @@ PlayMusic:
 	beq.s	.done
 	move.w	d0,CurMusic
 	bsr	PT_Stop
-	lea	PT_TitleModule,a0
+	lea	PT_TitleModule,a0	; MUS_TITLE
 	tst.w	d0
 	beq.s	.init
-	lea	PT_ModuleData,a0
+	lea	PT_ModuleData,a0	; MUS_DUNGEON
+	cmp.w	#MUS_DEEP,d0
+	bne.s	.init
+	lea	PT_DeepModule,a0	; MUS_DEEP : les derniers etages
 .init:
 	bsr	PT_Init
 	lea	CUSTOM,a5
 	move.w	#DMAF_SETCLR|DMAF_AUDIO,DMACON(a5)
 .done:
 	movem.l	(sp)+,d0-d1/a0-a1/a5
+	rts
+
+; LevelMusic : lance la partition de l'etage ou l'on se trouve.
+LevelMusic:
+	movem.l	d0,-(sp)
+	move.w	#MUS_DUNGEON,d0
+	cmp.w	#DEEP_LEVEL,Level
+	blt.s	.play
+	move.w	#MUS_DEEP,d0
+.play:
+	bsr	PlayMusic
+	movem.l	(sp)+,d0
 	rts
 
 ; ClearScreens : les deux tampons d'un coup. En quittant l'accueil,
@@ -2714,8 +2736,7 @@ TitleKey:
 	bne.s	.notNew
 	bsr	NewGame			; une nouvelle equipe
 	bsr	ClearScreens
-	moveq	#1,d0			; on descend : la marche du donjon
-	bsr	PlayMusic
+	bsr	LevelMusic		; on descend : la marche du donjon
 	clr.w	Phase
 	bra.s	.redraw
 .notNew:
@@ -2727,8 +2748,7 @@ TitleKey:
 	tst.w	d0
 	beq.s	.done
 	bsr	ClearScreens
-	moveq	#1,d0
-	bsr	PlayMusic
+	bsr	LevelMusic		; la reprise retrouve sa partition
 	move.w	#PHASE_PLAY,Phase
 	lea	TxtResumed,a0
 	bsr	LogAdd
@@ -3365,15 +3385,11 @@ DrawInventory:
 .dim:
 	bsr	DrawText
 
-	move.w	it_Type(a2),d0		; icone du type
-	cmp.w	#IT_SHIELD,d0
-	bne.s	.icon
-	moveq	#IT_ARMOR,d0
-.icon:
-	cmp.w	#5,d0
-	blt.s	.iconOk
-	moveq	#4,d0
-.iconOk:
+	move.w	it_Type(a2),d0		; une icone par type d'objet. Il n'y
+	cmp.w	#NICONS,d0		; en avait que cinq pour sept types,
+	blt.s	.iconOk			; et le jeu ramenait le reste sur la
+	moveq	#NICONS-1,d0		; derniere : une potion montrait un
+.iconOk:				; parchemin, un parchemin une cle
 	add.w	#ART_ICON,d0
 	moveq	#0,d1
 	move.w	d7,d2
@@ -5358,6 +5374,7 @@ Descend:
 	bra.s	.done
 .next:
 	move.w	d0,Level
+	bsr	LevelMusic		; les profondeurs ont leur musique
 	bsr	LoadLevel
 	bsr	PartyRest
 	bsr	SaveGame		; un etage franchi, une partie sauvee

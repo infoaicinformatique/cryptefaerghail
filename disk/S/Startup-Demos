@@ -1,8 +1,0 @@
-; Disquette 2 : les deux demos AGA
-echo "*N  DEUX DEMOS AGA - Amiga 1200"
-echo "  ---------------------------"
-echo "  AGAScroll  scroller sinusoidal et barres copper"
-echo "  AGADemo    huit bitplanes et scrolling materiel*N"
-echo "  Le jeu est sur la disquette Faerghail.*N"
-echo "  Chargement d'AGAScroll..."
-AGAScroll

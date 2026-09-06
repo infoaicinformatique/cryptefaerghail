@@ -1,24 +1,20 @@
-# Un jeu et deux démos AGA — Amiga 1200 / AmigaOS 3.1+
+# La Crypte de Faerghail — Amiga 1200 / AmigaOS 3.1+
 
-Trois programmes 68k **entièrement assemblables depuis Linux ou macOS**, écrits
-en assembleur Motorola pour `vasm`, liés en exécutables *hunk* Amiga par
-`vlink`.
+Un dungeon crawler en vue subjective pour Amiga 1200, écrit en **assembleur
+68020** pour `vasm`, lié en exécutable *hunk* par `vlink`, et **entièrement
+assemblable depuis Linux ou macOS**.
 
-| Programme | Contenu |
-|---|---|
-| `bin/AGACrawl` | **La Crypte de Faerghail** — dungeon crawler façon Black Crypt : création de groupe et règles inspirées de D&D 3.5, inventaire, magie, objets, niches, monstres animés, bruitages |
-| `bin/AGADemo` | dégradé plein écran généré **ligne par ligne par le copper en 24 bits réels**, plus une boule en **sprite matériel** |
-| `bin/AGAScroll` | playfield **8 bitplanes (256 couleurs 24 bits)** de 640×384 pixels en **scrolling 100 % matériel**, plus un **scroller de texte sinusoïdal** au blitter dans une bande séparée |
+Création de groupe et règles du SRD D&D 3.5, cinq étages, vingt-six créatures
+qui se battent chacune à leur manière, échoppe, pièges, sorts, sauvegarde.
+**Huit bitplanes** — 256 couleurs choisies parmi seize millions — un dégradé de
+profondeur posé **ligne par ligne par le copper**, un pointeur de souris en
+**sprite matériel**, et trois modules **ProTracker** joués sur Paula par un
+replayer qui honore vingt-trois de ses effets.
 
-Tous jouent un **module ProTracker 4 voies sur Paula**. Les démos se quittent
-par le bouton gauche de la souris, le jeu par ESC.
+![La Crypte de Faerghail](docs/emu-couloir.png)
 
-![Les Caves de Faerghail](docs/crawl.png)
-
-![Aperçu de AGAScroll](docs/preview.png)
-
-*(images produites par les modèles Python `tools/dungeon_preview.py` et
-`tools/preview.py` — voir plus bas.)*
+*(capture prise dans un 68020 émulé, palette et copperlist compris — voir
+« Ce qui est vérifié ».)*
 
 ## Cible
 
@@ -27,14 +23,14 @@ par le bouton gauche de la souris, le jeu par ESC.
 | Machine | Amiga 1200 (chipset AGA), 68020+ |
 | Système | AmigaOS 3.0 / 3.1 et supérieur (`graphics.library` V39) |
 | Écran | PAL lores 320×256 |
-| Mémoire | `AGADemo` : quelques Ko de Chip — `AGAScroll` : 240 Ko de Chip pour le bitmap, plus 8 Ko de copperlists ; le module (7,5 Ko) est en Chip dans les deux |
+| Mémoire | 490 Ko de Chip pour les décors et les modules, 175 Ko pour les deux tampons d'écran, 12 Ko de copperlist |
 | Audio | 4 voies Paula, module ProTracker cadencé par le VBlank (50 Hz) |
 
 ## Compilation
 
 ```sh
 make toolchain     # télécharge et compile vasm + vlink dans tools/bin (une fois)
-make               # produit bin/AGADemo et bin/AGAScroll
+make               # produit bin/AGACrawl
 ```
 
 `make toolchain` récupère les sources de Frank Wille
@@ -42,7 +38,7 @@ make               # produit bin/AGADemo et bin/AGAScroll
 compile avec `gcc`. Si `vasmm68k_mot` et `vlink` sont déjà dans votre `PATH`,
 `make` les utilise directement.
 
-Régénérer les données (table sinus, pixels du sprite, palette 256 couleurs) :
+Régénérer les données (décors, palette, tables, musique, bruitages) :
 
 ```sh
 make data          # Python 3, réécrit src/sine.i, src/sprite.i, src/palette.i
@@ -51,7 +47,6 @@ make data          # Python 3, réécrit src/sine.i, src/sprite.i, src/palette.i
 Régénérer la musique, ou l'écouter sans Amiga :
 
 ```sh
-make music         # réécrit data/music.mod (samples et partition synthétisés)
 make wav           # rejoue le module en Python et écrit music.wav
 ```
 
@@ -79,14 +74,12 @@ make preview       # écrit docs/preview.png
 | | | |
 |---|---|---|
 | `dist/Faerghail.adf` | amorçable | le jeu, son `Lisezmoi` et son `Startup-Sequence` |
-| `dist/AGADemos.adf` | amorçable | les deux démos |
 | `dist/Source.adf` | | tout le source et les tables générées |
 
-Une seule ne suffit plus : à huit bitplanes et dix-neuf apparences de
-créatures, le jeu pèse 660 Ko — 700 Ko une fois sur l'ADF, où un bloc de 512
-n'en porte que 488. Les trois programmes plus le source dépassaient les 880 Ko
-d'une disquette. `dist/AGADemos.lha` porte le dépôt entier en une archive,
-pour un transfert par réseau, CF ou Gotek.
+À huit bitplanes et dix-neuf apparences de créatures, le jeu pèse 660 Ko —
+700 Ko une fois sur l'ADF, où un bloc de 512 n'en porte que 488. Le source,
+150 Ko de plus, ne tient pas avec lui. `dist/Faerghail.lha` porte le dépôt
+entier en une archive, pour un transfert par réseau, CF ou Gotek.
 
 ```sh
 make disk          # refabrique les deux -- nécessite pip install amitools
@@ -95,56 +88,63 @@ make disk          # refabrique les deux -- nécessite pip install amitools
 - **Émulateur** : montez l'ADF dans DF0: et démarrez dessus.
 - **Machine réelle** : écrivez l'ADF sur une disquette (ADF Blitzer,
   X-Copy + Amiga Explorer, Greaseweazle…), ou copiez le `.lha` sur le disque
-  dur et faites `lha x AGADemos.lha`.
+  dur et faites `lha x Faerghail.lha`.
 
 ## Exécution
 
 - **FS-UAE / WinUAE** : configurez une A1200 (Kickstart 3.1, AGA, 68020, 2 Mo
-  Chip), montez le dossier `bin/` comme disque dur, puis depuis le Shell :
-  `AGADemo`.
-- **Machine réelle** : copiez les exécutables et lancez-les **depuis un Shell**
-  (ils ne gèrent pas le message `WBStartup` d'un lancement depuis le Workbench).
+  Chip), montez `dist/Faerghail.adf` dans DF0: et démarrez dessus — ou montez
+  le dossier `bin/` comme disque dur et lancez `AGACrawl` depuis le Shell.
+- **Machine réelle** : écrivez l'ADF sur une disquette, ou lancez l'exécutable
+  **depuis un Shell** (il ne gère pas le message `WBStartup` d'un lancement
+  depuis le Workbench).
 
 ## Structure
 
 ```
-src/demo.s       démo 1 : prise de contrôle, dégradé copper 24 bits, sprite
-src/scroll.s     démo 2 : 8 bitplanes AGA + scrolling matériel
-src/hardware.i   equates des registres custom et LVO exec/graphics
-src/sine.i       table sinus 256 entrées                    (généré)
-src/sprite.i     boule 16×16, 2 plans                       (généré)
-src/palette.i    256 couleurs 24 bits (hauts / bas)         (généré)
-src/font.i       police 16x16 pour le scrolltext             (généré)
 src/crawl.s      le jeu : moteur, rendu, combats, magie, interface
+src/hardware.i   equates des registres custom et LVO exec/graphics
+src/ptreplay.i   replayer ProTracker 4 voies pour Paula, 23 effets
+
 src/tables.i     objets, sorts, monstres, classes, noms          (généré)
-data/sfx.bin     bruitages synthétisés                           (généré)
-src/dgnpal.i     palette 16 couleurs du donjon               (généré)
-src/font8.i      police 8x8 de l'interface                   (généré)
-data/dgnart.bin  décors en perspective et monstres           (généré)
-data/dgnmap.bin  les trois niveaux                           (généré)
-src/ptreplay.i   replayer ProTracker 4 voies pour Paula
-data/music.mod   module ProTracker, samples et partition     (généré)
-tools/gen_data.py    générateur des quatre .i de données
-tools/gen_module.py  générateur du module ProTracker
-tools/gen_dungeon.py générateur des décors, des cartes et de la police 8x8
-tools/gen_tables.py  générateur des tables du jeu
-tools/gen_sfx.py     générateur des bruitages
-tools/dungeon_preview.py rend un écran du jeu en PNG et contrôle les données
-tools/render_mod.py  rejoue le module en Python et écrit un WAV
-tools/preview.py     modèle Python du pipeline de scroll.s : contrôles + aperçu
+src/dgnpal.i     la palette 256 couleurs, en 24 bits            (généré)
+src/dgncol.i     le nom et l'étendue de chaque gamme            (généré)
+src/artidx.i     indices des morceaux de décor                  (généré)
+src/font8.i      police 8x8 de l'interface                      (généré)
+src/pointer.i    sprite 0 : le pointeur de souris               (généré)
+src/surfgrad.i   le dégradé que le copper pose ligne par ligne  (généré)
+data/dgnart.bin  décors en perspective, créatures, portraits    (généré)
+data/dgnmap.bin  les cinq étages                                (généré)
+data/sfx.bin     quinze bruitages synthétisés                   (généré)
+data/crawlmus.mod  la marche du donjon                          (généré)
+data/titlemus.mod  la procession de l'écran d'accueil           (généré)
+data/deepmus.mod   les profondeurs, à partir du quatrième étage (généré)
+
+tools/palette.py     la palette 256 couleurs, décrite matière par matière
+tools/gen_dungeon.py décors, créatures, portraits, cartes, dégradé, pointeur
+tools/gen_tables.py  objets, sorts, bestiaire, classes
+tools/gen_sfx.py     les bruitages, synthétisés
+tools/gen_score.py   les trois musiques
+tools/gen_data.py    la police et les tables de base
+
+tools/run68k.py      banc 68020 : charge l'exécutable, émule chipset, souris,
+                     clavier, blitter et dos.library
+tools/test_game.py   amorçage, création, exploration, combats, échoppe,
+                     pièges, souris, fuzz clavier
+tools/test_combat.py les capacités des créatures et l'équilibre du gardien
+tools/test_layout.py aucun panneau ne déborde ; une icône par type d'objet
+tools/test_save.py   sauvegarde, relance, reprise, refus d'une sauvegarde abîmée
+tools/test_sfx.py    les bruitages aux registres de Paula, et les trois modules
+tools/test_copper.py la copperlist relue instruction par instruction
+tools/test_replay.py chaque effet ProTracker jugé au tic près
+tools/play_game.py   pilote une partie entière vers les monstres et l'escalier
+tools/shot68k.py     photographie les écrans, copperlist comprise
+tools/render_mod.py  rejoue un module en Python et écrit un WAV
+tools/dungeon_preview.py rend un écran du jeu en PNG sans passer par l'Amiga
 tools/make_lha.py    écrit l'archive LhA (et se relit pour se vérifier)
-tools/run68k.py      banc 68020 : charge l'exécutable, émule chipset et clavier
-tools/test_game.py   fait tourner le jeu et contrôle ses invariants
-tools/play_game.py   pilote le jeu vers les monstres, les objets, l'escalier
-tools/shot68k.py     photographie les écrans dessinés par le processeur émulé
-tools/test_sfx.py    vérifie les bruitages aux registres de Paula
-tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
-tools/gen_score.py   générateur des deux musiques (accueil et donjon)
-tools/palette.py     la palette 256 couleurs AGA, décrite matière par matière
-tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
-tools/test_layout.py contrôle qu'aucun panneau ne déborde de la vue
-disk/                fichiers écrits à la main pour la disquette
-scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
+
+disk/                fichiers écrits à la main pour les disquettes
+scripts/make-disk.sh fabrique les ADF et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
 ```
 
@@ -415,107 +415,6 @@ plus qu'une image, et le tic n'était appelé qu'une fois par tour de boucle.
 `MusicPoll`, semé dans les traitements longs, rejoue un tic dès qu'une image
 s'est écoulée — le tempo tient désormais pendant le rendu.
 
-## Points techniques — `AGADemo`
-
-**Prise de contrôle propre.** `OpenLibrary("graphics.library", 39)`,
-`Forbid()`, `LoadView(NULL)` + deux `WaitTOF()`, `OwnBlitter()`, sauvegarde de
-`INTENAR` / `DMACONR` et de `GfxBase->copinit`. À la sortie, tout est rendu :
-copperlist système restaurée via `COP1LC` + strobe `COPJMP1`, DMA et
-interruptions remis dans leur état, `DisownBlitter()`, `LoadView(ancienne vue)`,
-`RethinkDisplay()`, `CloseLibrary()`, `Permit()`.
-
-**Couleur 24 bits AGA.** Chaque ligne écrit `COLOR00` deux fois : d'abord avec
-`BPLCON3` bit 9 (LOCT) à 0 pour les quartets de poids fort, puis avec LOCT à 1
-pour les quartets de poids faible. On obtient 8 bits par composante au lieu des
-4 bits de l'OCS/ECS — le dégradé est lisse, sans banding.
-
-**Double buffer de copperlist.** Deux listes en Chip RAM : celle qui est
-affichée et celle qu'on remplit. L'échange se fait en début de VBlank via
-`COP1LC` puis un strobe sur `COPJMP1`, donc jamais de déchirure sur les
-couleurs.
-
-**Franchissement de la ligne 255.** Le comparateur vertical du copper est sur
-8 bits : la liste insère la classique attente `$FFDF,$FFFE` avant de repartir
-sur des positions verticales « enroulées ».
-
-**Sprite matériel.** `SPR0POS` / `SPR0CTL` sont recalculés à chaque image
-(VSTART, VSTOP, HSTART, plus les bits 8 de VSTART/VSTOP et le bit 0 de HSTART
-placés dans SPR0CTL). Les canaux 1 à 7 pointent sur un sprite vide.
-`BPLCON4 = $0011` garde la palette sprite historique (couleurs 16 à 31).
-
-## Points techniques — `AGAScroll`
-
-**8 bitplanes.** `BPLCON0` bit 4 (`BPU3`) à 1 et bits 14-12 à 0 : c'est le
-codage AGA de « 8 plans ». En lores, 8 plans passent avec le fetch 16 bits
-habituel (`FMODE = 0`), donc pas de contrainte d'alignement 32/64 bits ni de
-bits de scroll étendus.
-
-**256 couleurs en 24 bits.** Le copper charge la palette en 8 banques de 32
-(`BPLCON3` bits 15-13), chaque banque écrite deux fois (LOCT = 0 puis 1) : 528
-`MOVE`, soit environ 5 lignes de raster, largement avant le début de l'affichage
-en ligne $2C.
-
-**Scrolling matériel.** Aucun pixel n'est déplacé :
-- *grossier* — les pointeurs `BPL1PT`…`BPL8PT` sont décalés de 2 octets par
-  tranche de 16 pixels et de `BMWB` octets par ligne ; les modulos
-  (`BPL1MOD`/`BPL2MOD` = 38) font sauter au DMA la partie non affichée ;
-- *fin* — `BPLCON1` retarde le playfield de 0 à 15 pixels. Comme il faut de la
-  matière à décaler, `DDFSTRT` recule de 8 color clocks ($30 au lieu de $38) :
-  21 mots fetchés par ligne au lieu de 20.
-
-La relation exacte, avec `W` le mot pointé et `d` le retard : le pixel affiché
-en colonne 0 vaut `W*16 + 16 - d`. Pour afficher le pixel `X` de l'image, on
-prend donc `W = (X-1)>>4` et `d = (-X) & 15`. `make check` rejoue ce calcul sur
-les 256 images d'un cycle.
-
-**Couleurs des sprites.** `BPLCON4 = $00FF` (ESPRM = OSPRM = $F) : les sprites
-prennent leurs couleurs dans la banque $F, soit 241 à 243 — sinon ils
-mangeraient les couleurs 17 à 19 de l'image. Les entrées 240 à 255 de la
-palette sont d'ailleurs exclues de la rotation de couleurs.
-
-**Double buffer de copperlist.** Chaque image, la liste cachée reçoit les 16
-`MOVE` de pointeurs, le `MOVE` de `BPLCON1` et la palette tournée ; l'échange se
-fait en début de VBlank.
-
-**Génération du playfield.** Le plasma est calculé au démarrage (avant la prise
-de contrôle de l'affichage, donc sous Workbench) par un chunky-to-planar par
-paquets de 16 pixels, en deux passes de 4 plans : `lsr.b` sort le bit dans X,
-`roxl.w` le récupère dans l'accumulateur du plan.
-
-## Points techniques — scroller sinusoïdal
-
-**Une bande à part, obtenue par un split copper.** À la ligne 236, le copper
-repasse `BPLCON0` à un seul bitplane (`BPU = 1`), pointe `BPL1PT` sur le
-bitmap du scroller, change le modulo et écrit ses propres `COLOR00`/`COLOR01`.
-Rien n'est à restaurer ensuite : l'image suivante recharge tout depuis le haut
-de la liste. Le playfield 8 plans occupe donc les lignes 44 à 235, la bande les
-64 dernières.
-
-**L'onde est fixe dans l'espace**, le texte la traverse : la hauteur d'un
-caractère ne dépend que de son abscisse, `y = 24 + sin(2x + phase) × 24/128`.
-C'est ce qui donne le mouvement classique — et cela impose de redessiner les
-caractères à chaque image, contrairement à la variante « vague solidaire du
-texte » qu'un simple scroll matériel suffirait à animer.
-
-**Le blitter fait le travail.** Un blit d'effacement (canal D seul, minterme 0)
-vide les 3 Ko de la bande, puis 22 blits de 16 lignes sur deux mots posent les
-caractères visibles. Le décalage horizontal de 0 à 15 pixels est fait par le
-barrel shifter du canal A — c'est pour cela que chaque ligne de glyphe occupe
-deux mots dont le second est nul. Minterme `$FA` (`D = A OR C`) pour superposer
-le glyphe au fond. Le tout tient largement dans le VBlank, ce qui compte :
-pendant l'affichage, 8 bitplanes en lores ne laissent quasiment aucun créneau
-DMA au blitter.
-
-**Les barres copper** derrière le texte sont trois dégradés (rouge, vert,
-bleu) dont le centre suit un sinus à sa propre vitesse. `COLOR00` change à
-chaque ligne de la bande — 64 blocs `WAIT` + deux écritures pour les 24 bits —
-et les trois barres sont additionnées puis saturées, d'où le blanc à leurs
-croisements. Le texte reste en couleur 1, donc lisible par-dessus.
-
-**La police** est une 5×7 doublée en 16×16, générée par `tools/gen_data.py`
-avec sa table ASCII → glyphe. Le texte lui-même est en clair dans `scroll.s`,
-donc modifiable sans rien régénérer.
-
 ## Points techniques — musique (`src/ptreplay.i`)
 
 **Cadence.** `PT_Tick` est appelé une fois par image depuis la boucle
@@ -541,46 +440,65 @@ que l'on vérifie sur le fichier lié (le hunk du module porte bien le drapeau
 CHIP). Le filtre passe-bas est coupé au démarrage (`bset #1,$BFE001`, le bit
 de la LED) et remis dans son état d'origine à la sortie.
 
-**Effets implémentés** : `0xy` arpège, `1xx`/`2xx` portamento, `3xx`
-portamento vers la note, `Axy` volume slide, `Cxx` volume, `Fxx` vitesse,
-`Bxx` saut de position, `Dxx` break. Les autres sont ignorés, ainsi que le
-finetune : c'est un sous-ensemble assumé, pas un replayer ProTracker complet.
+**Effets implémentés** : vingt-trois des trente de ProTracker — voir le
+tableau de la section « Son ». Manquent `E3x`, `E4x`/`E7x`, `E5x` et `EFx` :
+les samples étant synthétisés sans table de finetune, ils n'auraient rien à
+modifier.
 
-**Le module est synthétisé** par `tools/gen_module.py` — samples (grosse
-caisse, caisse claire, charleston, basse, lead, nappe) et partition en Am –
-F – C – G. Rien n'est emprunté à un module existant, le dépôt reste libre de
-droits.
+**Les modules sont synthétisés** par `tools/gen_score.py` — quatorze
+instruments (timbale, taïko, cymbale, bourdon, cor, chœur, cordes, harpe,
+orgue, fifre, viole, cloche, gong, tambour) et trois partitions en ré mineur.
+Rien n'est emprunté à un module existant, le dépôt reste libre de droits.
 
 ## Ce qui est vérifié, et ce qui ne l'est pas
 
-Les deux programmes s'assemblent et se lient (exécutables hunk valides, hunks
-Chip correctement marqués), et `tools/preview.py` rejoue en Python la
-disposition de la copperlist, les adresses patchées à chaque image, le
-chunky-to-planar et le calcul de scroll — c'est ce modèle qui produit
-`docs/preview.png` — bande de scrolltext comprise (position des caractères,
-décalage du barrel shifter, débordements hors bande).
+Le jeu n'a jamais tourné sur une vraie machine. Il tourne en revanche **pour de
+bon** dans un 68020 émulé : `tools/run68k.py` charge l'exécutable *hunk*, le
+relocalise, remplace `exec` et `graphics` par des souches, et émule le
+balayage vidéo, le blitter, le CIA du clavier, les compteurs de la souris et
+`dos.library`. Huit bancs font avancer **le vrai binaire** et relisent son état
+en mémoire :
 
-Côté jeu, `tools/gen_dungeon.py` vérifie par parcours en largeur que
-l'escalier de chaque niveau est atteignable depuis le départ — un donjon
-injouable serait invisible à la relecture du code — et
-`tools/dungeon_preview.py` rejoue l'algorithme d'affichage sur les vraies
-données pour produire les captures ci-dessus.
+| Banc | Ce qu'il éprouve |
+|---|---|
+| `test_game.py` | amorçage, création, exploration, combats, échoppe, pièges, souris, 800 touches au hasard |
+| `test_combat.py` | les sept capacités des créatures, l'équilibre du gardien, la courbe des cinq étages |
+| `test_layout.py` | aucun panneau ne déborde du cadre ; une icône par type d'objet |
+| `test_save.py` | sauvegarde → relance → reprise, et refus d'une sauvegarde abîmée |
+| `test_sfx.py` | quinze bruitages aux registres de Paula, et la bonne partition à chaque moment |
+| `test_copper.py` | la copperlist relue instruction par instruction |
+| `test_replay.py` | chaque effet ProTracker jugé au tic près sur `AUDxPER`/`AUDxVOL`/`AUDxLC` |
+| `play_game.py` | un parcours dirigé complet, des monstres à l'escalier |
 
-Côté musique, `tools/render_mod.py` rejoue le module avec exactement la même
-sémantique que le replayer 68k (mêmes effets, même cadence 50 Hz, mêmes règles
-de boucle) et produit un WAV : c'est ce qui vérifie le module et la logique de
-rejeu.
+À la génération, `tools/gen_dungeon.py` vérifie par parcours en largeur que
+l'escalier de chaque étage est atteignable, que chaque levier s'atteint sans
+franchir la herse qu'il commande, et que l'échoppe se laisse aborder.
+`tools/render_mod.py` rejoue les modules avec la même sémantique que le
+replayer 68k et produit un WAV — le replayer est ainsi écrit deux fois, et
+quand les deux divergent le banc dit laquelle a tort.
 
-En revanche **rien n'a encore tourné sur Amiga réel ni sous émulateur** : les
-modèles valident l'arithmétique et la logique du code, pas le comportement du
-chipset ni celui de Paula.
+Ces bancs ne sont pas décoratifs. Ils ont trouvé une courbe d'expérience qui
+donnait le niveau 11 après dix combats, des dégâts de monstre jamais
+appliqués, un jeu ingagnable par attrition, six sorts inatteignables, un
+gardien qui gagnait dix-sept fois sur dix-huit, des capacités spéciales
+branchées dans une branche morte, une potion qui montrait un parchemin, du
+texte qui changeait de couleur sur tout fond non noir, une `dbf` qui bouclait
+65 536 fois — et, plus embarrassant, plusieurs bancs qui *mesuraient la
+mauvaise chose* et annonçaient « aucune anomalie » sur des mécaniques inertes.
+
+**Ce qui n'est pas vérifié** : le comportement réel du chipset. Le harnais
+émule ce dont le code a besoin pour avancer — le balayage, le blitter, Paula
+en écriture — mais ni les temps d'accès mémoire, ni le recouvrement DMA, ni
+ce que le copper fait réellement du milieu d'une ligne. Une machine réelle
+reste le seul juge de la fluidité.
 
 ## Pistes pour la suite
 
-- Scrolling infini : bitmap de la largeur de l'écran + 16 pixels, avec une
-  colonne redessinée au blitter à chaque franchissement de mot.
-- Blitter : effacement, dessin de bobs avec masque (cookie-cut), lignes.
-- Interruption niveau 3 (VERTB / COPER) plutôt qu'une attente active.
+- Charger les décors depuis la disquette plutôt que par `incbin` : l'exécutable
+  fait 660 Ko, dont 518 de données. Un chargeur permettrait de répartir le
+  contenu sur plusieurs disquettes.
+- Interruption niveau 3 (VERTB) plutôt qu'une attente active.
 - Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que
   par le VBlank.
-- Scroller sinusoïdal avec police 8×8 et copper text.
+- Portée et distance en combat : l'arc court existe, mais rien ne distingue
+  encore le corps à corps du tir.

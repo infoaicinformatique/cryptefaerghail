@@ -226,16 +226,24 @@ def loaded(g):
 
 
 def check_music(g, fails):
-    """La musique doit vraiment tourner, et chaque ecran avoir la sienne :
-    la procession devant le portail, la marche dans le donjon."""
+    """La musique doit vraiment tourner, et chaque moment avoir la sienne :
+    la procession devant le portail, la marche dans le donjon, et les
+    profondeurs a partir du quatrieme etage."""
+    deep = T.read_equ("DEEP_LEVEL", 3)
     for nom, fichier in (("accueil", "titlemus.mod"),
-                         ("donjon", "crawlmus.mod")):
+                         ("donjon", "crawlmus.mod"),
+                         ("profondeurs", "deepmus.mod")):
         attendu = open(os.path.join(ROOT, "data", fichier), "rb").read()[:20]
         if nom == "donjon":                # on quitte l'accueil
             g.key(T.K_1)
+        if nom == "profondeurs":           # on s'enfonce
+            g.setw("Level", deep)
+            g.call(g.addr("LevelMusic"))
         if loaded(g) != attendu.split(b"\0")[0]:
             fails.append(f"{nom} : module {loaded(g)!r} au lieu de "
                          f"{attendu.split(chr(0).encode())[0]!r}")
+    g.setw("Level", 0)                     # on remonte pour la suite
+    g.call(g.addr("LevelMusic"))
     g.audio.clear()
     for _ in range(120):                  # deux secondes de replay
         g.call(g.addr("PT_Tick"))

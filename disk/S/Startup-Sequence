@@ -1,8 +1,11 @@
-; Disquette de demonstration AGA - Amiga 1200
-echo "*N  Demos AGA pour Amiga 1200"
-echo "  --------------------------"
-echo "  Bouton gauche de la souris pour quitter une demo.*N"
-echo "  Lancement de AGAScroll..."
-AGAScroll
-echo "*N  Tapez AGADemo pour la seconde demo,"
-echo "  ou lisez Lisezmoi.txt.*N"
+; Disquette AGA - Amiga 1200
+echo "*N  LES CAVES DE FAERGHAIL"
+echo "  ------------------------"
+echo "  Fleches : avancer, reculer, tourner"
+echo "  Espace : ouvrir   P : potion   ESC : quitter*N"
+echo "  Chargement..."
+AGACrawl
+echo "*N  Autres programmes de la disquette :"
+echo "    AGAScroll   demo 8 bitplanes, scrolltext et musique"
+echo "    AGADemo     demo copper 24 bits"
+echo "  Voir Lisezmoi.txt.*N"

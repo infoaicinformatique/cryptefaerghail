@@ -56,12 +56,15 @@ def build(files):
 
 
 def collect():
-    files = [(os.path.join(ROOT, "bin", "AGAScroll"), "AGAScroll"),
+    files = [(os.path.join(ROOT, "bin", "AGACrawl"), "AGACrawl"),
+             (os.path.join(ROOT, "bin", "AGAScroll"), "AGAScroll"),
              (os.path.join(ROOT, "bin", "AGADemo"), "AGADemo"),
              (os.path.join(ROOT, "disk", "Lisezmoi.txt"), "Lisezmoi.txt"),
              (os.path.join(ROOT, "disk", "S", "Startup-Sequence"),
               "S/Startup-Sequence"),
-             (os.path.join(ROOT, "data", "music.mod"), "Src/data/music.mod")]
+             (os.path.join(ROOT, "data", "music.mod"), "Src/data/music.mod"),
+             (os.path.join(ROOT, "data", "dgnart.bin"), "Src/data/dgnart.bin"),
+             (os.path.join(ROOT, "data", "dgnmap.bin"), "Src/data/dgnmap.bin")]
     src = os.path.join(ROOT, "src")
     for name in sorted(os.listdir(src)):
         if name.endswith((".s", ".i")):

@@ -1,20 +1,24 @@
-# Démos AGA — Amiga 1200 / AmigaOS 3.1+
+# Un jeu et deux démos AGA — Amiga 1200 / AmigaOS 3.1+
 
-Deux démos 68k **entièrement assemblables depuis Linux ou macOS**, écrites en
-assembleur Motorola pour `vasm`, liées en exécutables *hunk* Amiga par `vlink`.
+Trois programmes 68k **entièrement assemblables depuis Linux ou macOS**, écrits
+en assembleur Motorola pour `vasm`, liés en exécutables *hunk* Amiga par
+`vlink`.
 
 | Programme | Contenu |
 |---|---|
+| `bin/AGACrawl` | **Les Caves de Faerghail** — dungeon crawler en vue subjective : groupe de quatre héros, trois niveaux, combats au tour par tour, coffres, portes |
 | `bin/AGADemo` | dégradé plein écran généré **ligne par ligne par le copper en 24 bits réels**, plus une boule en **sprite matériel** |
 | `bin/AGAScroll` | playfield **8 bitplanes (256 couleurs 24 bits)** de 640×384 pixels en **scrolling 100 % matériel**, plus un **scroller de texte sinusoïdal** au blitter dans une bande séparée |
 
-Les deux jouent un **module ProTracker 4 voies sur Paula** et se quittent par
-le bouton gauche de la souris.
+Tous jouent un **module ProTracker 4 voies sur Paula**. Les démos se quittent
+par le bouton gauche de la souris, le jeu par ESC.
+
+![Les Caves de Faerghail](docs/crawl.png)
 
 ![Aperçu de AGAScroll](docs/preview.png)
 
-*(image produite par `tools/preview.py`, un modèle Python du pipeline — voir
-plus bas.)*
+*(images produites par les modèles Python `tools/dungeon_preview.py` et
+`tools/preview.py` — voir plus bas.)*
 
 ## Cible
 
@@ -51,6 +55,15 @@ make music         # réécrit data/music.mod (samples et partition synthétisé
 make wav           # rejoue le module en Python et écrit music.wav
 ```
 
+Régénérer les données du jeu, et en voir un écran :
+
+```sh
+make dungeon       # décors, cartes, police -- vérifie aussi que chaque
+                   # niveau a son escalier atteignable depuis le départ
+python3 tools/dungeon_preview.py 0 3 1 1 docs/crawl.png
+python3 tools/dungeon_preview.py 0 3 1 1 combat.png 2   # ecran de combat
+```
+
 Vérifier l'arithmétique du scrolling et la disposition de la copperlist, et
 produire un aperçu :
 
@@ -62,8 +75,8 @@ make preview       # écrit docs/preview.png
 ## Disquette prête à l'emploi
 
 `dist/AGADemos.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
-de Kickstart 1.3 à 3.x) contenant les deux exécutables, le source complet, le
-module, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui lance `AGAScroll` au
+de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source complet, le
+module, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui lance le jeu au
 démarrage. `dist/AGADemos.lha` contient la même chose en archive LhA, pour un
 transfert par réseau, CF ou Gotek plutôt que par disquette.
 
@@ -94,10 +107,17 @@ src/sine.i       table sinus 256 entrées                    (généré)
 src/sprite.i     boule 16×16, 2 plans                       (généré)
 src/palette.i    256 couleurs 24 bits (hauts / bas)         (généré)
 src/font.i       police 16x16 pour le scrolltext             (généré)
+src/crawl.s      le jeu : moteur, rendu, combats, interface
+src/dgnpal.i     palette 16 couleurs du donjon               (généré)
+src/font8.i      police 8x8 de l'interface                   (généré)
+data/dgnart.bin  décors en perspective et monstres           (généré)
+data/dgnmap.bin  les trois niveaux                           (généré)
 src/ptreplay.i   replayer ProTracker 4 voies pour Paula
 data/music.mod   module ProTracker, samples et partition     (généré)
 tools/gen_data.py    générateur des quatre .i de données
 tools/gen_module.py  générateur du module ProTracker
+tools/gen_dungeon.py générateur des décors, des cartes et de la police 8x8
+tools/dungeon_preview.py rend un écran du jeu en PNG et contrôle les données
 tools/render_mod.py  rejoue le module en Python et écrit un WAV
 tools/preview.py     modèle Python du pipeline de scroll.s : contrôles + aperçu
 tools/make_lha.py    écrit l'archive LhA (et se relit pour se vérifier)
@@ -105,6 +125,51 @@ disk/                fichiers écrits à la main pour la disquette
 scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
 ```
+
+## Le jeu — `AGACrawl`
+
+Un crawler dans l'esprit des jeux de rôle Amiga de 1990 : on avance case par
+case, on tourne de 90°, et le donjon est dessiné en vue subjective.
+
+| Touche | Effet |
+|---|---|
+| Flèches haut / bas | avancer, reculer |
+| Flèches gauche / droite | tourner |
+| Espace | ouvrir la porte devant soi |
+| A / F | attaquer, fuir (en combat) |
+| P | boire une potion |
+| ESC | quitter |
+
+**Ce qui est implémenté** : trois niveaux de labyrinthe (24×24, générés puis
+figés dans `data/dgnmap.bin`), quatre héros avec points de vie, attaque,
+défense, expérience et montée de niveau ; quatre monstres ; combats au tour par
+tour avec fuite et potions ; coffres donnant or et potions ; portes à ouvrir ;
+escaliers menant au niveau suivant ; victoire à la sortie du troisième, fin de
+partie si le groupe tombe.
+
+**Ce qui n'y est pas** — Faerghail avait dix ans d'avance sur cette tranche :
+pas de création de personnage, pas de sortilèges, pas d'inventaire ni de
+boutiques, pas de sauvegarde, pas de PNJ ni de dialogue, et un seul monstre à
+la fois plutôt qu'un groupe.
+
+**Rendu de la vue.** Aucun calcul 3D à l'exécution : les murs sont
+pré-calculés en perspective par `tools/gen_dungeon.py`, un morceau par
+position (mur de face aux distances 1 à 4, murs latéraux aux profondeurs 0 à 3,
+portes, monstres) et posés au blitter du plus loin au plus proche. Comme la
+géométrie est fixe, chaque morceau tombe toujours au même endroit, calé sur un
+mot : le blit se fait **sans décalage**, en cookie-cut (minterme `$CA`,
+`D = A ET B` là où le masque est à un, `C` ailleurs). Les murs latéraux se
+projettent en droites passant par le point de fuite, ce qui donne un placage de
+texture exact : à la colonne `x`, la distance vaut `64 / |96 - x|`.
+
+**Écran** : 320×256 en 4 bitplanes (16 couleurs, chargées en 24 bits par le
+copper), double tampon. L'affichage n'est refait qu'après une action — un jeu
+au tour par tour n'a pas besoin de 50 images par seconde.
+
+**Clavier** : lu directement sur le CIA-A, sans l'OS. Le code arrive en série,
+inversé et décalé d'un bit (`not` puis `ror.b #1`), et il faut renvoyer une
+poignée de main en passant le port série en sortie une centaine de
+microsecondes.
 
 ## Points techniques — `AGADemo`
 
@@ -250,6 +315,12 @@ disposition de la copperlist, les adresses patchées à chaque image, le
 chunky-to-planar et le calcul de scroll — c'est ce modèle qui produit
 `docs/preview.png` — bande de scrolltext comprise (position des caractères,
 décalage du barrel shifter, débordements hors bande).
+
+Côté jeu, `tools/gen_dungeon.py` vérifie par parcours en largeur que
+l'escalier de chaque niveau est atteignable depuis le départ — un donjon
+injouable serait invisible à la relecture du code — et
+`tools/dungeon_preview.py` rejoue l'algorithme d'affichage sur les vraies
+données pour produire les captures ci-dessus.
 
 Côté musique, `tools/render_mod.py` rejoue le module avec exactement la même
 sémantique que le replayer 68k (mêmes effets, même cadence 50 Hz, mêmes règles

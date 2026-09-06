@@ -210,11 +210,12 @@ def write_bars(path):
             f.write("\n")
 
 
-here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-write_sine(os.path.join(here, "src", "sine.i"))
-write_sprite(os.path.join(here, "src", "sprite.i"))
-write_palette(os.path.join(here, "src", "palette.i"))
-n = write_font(os.path.join(here, "src", "font.i"))
-write_bars(os.path.join(here, "src", "bars.i"))
-print(f"src/sine.i, src/sprite.i, src/palette.i, src/font.i ({n} glyphes) "
-      f"et src/bars.i ({len(BARS)} barres) generes")
+if __name__ == "__main__":
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    write_sine(os.path.join(here, "src", "sine.i"))
+    write_sprite(os.path.join(here, "src", "sprite.i"))
+    write_palette(os.path.join(here, "src", "palette.i"))
+    n = write_font(os.path.join(here, "src", "font.i"))
+    write_bars(os.path.join(here, "src", "bars.i"))
+    print(f"src/sine.i, src/sprite.i, src/palette.i, src/font.i ({n} glyphes) "
+          f"et src/bars.i ({len(BARS)} barres) generes")

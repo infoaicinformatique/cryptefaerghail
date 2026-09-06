@@ -3,3 +3,4 @@ tools/bin/
 tools/.build/
 music.wav
 build/disk/
+__pycache__/

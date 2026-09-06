@@ -51,16 +51,21 @@ BLTCON1         = $042
 BLTAFWM         = $044
 BLTALWM         = $046
 BLTCPT          = $048
+BLTBPT          = $04c
 BLTAPT          = $050
 BLTDPT          = $054
 BLTSIZE         = $058
 BLTCMOD         = $060
+BLTBMOD         = $062
 BLTAMOD         = $064
 BLTDMOD         = $066
 BLT_USEA        = $0800         ; canaux utilises, dans BLTCON0
+BLT_USEB        = $0400
 BLT_USEC        = $0200
 BLT_USED        = $0100
 BLT_A_OR_C      = $00fa         ; minterme D = A OR C
+BLT_COOKIE      = $00ca         ; minterme D = (A AND B) OR (NOT A AND C)
+BLT_COPY        = $00f0         ; minterme D = A
 
 ; --- audio (Paula) : AUD0 en $DFF0A0, un canal tous les $10 ---
 AUD0LCH         = $0a0
@@ -72,6 +77,7 @@ AUDx_VOL        = 8             ; word : volume 0..64
 ; --- palette ---
 COLOR00         = $180
 COLOR01         = $182
+COLOR15         = $19e
 COLOR17         = $1a2
 COLOR18         = $1a4
 COLOR19         = $1a6
@@ -95,6 +101,9 @@ DMAF_AUDIO      = $000f
 
 ; --- CIA-A ---
 CIAAPRA         = $bfe001       ; bit 6 = bouton gauche souris (0 = appuye)
+CIAASDR         = $bfec01       ; port serie : code clavier
+CIAAICR         = $bfed01       ; drapeaux d'interruption (lecture = effacement)
+CIAACRA         = $bfee01       ; bit 6 : sens du port serie (poignee de main)
 
 ; --- LVO exec.library ---
 _LVOForbid      = -132

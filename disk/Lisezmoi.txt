@@ -1,25 +1,40 @@
-DEMOS AGA POUR AMIGA 1200
-=========================
+LES CAVES DE FAERGHAIL - ET DEUX DEMOS AGA
+==========================================
 
-Deux programmes, a lancer depuis le Shell (pas depuis le Workbench :
-ils ne gerent pas le message WBStartup). Bouton gauche de la souris
-pour quitter.
+A lancer depuis le Shell (pas depuis le Workbench : ces programmes ne
+gerent pas le message WBStartup).
 
-  AGAScroll  playfield 8 bitplanes (256 couleurs 24 bits) de 640x384
-             pixels en scrolling materiel, sprite, scroller de texte
-             sinusoidal au blitter sur barres copper, musique
-             ProTracker sur Paula.
+  AGACrawl   Dungeon crawler en vue subjective, dans l'esprit des jeux
+             de role Amiga de 1990. Groupe de quatre heros, trois
+             niveaux de donjon, combats au tour par tour, coffres,
+             portes, escaliers, musique ProTracker.
 
-  AGADemo    degrade plein ecran genere ligne par ligne par le copper
-             en 24 bits, sprite materiel, meme musique.
+               Fleches haut / bas   avancer, reculer
+               Fleches gauche/droite tourner
+               Espace               ouvrir une porte
+               A                    attaquer (en combat)
+               F                    fuir (en combat)
+               P                    boire une potion
+               ESC                  quitter
+
+             Le but : trouver l'escalier de chaque niveau et ressortir
+             vivant du troisieme. Les coffres donnent de l'or et parfois
+             une potion ; les monstres donnent de l'experience, et le
+             groupe monte de niveau.
+
+  AGAScroll  Demonstration : playfield 8 bitplanes (256 couleurs 24
+             bits) en scrolling materiel, sprite, scroller de texte
+             sinusoidal sur barres copper, musique ProTracker.
+
+  AGADemo    Demonstration : degrade plein ecran genere ligne par ligne
+             par le copper en 24 bits, sprite materiel.
 
 Configuration : Amiga 1200 ou 4000 (chipset AGA), 68020 minimum,
-Kickstart 3.0 / 3.1 ou superieur, environ 1 Mo de Chip RAM libre pour
-AGAScroll (le bitmap fait 240 Ko).
+Kickstart 3.0 / 3.1, environ 1 Mo de Chip RAM libre.
 
-Le tiroir Src contient tout le source assembleur, l'include du
-replayer ProTracker et le module. Le tout s'assemble avec vasm et se
-lie avec vlink (Frank Wille), depuis un Amiga comme depuis un PC.
+Le tiroir Src contient tout le source assembleur, l'include du replayer
+ProTracker et le module. Le tout s'assemble avec vasm et se lie avec
+vlink (Frank Wille).
 
-Musique et graphismes sont generes par programme : rien n'est emprunte
-a une production existante.
+Graphismes, cartes et musique sont generes par programme : rien n'est
+emprunte a une production existante.

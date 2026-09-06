@@ -75,10 +75,17 @@ make preview       # écrit docs/preview.png
 ## Disquette prête à l'emploi
 
 `dist/AGADemos.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
-de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source complet, le
-module, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui lance le jeu au
-démarrage. `dist/AGADemos.lha` contient la même chose en archive LhA, pour un
-transfert par réseau, CF ou Gotek plutôt que par disquette.
+de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source du jeu
+(`crawl.s` et les deux fichiers écrits à la main dont il dépend), un
+`Lisezmoi.txt` et un `S/Startup-Sequence` qui lance le jeu au démarrage.
+
+Elle ne peut plus tout porter : à huit bitplanes le jeu pèse à lui seul plus
+d'un demi-mégaoctet — six cent mille octets une fois sur la disquette, où un
+bloc de 512 n'en porte que 488 — et les trois programmes en occupent six cent
+trente mille sur huit cent quatre-vingt. Le reste — le source des deux démos,
+les données générées, et les tables en `dc.w` dont `surfgrad.i` qui pèse à lui
+seul quatre-vingt mille octets — vit dans **`dist/AGADemos.lha`**, qui porte
+tout. Les générateurs Python refont les tables en une seconde.
 
 ```sh
 make disk          # refabrique les deux -- nécessite pip install amitools
@@ -211,6 +218,7 @@ niveau de donjon selon leur facteur de puissance.
 | A / S / F | attaquer, lancer un sort, fuir (en combat) |
 | E / U / D | équiper, utiliser, jeter (dans le sac) |
 | M / L / P | carte du niveau, grimoire, réglages |
+| Souris | clic gauche : rose des vents dans la vue, choisir un aventurier, poser un curseur ; clic droit : agir, ou refermer un panneau |
 | Tab | à l'échoppe : passer de l'achat à la vente |
 | ESC | fermer un écran, puis quitter |
 
@@ -248,6 +256,28 @@ serrures loin du départ et les clés près, puis contrôle par parcours en
 largeur qu'on atteint l'escalier ou au moins une clé sans forcer une serrure.
 Ce contrôle a déjà attrapé un niveau coupé en deux dès la deuxième case.
 
+### La souris
+
+Le pointeur est un **sprite matériel** — sprite 0, seize pixels de côté, quatre
+couleurs. Il ne coûte rien : ni blit, ni sauvegarde de fond, ni redessin. Ses
+couleurs viennent du bloc `$f0`, que `BPLCON4` (ESPRM/OSPRM = `$f`) lui réserve
+et qu'aucune teinte du décor n'occupe.
+
+`JOY0DAT` ne donne pas une position mais deux compteurs de huit bits qui
+tournent en rond : on lit une différence par trame, en étendant le signe du
+huitième bit — sans quoi un pas vers la gauche se lirait comme un bond de 255
+pixels vers la droite. Le bouton gauche est le bit 6 de `CIAAPRA`, le droit le
+bit 10 de `POTGOR`, tous deux à zéro quand ils sont enfoncés.
+
+Un clic ne double pas la logique du clavier : il se traduit en touche et repart
+dans `HandleKey`. Dans la vue, la souris dessine une rose des vents en trois
+colonnes et trois rangées — avancer, reculer, tourner, agir au centre ; en
+combat, cliquer c'est frapper. Sur le panneau du groupe, un clic choisit
+l'aventurier de ce bloc. Dans une liste — sac, échoppe, grimoire, réglages —
+il pose le curseur sur la ligne visée, et un second clic sur la même ligne
+conclut. Le bouton droit referme un panneau ; dans la vue il agit, plutôt que
+de quitter le jeu par mégarde.
+
 ### Rendu
 
 Aucun calcul 3D à l'exécution : les murs sont pré-calculés en perspective par
@@ -260,15 +290,71 @@ distance vaut `64/|96−x|`, ce qui donne un placage de texture exact. Les
 dalles du sol et du plafond suivent la même règle. La pierre a son grain, ses
 fissures et sa mousse, tirés d'un bruit stable.
 
-Écran 320×256 en 4 bitplanes, palette chargée en 24 bits par le copper, double
-tampon ; l'affichage n'est refait qu'après une action.
+Écran 320×256 en **8 bitplanes** — 256 couleurs choisies parmi seize millions,
+la palette chargée en 24 bits (`BPLCON3` LOCT, huit banques de trente-deux),
+double tampon ; l'affichage n'est refait qu'après une action.
+
+### Le copper : plus de couleurs que la palette n'en tient
+
+La gamme de pierre compte vingt teintes. Sur les cinquante-sept lignes qui
+séparent l'horizon du bord de l'écran, la profondeur s'y lisait donc en vingt
+marches, et le dallage montrait des bandes.
+
+Le sol et la voûte ne portent plus leur profondeur dans la palette : ils ne
+gardent que leur **variation locale** — joint de terre, usure du passage,
+mousse, suie, nervure, extinction latérale — codée sur douze cases,
+`$f4`–`$ff`. Le copper réécrit ces douze cases **toutes les deux lignes** avec
+la profondeur de la ligne, calculée sur la même loi de lumière que les murs.
+Il y a donc **68 profondeurs à l'écran là où la palette n'en tient que vingt**,
+et les douze cases ne coûtent rien au reste du décor.
+
+Ces douze cases tombent dans le bloc `$f0` que `BPLCON4` donne aux sprites,
+dont ceux-ci n'utilisent que les quatre premières : le matériel lit les mêmes
+registres, chacun n'y regarde que ce qui le concerne.
+
+Le coût : 26 instructions copper par bloc, soit **28 cycles couleur par ligne
+sur 227**. `tools/test_copper.py` relit la liste construite et le vérifie.
+
+**La flamme.** Six degrés de clarté sont préparés à la génération ; à chaque
+trame le jeu passe de l'un à l'autre par une marche au hasard bornée et
+centrée, en recopiant 1 632 mots dans la copperlist juste après le retour
+trame. Le décor ne bouge pas d'un pixel — seule la lumière respire.
 
 ### Son
 
-Le module ProTracker tourne sur trois voies ; la quatrième est **empruntée**
-le temps d'un bruitage (épée, hache, arc, impact, esquive, porte, coffre,
-potion, sort, rugissement, montée de niveau, pas, mort), le replayer laissant
+Deux modules ProTracker quatre voies, tous deux en ré mineur : la procession
+de l'écran d'accueil et la marche du donjon. Quatorze instruments synthétisés
+— timbale, taïko, cymbale, bourdon, cor, chœur, cordes, harpe, orgue, fifre,
+viole, cloche, gong, tambour. La quatrième voie est **empruntée** le temps
+d'un bruitage (épée, hache, arc, impact, esquive, porte, coffre, potion, sort,
+rugissement, montée de niveau, pas, mort, piège, pièces), le replayer laissant
 le canal tranquille pendant la durée indiquée dans la table.
+
+**Le replayer honore 23 des effets de ProTracker**, contre neuf auparavant :
+
+| | |
+|---|---|
+| Hauteur | `0xy` arpège, `1xx`/`2xx` glissandos, `3xx` portamento vers la note, `4xy` vibrato, `E1x`/`E2x` glissandos fins |
+| Volume | `Cxx`, `Axy` glissement, `7xy` trémolo, `EAx`/`EBx` glissement fin, `ECx` coupure |
+| Combinés | `5xy` portamento + volume, `6xy` vibrato + volume |
+| Déclenchement | `9xx` départ dans le sample, `E9x` relance, `EDx` note retardée |
+| Structure | `Bxx` saut, `Dxx` break, `Fxx` vitesse, `E6x` boucle de motif, `EEx` ligne retenue |
+| Matériel | `E0x` filtre passe-bas (la diode) |
+
+Manquent `E3x` (glissando), `E4x`/`E7x` (choix de forme d'onde), `E5x`
+(finetune) et `EFx` (inversion de boucle) : les samples étant synthétisés sans
+table de finetune, ils n'auraient rien à modifier.
+
+Les partitions s'en servent : vibrato sur les tenues du cor et du chœur,
+trémolo lent sous le bourdon, roulement de tambour par relance plutôt que
+réécrit ligne par ligne, coups doubles par note retardée, cymbale prise après
+son attaque par `9xx`, cadence élargie par `EEx`.
+
+Le replayer est écrit **deux fois** — en 68k dans `src/ptreplay.i`, en Python
+dans `tools/render_mod.py` — à partir de la même lecture du format. Quand les
+deux divergent, l'une a tort, et `tools/test_replay.py` dit laquelle : il écrit
+de vrais motifs dans le module chargé, appelle `PT_Tick` tic par tic, et lit ce
+qui part vers `AUDxPER`, `AUDxVOL`, `AUDxLC` et `DMACON`.
 
 Le module perdait des tics pendant les déplacements : un redessin complet dure
 plus qu'une image, et le tic n'était appelé qu'une fois par tour de boucle.

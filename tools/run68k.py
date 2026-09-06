@@ -156,6 +156,10 @@ class Harness:
                 return raster(off)
             if off == 0x02:                          # DMACONR
                 return 0                             # blitter au repos
+            if off == 0x0a:                          # JOY0DAT : les deux
+                return ((self.mouse_ry & 0xff) << 8) | (self.mouse_rx & 0xff)
+            if off == 0x16:                          # POTGOR : bouton droit
+                return 0xffff & ~(0x0400 if self.mouse_btn & 2 else 0)
             return self.custom.get(off, 0)
 
         def r_custom32(addr, *a):
@@ -193,8 +197,8 @@ class Harness:
                 return v
             if addr == 0xbfec01:                     # SDR : code clavier
                 return self.sdr
-            if addr == 0xbfe001:                     # boutons souris relaches
-                return 0xff
+            if addr == 0xbfe001:                     # bouton gauche : 0 = mis
+                return 0xff & ~(0x40 if self.mouse_btn & 1 else 0)
             return 0
 
         def w_cia(addr, val, *a):
@@ -207,6 +211,9 @@ class Harness:
         mem.set_special_range_read_funcs(0xbfe000, 1, r_cia, r_cia, r_cia)
         mem.set_special_range_write_funcs(0xbfe000, 1, w_cia, w_cia, w_cia)
         self.sdr = 0xff
+        self.mouse_rx = 0                            # compteurs quadrature
+        self.mouse_ry = 0
+        self.mouse_btn = 0
 
     # --- blitter : assez pour que l'ecran ressemble a l'ecran ------
     def ptr(self, off):
@@ -435,6 +442,18 @@ class Harness:
                 break
         self.cpu.set_cpu_context(ctx)
         return done
+
+    # --- souris ----------------------------------------------------
+    def mouse_move(self, dx, dy):
+        """Fait tourner les compteurs de quadrature, comme la vraie
+        souris : le jeu ne lit jamais une position, seulement l'ecart
+        depuis la trame precedente."""
+        self.mouse_rx = (self.mouse_rx + dx) & 0xff
+        self.mouse_ry = (self.mouse_ry + dy) & 0xff
+
+    def mouse_button(self, mask):
+        """1 = bouton gauche, 2 = droit ; 0 pour tout relacher."""
+        self.mouse_btn = mask
 
     # --- clavier ---------------------------------------------------
     def press(self, code):

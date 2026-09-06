@@ -148,6 +148,71 @@ def harp(n=2600):
     return out
 
 
+def organ():
+    """Orgue de crypte : quintes et octaves empilees, sans attaque."""
+    return additive(128, [(1.0, 0), (0.55, 0), (0.70, 0), (0.30, 0),
+                          (0.45, 0), (0.18, 0), (0.24, 0), (0.10, 0),
+                          (0.14, 0)], gain=96)
+
+
+def flute(n=128):
+    """Fifre : presque une sinusoide, un souffle de seconde harmonique."""
+    return additive(n, [(1.0, 0), (0.14, 0.25), (0.06, 0)], gain=92)
+
+
+def viol():
+    """Viole : dent de scie plus mordante que les cordes, pour la basse
+    frottee. Deux fois plus longue, donc plus fine dans le grave."""
+    return cycle(256, lambda p: 92 * ((2 * ((p * 1.0) % 1.0) - 1)
+                                      * (1 - 0.22 * math.sin(math.pi * p))
+                                      + 0.18 * math.sin(6 * math.pi * p)))
+
+
+def bell(n=5200):
+    """Cloche : partiels inharmoniques, longue traine. C'est elle qui
+    ouvre l'ecran d'accueil."""
+    out = []
+    parts = ((1.00, 1.00), (0.62, 2.76), (0.42, 5.40), (0.26, 8.93),
+             (0.16, 13.34), (0.10, 18.64))
+    for i in range(n):
+        t = i / n
+        v = 0.0
+        for amp, ratio in parts:
+            v += amp * math.exp(-(1.4 + ratio * 0.55) * t) \
+                * math.sin(2 * math.pi * 176 * ratio * i / 8287)
+        out.append(clamp8(52 * v))
+    return out
+
+
+def gong(n=6000):
+    """Gong : bruit grave et metallique, tres longue extinction."""
+    rnd = random.Random(17)
+    prev = 0.0
+    out = []
+    for i in range(n):
+        t = i / n
+        env = math.exp(-1.9 * t)
+        raw = rnd.uniform(-1, 1)
+        prev = 0.86 * prev + 0.14 * raw          # passe-bas serre
+        tone = math.sin(2 * math.pi * 96 * i / 8287) \
+            + 0.5 * math.sin(2 * math.pi * 151 * i / 8287)
+        out.append(clamp8(96 * env * (0.55 * tone + 0.75 * prev)))
+    return out
+
+
+def snare(n=2000):
+    """Tambour de marche : peau seche et timbre bruite."""
+    rnd = random.Random(19)
+    out = []
+    for i in range(n):
+        t = i / n
+        env = math.exp(-11.0 * t)
+        tone = math.sin(2 * math.pi * (190 * math.exp(-6.0 * t) + 120)
+                        * i / 8287)
+        out.append(clamp8(112 * env * (0.45 * tone + 0.85 * rnd.uniform(-1, 1))))
+    return out
+
+
 # nom, donnees, volume, (depart, longueur) de boucle en octets
 INSTRUMENTS = [
     ("timbale", timpani(),  64, None),
@@ -158,8 +223,15 @@ INSTRUMENTS = [
     ("choeur",  choir(),    38, (0, 128)),
     ("cordes",  strings(),  40, (0, 128)),
     ("harpe",   harp(),     48, None),
+    ("orgue",   organ(),    46, (0, 128)),
+    ("fifre",   flute(),    44, (0, 128)),
+    ("viole",   viol(),     42, (0, 256)),
+    ("cloche",  bell(),     54, None),
+    ("gong",    gong(),     58, None),
+    ("tambour", snare(),    52, None),
 ]
 TIMB, TAIKO, CYM, DRONE, HORN, CHOIR, STR, HARP = 1, 2, 3, 4, 5, 6, 7, 8
+ORGAN, FLUTE, VIOL, BELL, GONG, SNARE = 9, 10, 11, 12, 13, 14
 
 
 # ----------------------------------------------------------------------
@@ -234,7 +306,25 @@ def cell(note=None, instrument=0, effect=0, param=0):
     return bytes((b0, b1, b2, param & 0xff))
 
 
+# Les effets ProTracker dont on se sert, nommes une fois pour toutes.
+FX_ARP, FX_UP, FX_DOWN, FX_PORTA = 0x0, 0x1, 0x2, 0x3
+FX_VIB, FX_PORTAVOL, FX_VIBVOL, FX_TREM = 0x4, 0x5, 0x6, 0x7
+FX_OFFSET, FX_VOLSLIDE, FX_JUMP, FX_VOL = 0x9, 0xa, 0xb, 0xc
+FX_BREAK, FX_EXT, FX_SPEED = 0xd, 0xe, 0xf
+E_FINEUP, E_FINEDOWN = 0x10, 0x20            # quartet haut de Exy
+E_RETRIG, E_FINEVOLUP, E_FINEVOLDN = 0x90, 0xa0, 0xb0
+E_CUT, E_DELAY, E_PATTDELAY = 0xc0, 0xd0, 0xe0
+
+
 def build_pattern(section, theme, *, opening=False, roll=False, plucks=False):
+    """Un motif du donjon.
+
+    Le replayer ne connaissait que neuf effets, et la partition n'en
+    utilisait que six : des notes posees, tenues, et rien entre les
+    deux. Il en connait maintenant vingt-trois, et l'ecriture s'en sert
+    -- le cor vibre sur ses tenues, le bourdon tremble, la percussion
+    se relance au lieu d'etre reecrite ligne par ligne, et les phrases
+    se ferment sur un decrescendo."""
     rows = [[cell() for _ in range(4)] for _ in range(64)]
     for bar, (bass, chord) in enumerate(section):
         base = bar * 16
@@ -242,22 +332,36 @@ def build_pattern(section, theme, *, opening=False, roll=False, plucks=False):
             row = base + step
 
             # voie 1 : la basse, refrappee au debut de la mesure, a
-            # mi-mesure, puis une note d'approche avant la suivante
+            # mi-mesure, puis une note d'approche avant la suivante.
+            # Un tremolo tres lent la fait respirer sous le reste.
             if step == 0:
                 rows[row][0] = cell(bass[0], DRONE)
+            elif step == 3:
+                rows[row][0] = cell(None, 0, FX_TREM, 0x23)
             elif step == 8:
                 rows[row][0] = cell(bass[1], DRONE)
             elif step == 14:
-                rows[row][0] = cell(bass[2], DRONE)
+                rows[row][0] = cell(bass[2], VIOL)
 
-            # voie 2 : le cor
+            # voie 2 : le cor. Une note qui dure plus de trois pas prend
+            # un vibrato : c'est ce qui separe une tenue d'une orgue.
             note = theme[bar][step]
             if note:
+                held = 1
+                while step + held < 16 and not theme[bar][step + held]:
+                    held += 1
                 rows[row][1] = cell(note, HORN)
+                if held >= 4 and step + 2 < 16:
+                    rows[base + step + 2][1] = cell(None, 0, FX_VIB, 0x35)
+                if held >= 6 and step + held - 1 < 16:
+                    rows[base + step + held - 1][1] = cell(
+                        None, 0, FX_VOLSLIDE, 0x02)
 
             # voie 3 : choeur en accords tenus, cordes en arpege
             if step == 0:
                 rows[row][2] = cell(chord[0], CHOIR)
+            elif step == 2:
+                rows[row][2] = cell(None, 0, FX_VIB, 0x24)
             elif step == 4:
                 rows[row][2] = cell(chord[1], STR)
             elif step == 10:
@@ -269,18 +373,26 @@ def build_pattern(section, theme, *, opening=False, roll=False, plucks=False):
             # cette voie et ne doivent pas couper une note tenue
             if step == 0:
                 rows[row][3] = cell("C-2", TAIKO)
+            elif step == 6:
+                rows[row][3] = cell("G-1", TIMB)
             elif step == 8:
                 rows[row][3] = cell("C-2", TIMB)
-            elif step in (6, 11):
-                rows[row][3] = cell("G-1", TIMB)
+            elif step == 11:
+                # un coup double : la seconde frappe part au tic 3 de la
+                # ligne au lieu d'occuper une ligne de plus
+                rows[row][3] = cell("G-1", TIMB, FX_EXT, E_DELAY | 3)
 
         if roll and bar == 3:                     # roulement de fin de phrase
-            for k, step in enumerate((12, 13, 14, 15)):
-                rows[base + step][3] = cell("G-1" if k % 2 else "C-2", TIMB)
+            rows[base + 12][3] = cell("D-2", SNARE, FX_EXT, E_RETRIG | 2)
+            rows[base + 14][3] = cell("D-2", SNARE, FX_EXT, E_RETRIG | 1)
+            rows[base + 15][3] = cell("C-2", TAIKO)
 
     if opening:
-        rows[0][3] = cell("C-2", CYM)             # coup de cymbale d'entree
-    rows[0][0] = cell(section[0][0][0], DRONE, 0xF, 8)   # tempo : large
+        # La cymbale, prise un peu apres son attaque : moins de choc, et
+        # la traine arrive plus vite.
+        rows[0][3] = cell("C-2", CYM, FX_OFFSET, 0x02)
+        rows[1][2] = cell(None, 0, FX_EXT, E_FINEVOLUP | 4)
+    rows[0][0] = cell(section[0][0][0], DRONE, FX_SPEED, 8)   # tempo : large
     return rows
 
 
@@ -332,7 +444,12 @@ TITLE_THEMES = [
 
 def build_title_pattern(section, theme, opening=False):
     """Un motif d'accueil : une note tenue par voie et par demi-mesure,
-    et la percussion reduite a une frappe sourde en tete de phrase."""
+    et la percussion reduite a une frappe sourde en tete de phrase.
+
+    C'est ici que les tenues comptent le plus : sans vibrato ni enflure,
+    un accord tenu douze pas sonne comme un orgue de foire. Le fifre
+    prend le theme dans l'aigu, l'orgue tient sous lui, et la cloche
+    ouvre la piece."""
     rows = [[cell() for _ in range(4)] for _ in range(64)]
     for bar, (bass, chord) in enumerate(section):
         base = bar * 16
@@ -340,25 +457,45 @@ def build_title_pattern(section, theme, opening=False):
             row = base + step
             if step == 0:                        # basse : la fondamentale
                 rows[row][0] = cell(bass[0], DRONE)
+            elif step == 4:                      # qui enfle doucement
+                rows[row][0] = cell(None, 0, FX_EXT, E_FINEVOLUP | 3)
             elif step == 10:                     # puis une note d'appui
-                rows[row][0] = cell(bass[1], DRONE)
+                rows[row][0] = cell(bass[1], VIOL)
+            elif step == 14:
+                rows[row][0] = cell(None, 0, FX_VOLSLIDE, 0x01)
 
             note = theme[bar][step]
             if note:
-                rows[row][1] = cell(note, HORN)
+                held = 1
+                while step + held < 16 and not theme[bar][step + held]:
+                    held += 1
+                rows[row][1] = cell(note, FLUTE if bar % 2 else HORN)
+                if held >= 4 and step + 3 < 16:
+                    rows[base + step + 3][1] = cell(None, 0, FX_VIB, 0x24)
+                if held >= 7 and step + held - 2 < 16:
+                    rows[base + step + held - 2][1] = cell(
+                        None, 0, FX_VOLSLIDE, 0x01)
 
-            if step == 0:                        # choeur tenu
+            if step == 0:                        # choeur tenu, puis orgue
                 rows[row][2] = cell(chord[0], CHOIR)
+            elif step == 3:
+                rows[row][2] = cell(None, 0, FX_VIB, 0x13)
             elif step == 8:                      # cordes a mi-mesure
-                rows[row][2] = cell(chord[2], STR)
+                rows[row][2] = cell(chord[2], ORGAN)
             elif step == 13 and bar % 2 == 1:
                 rows[row][2] = cell(chord[1], HARP)
 
             if step == 0 and bar % 2 == 0:       # une frappe par phrase
                 rows[row][3] = cell("C-2", TAIKO)
+            elif step == 12 and bar == 3:        # et le gong de la cadence
+                rows[row][3] = cell("C-1", GONG)
     if opening:
-        rows[0][3] = cell("C-2", CYM)
-    rows[0][0] = cell(section[0][0][0], DRONE, 0xF, 12)  # tres lent
+        rows[0][3] = cell("C-2", BELL)           # la cloche du portail
+        rows[8][3] = cell("G-2", BELL, FX_VOLSLIDE, 0x01)
+    # La derniere mesure s'elargit : deux lignes tenues valent un
+    # ralenti sans toucher au tempo.
+    rows[60][0] = cell(None, 0, FX_EXT, E_PATTDELAY | 1)
+    rows[0][0] = cell(section[0][0][0], DRONE, FX_SPEED, 12)  # tres lent
     return rows
 
 

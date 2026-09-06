@@ -188,6 +188,7 @@ UI_MAP		= 5
 UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
+
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
 MAP_X		= 2			; carte : colonne octet du coin
@@ -228,7 +229,20 @@ LOG_Y		= 160
 LOG_H		= 96
 LOGLINES	= 4
 LOGWIDTH	= 36
-COPSIZE		= 2600			; 8 banques de palette + pointeurs + fin
+
+; Ou la souris tombe. Ce sont les bornes que les panneaux dessinent
+; deja : elles vivent ici pour qu'un clic et un pixel s'accordent.
+VIEW_L		= 16
+VIEW_R		= 208
+VIEW_T		= 16
+VIEW_B		= 152
+PANEL_TOP	= 12			; premier bloc d'aventurier
+PANEL_STEP	= 37			; hauteur d'un bloc
+PANEL_BOT	= 160
+SPELLROW_Y	= 40			; premiere ligne du menu de sorts
+RIDDLEROW_Y	= 60			; premiere reponse d'une enigme
+COPSIZE		= 12000			; palette, sprites, et le degrade
+					; de profondeur, ligne par ligne
 
 ;======================================================================
 	SECTION	crawl,CODE
@@ -275,10 +289,19 @@ Start:
 	move.w	#PHASE_TITLE,Phase	; on arrive par l'accueil
 	move.w	#1,OptMusic
 	move.w	#1,OptSfx
+	move.w	#MOUSE_W/2,MouseX	; le pointeur demarre au centre
+	move.w	#MOUSE_H/2,MouseY
+	move.w	JOY0DAT(a5),d0		; caler les compteurs, sinon le premier
+	move.w	d0,d1			; ecart serait celui d'une machine
+	and.w	#$00ff,d1		; allumee il y a longtemps
+	move.w	d1,MouseRawX
+	lsr.w	#8,d0
+	move.w	d0,MouseRawY
+	bsr	MoveSprite
 	move.w	#-1,CurMusic		; l'accueil a sa propre musique
 	moveq	#0,d0
 	bsr	PlayMusic
-	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
+	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO|DMAF_SPRITE,DMACON(a5)
 
 	bsr	Redraw
 	bsr	SwapBuffers
@@ -293,6 +316,7 @@ Start:
 ;----------------------------------------------------------------------
 MainLoop:
 	bsr	WaitVBlank
+	bsr	SurfFlicker		; la torche respire, sans un blit
 	move.w	VHPOSR+CUSTOM,d0	; le balayage brasse le hasard : sans
 	eor.w	d0,RngSeed+2		; cela, chaque partie serait identique
 	bsr	MusicPoll
@@ -313,6 +337,8 @@ MainLoop:
 	move.w	d0,AnimFrame
 	move.w	#1,NeedRedraw
 .noAnim:
+	bsr	ReadMouse
+	bsr	MouseAct
 	bsr	PollKey
 	tst.w	d0
 	bmi.s	.noKey
@@ -444,6 +470,293 @@ SfxPlay:
 .off:
 	rts
 
+;----------------------------------------------------------------------
+; La souris
+;
+; JOY0DAT tient deux compteurs de huit bits qui tournent en rond : on
+; ne lit pas une position mais une difference depuis la derniere image.
+; Il faut donc etendre le signe du huitieme bit, sans quoi un mouvement
+; vers la gauche se lit comme un bond de 255 pixels vers la droite.
+;----------------------------------------------------------------------
+MOUSE_W		= 320
+MOUSE_H		= 256
+SPR_HSTART	= $81			; premier pixel affiche, cf. DIWSTRT
+SPR_VSTART	= $2c
+
+ReadMouse:
+	movem.l	d0-d4/a5,-(sp)
+	lea	CUSTOM,a5
+	move.w	JOY0DAT(a5),d0
+	move.w	d0,d1
+	and.w	#$00ff,d1		; compteur horizontal
+	lsr.w	#8,d0			; compteur vertical
+	move.w	d1,d2
+	sub.w	MouseRawX,d2
+	move.w	d0,d3
+	sub.w	MouseRawY,d3
+	move.w	d1,MouseRawX
+	move.w	d0,MouseRawY
+	bsr	MouseWrap		; d2 : -128..127
+	move.w	d2,d4
+	move.w	d3,d2
+	bsr	MouseWrap
+	move.w	d2,d3
+
+	move.w	MouseX,d0
+	add.w	d4,d0
+	bpl.s	.xLow
+	moveq	#0,d0
+.xLow:
+	cmp.w	#MOUSE_W-1,d0
+	ble.s	.xOk
+	move.w	#MOUSE_W-1,d0
+.xOk:
+	move.w	d0,MouseX
+	move.w	MouseY,d0
+	add.w	d3,d0
+	bpl.s	.yLow
+	moveq	#0,d0
+.yLow:
+	cmp.w	#MOUSE_H-1,d0
+	ble.s	.yOk
+	move.w	#MOUSE_H-1,d0
+.yOk:
+	move.w	d0,MouseY
+
+	moveq	#0,d0			; --- boutons
+	btst	#6,CIAAPRA		; gauche : le CIA, 0 = appuye
+	bne.s	.noLeft
+	moveq	#1,d0
+.noLeft:
+	move.w	POTGOR(a5),d1		; droit : POTGOR bit 10, 0 = appuye
+	btst	#10,d1
+	bne.s	.noRight
+	or.w	#2,d0
+.noRight:
+	move.w	MouseBtn,d1
+	move.w	d0,MouseBtn
+	not.w	d1			; ce qui vient d'etre presse
+	and.w	d0,d1
+	or.w	d1,MouseHit
+	bsr	MoveSprite
+	movem.l	(sp)+,d0-d4/a5
+	rts
+
+MouseWrap:				; d2 : 0..255 tournant -> -128..127
+	and.w	#$00ff,d2
+	cmp.w	#128,d2
+	blt.s	.done
+	sub.w	#256,d2
+.done:
+	rts
+
+; MoveSprite : pose les deux mots de controle du sprite 0. VSTART et
+; VSTOP portent chacun un neuvieme bit dans SPRxCTL, et HSTART son bit
+; zero : c'est la seule subtilite du format.
+MoveSprite:
+	movem.l	d0-d3/a0,-(sp)
+	lea	MousePointer,a0
+	move.w	MouseY,d0
+	add.w	#SPR_VSTART,d0		; VSTART
+	move.w	d0,d1
+	add.w	#POINTER_H,d1		; VSTOP
+	move.w	MouseX,d2
+	add.w	#SPR_HSTART,d2		; HSTART
+	move.w	d0,d3
+	lsl.w	#8,d3
+	move.w	d2,-(sp)
+	lsr.w	#1,d2
+	and.w	#$00ff,d2
+	or.w	d2,d3
+	move.w	d3,(a0)			; SPR0POS
+	move.w	(sp)+,d2
+	move.w	d1,d3
+	lsl.w	#8,d3
+	btst	#8,d0			; VSTART bit 8 -> bit 2
+	beq.s	.noV8
+	or.w	#$0004,d3
+.noV8:
+	btst	#8,d1			; VSTOP bit 8 -> bit 1
+	beq.s	.noS8
+	or.w	#$0002,d3
+.noS8:
+	btst	#0,d2			; HSTART bit 0 -> bit 0
+	beq.s	.noH0
+	or.w	#$0001,d3
+.noH0:
+	move.w	d3,2(a0)		; SPR0CTL
+	movem.l	(sp)+,d0-d3/a0
+	rts
+
+
+;----------------------------------------------------------------------
+; MouseAct : ce qu'un clic veut dire, selon l'endroit
+;
+; Plutot que de doubler la logique du clavier, un clic se traduit en
+; touche et repart dans HandleKey : tout ce qui vaut pour l'une vaut
+; pour l'autre, y compris le redessin.
+;----------------------------------------------------------------------
+MouseAct:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	MouseHit,d7
+	beq	.done
+	clr.w	MouseHit
+	cmp.w	#PHASE_PLAY,Phase	; l'accueil et la creation restent au
+	bne	.done			; clavier : trop peu de cibles
+	tst.w	GameOver
+	bne	.done
+	move.w	MouseX,d5
+	move.w	MouseY,d6
+
+	cmp.w	#PANEL_X-4,d5		; --- le panneau du groupe : un clic
+	blt.s	.notParty		; sur un bloc choisit ce heros
+	cmp.w	#PANEL_BOT,d6
+	bge	.done
+	move.w	d6,d0
+	sub.w	#PANEL_TOP,d0
+	bmi	.done
+	and.l	#$0000ffff,d0
+	divu.w	#PANEL_STEP,d0
+	and.l	#$0000ffff,d0
+	cmp.w	#NHEROES,d0
+	bge	.done
+	add.w	#KEY_1,d0
+	bsr	HandleKey
+	bra	.done
+
+.notParty:
+	cmp.w	#VIEW_L,d5		; hors de la vue : rien a faire
+	blt	.done
+	cmp.w	#VIEW_R,d5
+	bge	.done
+	cmp.w	#VIEW_T,d6
+	blt	.done
+	cmp.w	#VIEW_B,d6
+	bge	.done
+
+	move.w	UiMode,d4
+	bne	.panel
+
+	btst	#1,d7			; --- la vue. Le bouton droit agit :
+	beq.s	.viewLeft		; il ne quitte pas le jeu, ce serait
+	moveq	#KEY_SPACE,d0		; trop facile a faire par megarde
+	bsr	HandleKey
+	bra	.done
+.viewLeft:
+	tst.w	InCombat		; en combat, cliquer c'est frapper
+	beq.s	.viewMove
+	moveq	#KEY_A_QW,d0
+	bsr	HandleKey
+	bra	.done
+.viewMove:
+	move.w	d5,d1			; la rose des vents : trois colonnes,
+	sub.w	#VIEW_L,d1		; trois rangees
+	cmp.w	#(VIEW_R-VIEW_L)/3,d1
+	blt.s	.colLeft
+	cmp.w	#2*(VIEW_R-VIEW_L)/3,d1
+	bge.s	.colRight
+	move.w	d6,d1
+	sub.w	#VIEW_T,d1
+	cmp.w	#(VIEW_B-VIEW_T)/3,d1
+	blt.s	.fwd
+	cmp.w	#2*(VIEW_B-VIEW_T)/3,d1
+	blt.s	.act
+	moveq	#KEY_DOWN,d0
+	bra.s	.hit
+.fwd:
+	moveq	#KEY_UP,d0
+	bra.s	.hit
+.act:
+	moveq	#KEY_SPACE,d0
+	bra.s	.hit
+.colLeft:
+	moveq	#KEY_LEFT,d0
+	bra.s	.hit
+.colRight:
+	moveq	#KEY_RIGHT,d0
+.hit:
+	bsr	HandleKey
+	bra	.done
+
+.panel:
+	btst	#1,d7			; bouton droit : refermer
+	beq.s	.panelLeft
+	moveq	#KEY_ESC,d0
+	bsr	HandleKey
+	bra	.done
+.panelLeft:
+	cmp.w	#UI_SPELL,d4		; ces deux-la se repondent au chiffre
+	beq.s	.digits
+	cmp.w	#UI_RIDDLE,d4
+	beq.s	.digits
+	lea	PanelHit,a3		; les listes a curseur
+.seek:
+	move.w	(a3),d0
+	beq	.done			; panneau sans liste
+	cmp.w	d4,d0
+	beq.s	.found
+	lea	ph_SIZEOF(a3),a3
+	bra.s	.seek
+.found:
+	move.w	d6,d0
+	move.w	ph_First(a3),d1
+	move.w	ph_Step(a3),d2
+	bsr	MouseRow
+	tst.w	d0
+	bmi	.done
+	cmp.w	ph_Count(a3),d0
+	bge	.done
+	move.l	ph_Top(a3),a0
+	add.w	(a0),d0			; la liste peut avoir defile
+	move.l	ph_Cursor(a3),a1
+	cmp.w	(a1),d0			; deja sous le curseur : on conclut
+	beq.s	.confirm
+	move.w	d0,(a1)
+	move.w	#1,NeedRedraw
+	bra.s	.done
+.confirm:
+	move.w	ph_Key(a3),d0
+	beq.s	.done
+	bsr	HandleKey
+	bra.s	.done
+.digits:
+	move.w	d6,d0
+	move.w	#SPELLROW_Y,d1
+	moveq	#11,d2
+	cmp.w	#UI_SPELL,d4
+	beq.s	.rowGo
+	move.w	#RIDDLEROW_Y,d1
+	moveq	#12,d2
+.rowGo:
+	bsr	MouseRow
+	tst.w	d0
+	bmi.s	.done
+	cmp.w	#SPELLMENU,d0
+	bge.s	.done
+	add.w	#KEY_1,d0
+	bsr	HandleKey
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; MouseRow : d0 = ordonnee du clic, d1 = premiere ligne, d2 = pas
+;         -> d0 = numero de ligne, ou -1 si le clic tombe entre deux
+MouseRow:
+	sub.w	d1,d0
+	bmi.s	.none
+	and.l	#$0000ffff,d0
+	divu.w	d2,d0
+	move.l	d0,d1
+	swap	d1
+	cmp.w	#8,d1			; le texte ne fait que huit pixels
+	bge.s	.none
+	and.l	#$0000ffff,d0
+	rts
+.none:
+	moveq	#-1,d0
+	rts
+
+
 RasterWait:				; environ deux lignes
 	movem.l	d0-d1/a6,-(sp)
 	lea	CUSTOM,a6
@@ -478,7 +791,7 @@ InitScreen:
 	move.w	#BPLCON3,(a2)+
 	move.w	#$0000,(a2)+
 	move.w	#BPLCON4,(a2)+
-	move.w	#$0011,(a2)+
+	move.w	#$00ff,(a2)+		; ESPRM/OSPRM = $f : couleurs $f0-$ff
 	move.w	#DIWSTRT,(a2)+
 	move.w	#$2c81,(a2)+
 	move.w	#DIWSTOP,(a2)+
@@ -491,6 +804,22 @@ InitScreen:
 	move.w	#$0000,(a2)+
 	move.w	#BPL2MOD,(a2)+
 	move.w	#$0000,(a2)+
+
+	move.w	#SPR0PTH,d1		; sprite 0 : le pointeur ; les sept
+	moveq	#7,d2			; autres pointent sur deux zeros
+	lea	MousePointer,a3
+.sprLoop:
+	move.l	a3,d0
+	move.w	d1,(a2)+
+	swap	d0
+	move.w	d0,(a2)+
+	addq.w	#2,d1
+	swap	d0
+	move.w	d1,(a2)+
+	move.w	d0,(a2)+
+	addq.w	#2,d1
+	lea	NullSprite,a3
+	dbf	d2,.sprLoop
 
 	move.l	a2,CopBplPtrs
 	move.w	#BPL1PTH,d1
@@ -539,6 +868,40 @@ InitScreen:
 	blt.s	.bankLoop
 	move.w	#BPLCON3,(a2)+
 	move.w	#$0000,(a2)+		; retour banque 0, LOCT = 0
+
+	; --- Le degrade de profondeur du sol et de la voute.
+	;
+	; La gamme de pierre compte vingt teintes : la profondeur s'y
+	; lisait en vingt marches sur cinquante-sept lignes, et le
+	; dallage montrait des bandes. Le sol et la voute ne portent plus
+	; que leur variation locale -- joint, usure, mousse, suie -- sur
+	; douze cases, et le copper reecrit ces douze cases toutes les
+	; deux lignes. Il y a donc soixante-huit profondeurs a l'ecran la
+	; ou la palette n'en tient que vingt, et les douze cases ne
+	; coutent rien au reste du decor.
+	move.l	a2,CopSurf		; on y revient a chaque trame
+	lea	SurfGradient,a3
+	moveq	#0,d3
+.surfLoop:
+	move.w	d3,d4
+	mulu.w	#SURF_LINES,d4
+	add.w	#SURF_FIRST+SPR_VSTART,d4
+	lsl.w	#8,d4
+	or.w	#$0001,d4		; WAIT en debut de ligne
+	move.w	d4,(a2)+
+	move.w	#$fffe,(a2)+
+	move.w	#BPLCON3,(a2)+
+	move.w	#$e000,(a2)+		; banque 7, quartets hauts
+	bsr	CopSurfBlock
+	move.w	#BPLCON3,(a2)+
+	move.w	#$e200,(a2)+		; banque 7, LOCT : quartets bas
+	bsr	CopSurfBlock
+	addq.w	#1,d3
+	cmp.w	#SURF_BLOCKS,d3
+	blt	.surfLoop
+	move.w	#BPLCON3,(a2)+
+	move.w	#$0000,(a2)+
+
 	move.l	#$fffffffe,(a2)+
 
 	bsr	SetBplPtrs
@@ -546,6 +909,72 @@ InitScreen:
 	move.l	#CopList,COP1LCH(a5)
 	move.w	d0,COPJMP1(a5)
 	rts
+
+; CopSurfBlock : douze paires registre/couleur, a3 lisant le degrade
+CopSurfBlock:
+	movem.l	d1-d2,-(sp)
+	move.w	#COLOR00+2*(C_SURF-224),d1
+	moveq	#N_SURF-1,d2
+.loop:
+	move.w	d1,(a2)+
+	move.w	(a3)+,(a2)+
+	addq.w	#2,d1
+	dbf	d2,.loop
+	movem.l	(sp)+,d1-d2
+	rts
+
+; SurfFlicker : fait respirer la lumiere de la torche.
+;
+; Le decor ne bouge pas d'un pixel : on ne recopie que les valeurs de
+; couleur dans la copperlist, en piochant dans l'une des clartes
+; preparees. Mille six cent trente-deux mots par trame, ecrits juste
+; apres le retour trame -- le copper ne relira le degrade qu'a la ligne
+; soixante.
+SurfFlicker:
+	movem.l	d0-d3/a0-a1,-(sp)
+	bsr	Rnd			; une marche au hasard, bornee : une
+	and.w	#3,d0			; flamme ne saute pas d'un extreme
+	cmp.w	#3,d0			; a l'autre. Le pas doit etre centre,
+	bne.s	.step			; sinon la marche derive vers le haut
+	moveq	#1,d0			; et s'y colle
+.step:
+	subq.w	#1,d0			; -1, 0 ou +1
+	add.w	SurfPhase,d0
+	bpl.s	.notLow
+	moveq	#0,d0
+.notLow:
+	cmp.w	#SURF_VARIANTS,d0
+	blt.s	.inRange
+	move.w	#SURF_VARIANTS-1,d0
+.inRange:
+	cmp.w	SurfPhase,d0
+	beq.s	.done			; rien de neuf : on ne recopie pas
+	move.w	d0,SurfPhase
+	mulu.w	#SURF_VARSIZE*2,d0
+	lea	SurfGradient,a0
+	add.l	d0,a0
+	move.l	CopSurf,d1
+	beq.s	.done
+	move.l	d1,a1
+	move.w	#SURF_BLOCKS-1,d3
+.block:
+	addq.l	#8,a1			; le WAIT et le BPLCON3
+	moveq	#N_SURF-1,d2
+.hi:
+	addq.l	#2,a1			; le numero de registre ne change pas
+	move.w	(a0)+,(a1)+
+	dbf	d2,.hi
+	addq.l	#4,a1			; le BPLCON3 qui arme LOCT
+	moveq	#N_SURF-1,d2
+.lo:
+	addq.l	#2,a1
+	move.w	(a0)+,(a1)+
+	dbf	d2,.lo
+	dbf	d3,.block
+.done:
+	movem.l	(sp)+,d0-d3/a0-a1
+	rts
+
 
 SetBplPtrs:
 	movem.l	d0-d2/a0-a1,-(sp)
@@ -6223,6 +6652,36 @@ ShopTable:
 	even
 
 
+; Les panneaux en liste, pour la souris : ecran, premiere ligne, pas,
+; nombre de lignes visibles, curseur, premiere ligne affichee, et la
+; touche qu'un second clic sur la meme ligne envoie.
+ph_Mode		= 0
+ph_First	= 2
+ph_Step		= 4
+ph_Count	= 6
+ph_Cursor	= 8
+ph_Top		= 12
+ph_Key		= 16
+ph_SIZEOF	= 20
+
+PanelHit:
+	dc.w	UI_INV,34,11,8
+	dc.l	InvCursor,InvTop
+	dc.w	KEY_U,0
+	dc.w	UI_SHOP,34,11,SHOPROWS
+	dc.l	ShopCursor,ShopTop
+	dc.w	KEY_RETURN,0
+	dc.w	UI_BOOK,32,10,BOOKROWS
+	dc.l	BookCursor,BookTop
+	dc.w	0,0
+	dc.w	UI_OPTS,44,18,OPTROWS
+	dc.l	OptCursor,ZeroWord
+	dc.w	KEY_RETURN,0
+	dc.w	0,0,0,0
+	dc.l	0,0
+	dc.w	0,0
+ZeroWord:	dc.w	0
+
 ; Ce qu'une partie contient : adresse et longueur de chaque bloc.
 SaveList:
 	dc.l	PosX,12			; PosX, PosY, Dir, Level, Gold, KeyCount
@@ -6233,6 +6692,8 @@ SaveList:
 	dc.l	MapSeen,MAPBYTES
 	dc.l	ShopStock,NSHOP
 	dc.l	0,0
+
+	include	"surfgrad.i"
 
 OptNames:
 	dc.l	TxtOptMusic,TxtOptSfx,TxtOptKb,TxtOptSave,TxtOptTitleBack
@@ -6504,6 +6965,11 @@ TxtHelpShop:	dc.b	"FLECHES  TAB COTE  ENTREE  ESC SORT",0
 	SECTION	crawlchip,DATA_C	; blitter et Paula : Chip RAM
 ;======================================================================
 
+	include	"pointer.i"		; sprite 0 : le pointeur de souris
+NullSprite:				; les sept autres, eteints
+	dc.w	$0000,$0000
+	even
+
 DgnArt:
 	incbin	"data/dgnart.bin"
 	even
@@ -6552,6 +7018,14 @@ OptCursor:	ds.w	1
 OptMusic:	ds.w	1
 OptSfx:	ds.w	1
 CurMusic:	ds.w	1
+CopSurf:	ds.l	1
+SurfPhase:	ds.w	1
+MouseX:	ds.w	1
+MouseY:	ds.w	1
+MouseRawX:	ds.w	1
+MouseRawY:	ds.w	1
+MouseBtn:	ds.w	1
+MouseHit:	ds.w	1
 ShopMode:	ds.w	1
 ShopCursor:	ds.w	1
 ShopTop:	ds.w	1

@@ -245,18 +245,18 @@ DgnPalette:
 	dc.w	$0000,$0000		; couleur 238
 	dc.w	$0000,$0000		; couleur 239
 	dc.w	$0000,$0000		; couleur 240
-	dc.w	$0000,$0000		; couleur 241
-	dc.w	$0000,$0000		; couleur 242
-	dc.w	$0000,$0000		; couleur 243
-	dc.w	$0000,$0000		; couleur 244
-	dc.w	$0000,$0000		; couleur 245
-	dc.w	$0000,$0000		; couleur 246
-	dc.w	$0000,$0000		; couleur 247
-	dc.w	$0000,$0000		; couleur 248
-	dc.w	$0000,$0000		; couleur 249
-	dc.w	$0000,$0000		; couleur 250
-	dc.w	$0000,$0000		; couleur 251
-	dc.w	$0000,$0000		; couleur 252
-	dc.w	$0000,$0000		; couleur 253
-	dc.w	$0000,$0000		; couleur 254
-	dc.w	$0000,$0000		; couleur 255
+	dc.w	$0feb,$0f84		; couleur 241
+	dc.w	$0211,$0080		; couleur 242
+	dc.w	$0c83,$06a0		; couleur 243
+	dc.w	$0666,$0c93		; couleur 244
+	dc.w	$0655,$01ea		; couleur 245
+	dc.w	$0555,$0642		; couleur 246
+	dc.w	$0444,$0978		; couleur 247
+	dc.w	$0334,$0fe1		; couleur 248
+	dc.w	$0333,$0449		; couleur 249
+	dc.w	$0223,$0dd2		; couleur 250
+	dc.w	$0222,$056b		; couleur 251
+	dc.w	$0211,$02a2		; couleur 252
+	dc.w	$0110,$061c		; couleur 253
+	dc.w	$0131,$0b29		; couleur 254
+	dc.w	$0121,$0342		; couleur 255

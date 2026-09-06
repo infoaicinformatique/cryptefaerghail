@@ -152,6 +152,27 @@ class Game(R.Harness):
         return (top <= pc < end and self.w("NeedRedraw") == 0
                 and self.w("DrawReady") == 0)
 
+    def mouse_to(self, x, y):
+        """Amene le pointeur en (x,y). On ne peut pas l'y poser : le jeu
+        ne lit que des ecarts de quadrature, comme sur la machine."""
+        for _ in range(90):
+            dx = max(-100, min(100, x - self.w("MouseX")))
+            dy = max(-100, min(100, y - self.w("MouseY")))
+            if not dx and not dy:
+                return True
+            self.mouse_move(dx, dy)
+            self.run(slices=3)
+        return (self.w("MouseX"), self.w("MouseY")) == (x, y)
+
+    def click(self, x, y, button=1, slices=80):
+        """Un clic complet : on vise, on presse, on relache."""
+        self.mouse_to(x, y)
+        self.mouse_button(button)
+        self.run(slices=4)
+        self.mouse_button(0)
+        err = self.run(slices=slices, idle=self.idle)
+        assert err is None or "termine" in err, err
+
     def key(self, code, slices=80):
         self.press(code)
         err = self.run(slices=slices, idle=self.idle)
@@ -163,6 +184,7 @@ class Game(R.Harness):
 
 
 MAPH = 24
+PANEL_X, PANEL_TOP, PANEL_STEP = 224, 12, 37
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
 T_WALL, T_NICHE, T_LEVER, T_GATE = 1, 5, 7, 8
 T_SHOP, T_TRAP = 9, 10
@@ -389,15 +411,18 @@ def trap_test(g, fails):
     # detection l'emporte presque toujours, et la moitie du mecanisme
     # ne serait jamais eprouvee. Enjamber sciemment une dalle reperee
     # est un vrai chemin du jeu, et il passe par SpringTrap.
+    # On pose la dalle nous-memes, a cote du groupe : la phase
+    # precedente peut avoir desamorce toutes celles du niveau, et
+    # l'epreuve ne doit pas dependre de ce qu'elle a laisse.
     grid = grid_of(g)
-    rest = [(x, y) for y in range(MAPH) for x in range(MAPW)
-            if grid[y][x] & 0x0f == T_TRAP]
+    here = (g.w("PosX"), g.w("PosY"))
+    rest = [(here[0] + dx, here[1] + dy) for dx, dy in DIRS
+            if 0 <= here[0] + dx < MAPW and 0 <= here[1] + dy < MAPH
+            and grid[here[1] + dy][here[0] + dx] == 0]
     for tx, ty in rest:
-        spot = [(tx + dx, ty + dy) for dx, dy in DIRS
-                if 0 <= tx + dx < MAPW and 0 <= ty + dy < MAPH
-                and grid[ty + dy][tx + dx] & 0x0f not in
-                (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_TRAP)]
-        if not spot or not walk_to(g, spot[0]) or not face_cell(g, (tx, ty)):
+        g.mem.w8(g.addr("MapTerrain") + ty * MAPW + tx, T_TRAP)
+        g.mem.w8(g.addr("MapParam") + ty * MAPW + tx, 1)   # lame de faux
+        if not face_cell(g, (tx, ty)):
             continue
         heal(g)
         par = g.addr("MapParam") + ty * MAPW + tx
@@ -417,6 +442,72 @@ def trap_test(g, fails):
         break
     else:
         check(False, "aucune dalle n'a pu etre enjambee sciemment", fails)
+
+
+def mouse_test(g, fails):
+    """Le pointeur suit-il, et un clic vaut-il la touche correspondante ?"""
+    for x, y in ((160, 80), (0, 0), (319, 255), (48, 130)):
+        check(g.mouse_to(x, y), f"le pointeur n'atteint pas {x},{y}", fails)
+    got = (g.w("MouseX"), g.w("MouseY"))
+    print(f"  le pointeur atteint les quatre coins, dernier {got}")
+
+    # Le sprite materiel doit suivre au pixel : VSTART et VSTOP portent
+    # chacun un neuvieme bit dans SPR0CTL, HSTART le sien.
+    g.mouse_to(100, 60)
+    ptr = g.addr("MousePointer")
+    pos, ctl = g.mem.r16(ptr), g.mem.r16(ptr + 2)
+    vstart = ((pos >> 8) & 0xff) | ((ctl & 4) << 6)
+    hstart = ((pos & 0xff) << 1) | (ctl & 1)
+    vstop = ((ctl >> 8) & 0xff) | ((ctl & 2) << 7)
+    check((hstart - 0x81, vstart - 0x2c) == (100, 60),
+          f"le sprite est en {hstart - 0x81},{vstart - 0x2c} et non 100,60",
+          fails)
+    check(vstop - vstart == 16, f"le sprite fait {vstop - vstart} lignes",
+          fails)
+    print(f"  sprite 0 pose en {hstart - 0x81},{vstart - 0x2c}, "
+          f"{vstop - vstart} lignes")
+
+    g.setw("UiMode", 0)                   # --- la rose des vents
+    g.setw("NeedRedraw", 1)
+    d0 = g.w("Dir")
+    g.click(40, 80)                       # colonne de gauche : tourner
+    check(g.w("Dir") == (d0 + 3) % 4, "cliquer a gauche ne tourne pas", fails)
+    g.click(190, 80)                      # colonne de droite
+    check(g.w("Dir") == d0, "cliquer a droite ne rend pas la direction",
+          fails)
+    before = (g.w("PosX"), g.w("PosY"))
+    for _ in range(4):                    # avancer : il faut regarder un
+        g.click(112, 30)                  # couloir, sinon on cogne un mur
+        if (g.w("PosX"), g.w("PosY")) != before:
+            break
+        g.click(190, 80)
+    moved = (g.w("PosX"), g.w("PosY")) != before
+    check(moved, "cliquer en haut de la vue ne fait jamais avancer", fails)
+    print(f"  rose des vents : {before} -> {(g.w('PosX'), g.w('PosY'))}")
+
+    for hero in (2, 0, 3):                # --- le panneau du groupe
+        g.click(PANEL_X + 40, PANEL_TOP + hero * PANEL_STEP + 8)
+        check(g.w("SelHero") == hero,
+              f"cliquer sur le bloc {hero} choisit {g.w('SelHero')}", fails)
+    print("  un clic sur un bloc choisit son aventurier")
+
+    g.key(K_I)                            # --- une liste : le sac
+    check(g.w("UiMode") == 2, "le sac ne s'ouvre pas", fails)
+    g.setw("InvTop", 0)
+    g.setw("InvCursor", 0)
+    g.setw("NeedRedraw", 1)
+    g.click(80, 34 + 3 * 11 + 2)          # quatrieme ligne
+    check(g.w("InvCursor") == 3,
+          f"le clic vise la ligne {g.w('InvCursor')} au lieu de 3", fails)
+    g.click(80, 34 + 1 * 11 + 2)
+    check(g.w("InvCursor") == 1,
+          f"le clic vise la ligne {g.w('InvCursor')} au lieu de 1", fails)
+    print("  dans une liste, le clic pose le curseur sur la bonne ligne")
+
+    g.click(80, 60, button=2)             # bouton droit : refermer
+    check(g.w("UiMode") == 0, f"le bouton droit ne referme pas "
+          f"(UiMode={g.w('UiMode')})", fails)
+    print("  le bouton droit referme le panneau")
 
 
 def heal(g):
@@ -564,6 +655,9 @@ if __name__ == "__main__":
 
     print("--- les pieges ---")
     trap_test(g, fails)
+
+    print("--- la souris ---")
+    mouse_test(g, fails)
 
     print("--- fuzzing clavier ---")
     allkeys = [K_UP, K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_A, K_S, K_F, K_I,

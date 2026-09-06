@@ -65,6 +65,21 @@ LEVIERS ET HERSES
   la herse retombe. La carte montre les herses fermees en gris de fer
   et les leviers en laiton.
 
+LA SOURIS
+  Le pointeur est un sprite du materiel : il ne coute rien et ne laisse
+  aucune trace. Dans la vue, l'ecran fait office de rose des vents --
+  cliquez en haut pour avancer, en bas pour reculer, a gauche ou a
+  droite pour tourner, au centre pour agir. En combat, cliquer c'est
+  frapper.
+
+  Un clic sur le bloc d'un aventurier le choisit. Dans une liste -- le
+  sac, l'echoppe, le grimoire, les reglages -- le premier clic pose le
+  curseur sur la ligne, le second conclut.
+
+  Le bouton droit referme un panneau. Dans la vue il agit, comme
+  ESPACE : il ne quitte pas le jeu, ce serait trop facile a faire par
+  megarde.
+
 L'ECHOPPE
   Un marchand par etage, scelle dans un mur comme une niche, jamais
   loin du depart. Mettez-vous face a son etal et pressez ESPACE. Huit

@@ -283,32 +283,119 @@ def make_background():
             gu = ((lat + 8.0) / slab) % 1.0
             gv = ((dist + 8.0) / slab) % 1.0
             edge = min(gu, gv, 1.0 - gu, 1.0 - gv)
-            # Le fond du couloir s'eteint, mais jamais tout a fait : un
-            # noir franc s'y lisait comme un trou rectangulaire.
-            t = min(0.93, torch(dist)) + 0.11 * min(1.0, abs(lat) / 3.0)
+            side = 0.11 * min(1.0, abs(lat) / 3.0)   # les bords s'eteignent
 
             if floor:
-                t += 0.05                            # le sol prend la lumiere
+                local = 0.05                         # le sol prend la lumiere
                 if edge < 0.05:                      # joint garni de terre
-                    p.set(x, y, pal.lit("EARTH", min(1.0, t + 0.36)))
+                    p.set(x, y, surf_earth(side))
                     continue
                 if abs(lat) < 0.55:                  # le passage, use et poli
-                    t -= 0.05
-                t += 0.06 * (noise(int(lat * 42), int(dist * 42), 21) - 0.5)
+                    local -= 0.05
+                local += 0.06 * (noise(int(lat * 42), int(dist * 42), 21) - 0.5)
                 if abs(lat) > 0.7 and \
                         noise(int(lat * 16), int(dist * 16), 23) > 0.90:
-                    p.set(x, y, pal.lit("MOSS", min(1.0, t + 0.22)))
+                    p.set(x, y, surf_moss(side))
                     continue
-                p.set(x, y, stone(max(0.0, min(1.0, t))))
             else:                                    # la voute
-                t += 0.24
+                local = 0.24
                 if edge < 0.06:                      # nervure, elle accroche
-                    t -= 0.09                        # la lumiere
-                t += 0.05 * (noise(int(lat * 38), int(dist * 38), 27) - 0.5)
+                    local -= 0.09                    # la lumiere
+                local += 0.05 * (noise(int(lat * 38), int(dist * 38), 27) - 0.5)
                 if noise(int(lat * 9), int(dist * 9), 29) > 0.90:
-                    t += 0.13                        # suie des torches
-                p.set(x, y, stone(max(0.0, min(1.0, t))))
+                    local += 0.13                    # suie des torches
+            p.set(x, y, surf_stone(local + side))
     return p
+
+
+# --- le degrade que le copper ecrit, ligne par ligne -------------------
+# Le sol et la voute ne portent plus leur profondeur dans la palette :
+# ils ne gardent que leur variation locale -- joint, usure, mousse,
+# suie, extinction laterale -- codee sur douze cases. Le copper reecrit
+# ces douze cases toutes les deux lignes avec la profondeur de la
+# ligne. La gamme de pierre en comptait vingt : la profondeur se lisait
+# en vingt marches sur cinquante-sept lignes. Elle en compte maintenant
+# autant que de lignes.
+SURF_STEP = 0.05                         # pas de la variation locale
+COP_BLOCK = 2                            # une reecriture toutes les N lignes
+# La torche ne brule pas d'un feu egal : on prepare quelques degrades a
+# des clartes voisines, et le jeu passe de l'un a l'autre au fil des
+# trames. Le decor ne bouge pas d'un pixel -- seule la lumiere respire.
+SURF_FLICKER = [0.0, -0.022, -0.040, -0.028, 0.014, 0.030]
+
+
+def surf_stone(local):
+    k = int(round(max(0.0, min(1.0, local)) / SURF_STEP))
+    return pal.one("SURF") + min(pal.NSURF_STONE - 1, k)
+
+
+def surf_earth(side):
+    return pal.one("SURF") + pal.NSURF_STONE + (1 if side > 0.05 else 0)
+
+
+def surf_moss(side):
+    return (pal.one("SURF") + pal.NSURF_STONE + pal.NSURF_EARTH
+            + (1 if side > 0.05 else 0))
+
+
+def surf_depth(y):
+    """La profondeur de la ligne y de la vue, sur la meme loi que les
+    murs : c'est ce qui fait tenir ensemble le sol, la voute et la
+    pierre d'en face."""
+    dy = abs(y - CY)
+    if dy < 2:
+        return 0.97
+    return min(0.93, torch(F / dy))
+
+
+def surf_gradient(boost=0.0):
+    """-> une entree par bloc de lignes : (premiere ligne, 12 couleurs).
+
+    `boost` eclaircit ou assombrit tout le degrade : c'est la flamme."""
+    out = []
+    for y0 in range(0, VIEW_H, COP_BLOCK):
+        base = max(0.0, min(1.0, surf_depth(y0 + COP_BLOCK // 2) + boost))
+        cols = []
+        for k in range(pal.NSURF_STONE):
+            cols.append(pal.dark("STONE", min(1.0, base + k * SURF_STEP)))
+        for k in range(pal.NSURF_EARTH):
+            cols.append(pal.dark("EARTH", min(1.0, base + 0.36 + k * 0.11)))
+        for k in range(pal.NSURF_MOSS):
+            cols.append(pal.dark("MOSS", min(1.0, base + 0.22 + k * 0.11)))
+        out.append((y0, cols))
+    return out
+
+
+def write_surfgrad(path):
+    grads = [surf_gradient(b) for b in SURF_FLICKER]
+    grad = grads[0]
+    with open(path, "w") as f:
+        f.write(";---------------------------------------------------------\n")
+        f.write("; surfgrad.i - GENERE PAR tools/gen_dungeon.py\n")
+        f.write("; Le degrade de profondeur du sol et de la voute, tel que le\n")
+        f.write("; copper le pose : un bloc de lignes, douze couleurs, chacune\n")
+        f.write("; sur deux mots -- quartets hauts puis bas, comme l'exige\n")
+        f.write("; LOCT.\n")
+        f.write(";---------------------------------------------------------\n\n")
+        f.write(f"SURF_BLOCKS\t= {len(grad)}\n")
+        f.write(f"SURF_LINES\t= {COP_BLOCK}\t\t; lignes par bloc\n")
+        f.write(f"SURF_FIRST\t= {VIEW_Y}\t\t; premiere ligne ecran\n")
+        f.write(f"SURF_VARIANTS\t= {len(grads)}\t\t; clartes de la flamme\n")
+        f.write(f"SURF_VARSIZE\t= {len(grad) * 2 * len(grad[0][1])}"
+                f"\t; mots par clarte\n\n")
+        f.write("SurfGradient:\n")
+        for v, (boost, one) in enumerate(zip(SURF_FLICKER, grads)):
+            f.write(f"; --- clarte {v} ({boost:+.3f})\n")
+            for y0, cols in one:
+                hi = ",".join(
+                    f"${((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4):04x}"
+                    for r, g, b in cols)
+                lo = ",".join(
+                    f"${((r & 15) << 8) | ((g & 15) << 4) | (b & 15):04x}"
+                    for r, g, b in cols)
+                f.write(f"\tdc.w\t{hi}\t; ligne {y0}, quartets hauts\n")
+                f.write(f"\tdc.w\t{lo}\t; et bas\n")
+    return len(grad)
 
 
 # --- ecran-titre ------------------------------------------------------
@@ -1261,6 +1348,64 @@ def build_art():
             pieces)
 
 
+
+# --- pointeur de souris, en sprite materiel ---------------------------
+# Une fleche de seize sur seize, deux bitplanes. Elle ne coute rien au
+# blitter ni au decor : Paula la superpose au balayage, et ses quatre
+# couleurs viennent du bloc $f0 que BPLCON4 lui reserve.
+POINTER = [
+    "1                ",
+    "12               ",
+    "132              ",
+    "1332             ",
+    "13332            ",
+    "133332           ",
+    "1333332          ",
+    "13333332         ",
+    "133333332        ",
+    "1333333332       ",
+    "13333222222      ",
+    "1332332          ",
+    "132 1332         ",
+    "12  1332         ",
+    "1    1332        ",
+    "      122        ",
+]
+
+
+def build_pointer():
+    """-> les deux plans du sprite, ligne par ligne."""
+    rows = []
+    for line in POINTER[:16]:
+        a = b = 0
+        for x in range(16):
+            c = line[x] if x < len(line) else " "
+            v = 0 if c == " " else int(c)
+            if v & 1:
+                a |= 0x8000 >> x
+            if v & 2:
+                b |= 0x8000 >> x
+        rows.append((a, b))
+    return rows
+
+
+def write_pointer(path):
+    rows = build_pointer()
+    with open(path, "w") as f:
+        f.write(";---------------------------------------------------------\n")
+        f.write("; pointer.i - GENERE PAR tools/gen_dungeon.py\n")
+        f.write("; Sprite 0 : le pointeur de souris. Deux mots de controle,\n")
+        f.write("; puis deux mots par ligne, puis deux zeros de fin.\n")
+        f.write(";---------------------------------------------------------\n\n")
+        f.write("MousePointer:\n")
+        f.write("\tdc.w\t$0000,$0000\t\t; SPR0POS / SPR0CTL, poses par le jeu\n")
+        for a, b in rows:
+            f.write(f"\tdc.w\t${a:04x},${b:04x}\n")
+        f.write("\tdc.w\t$0000,$0000\t\t; fin du sprite\n")
+        f.write(f"POINTER_H\t= {len(rows)}\n")
+    return len(rows)
+
+
 # --- donjon -------------------------------------------------------------
 MAPW = MAPH = 24
 FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
@@ -1684,6 +1829,8 @@ if __name__ == "__main__":
     open(os.path.join(ROOT, "data", "dgnmap.bin"), "wb").write(maps)
     write_palette(os.path.join(ROOT, "src", "dgnpal.i"))
     n = write_font8(os.path.join(ROOT, "src", "font8.i"))
+    ph = write_pointer(os.path.join(ROOT, "src", "pointer.i"))
+    sg = write_surfgrad(os.path.join(ROOT, "src", "surfgrad.i"))
     print(f"dgnart.bin : {len(pieces)} morceaux, {len(art)} octets")
     for i, (grid, par, start, stairs) in enumerate(levels):
         reach, _ = check_reachable(grid, start)
@@ -1693,3 +1840,5 @@ if __name__ == "__main__":
               f"{keys} cles, escalier {'direct' if direct else 'derriere une porte'}")
     print(f"dgnmap.bin : {len(levels)} niveaux, {len(maps)} octets")
     print(f"font8.i    : {n} glyphes")
+    print(f"pointer.i  : sprite de 16 x {ph}")
+    print(f"surfgrad.i : {sg} blocs de degrade, {sg * 12} couleurs par trame")

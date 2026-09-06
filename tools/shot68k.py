@@ -53,6 +53,86 @@ def read_palette():
 PALETTE = read_palette()
 
 
+def read_surf_gradient():
+    """Le degrade que le copper ecrit ligne par ligne.
+
+    Sans lui, une capture montrerait le sol et la voute dans les
+    couleurs de repli de la palette : plates, et fausses. Le materiel
+    reecrit ces douze registres toutes les SURF_LINES lignes ; on en
+    fait ici une table indexee par ligne d'ecran."""
+    src = open(os.path.join(ROOT, "src", "surfgrad.i")).read()
+
+    def equ(name):
+        m = re.search(r"^%s\s*=\s*(\d+)" % name, src, re.M)
+        return int(m.group(1))
+
+    blocks, lines, first = equ("SURF_BLOCKS"), equ("SURF_LINES"), equ("SURF_FIRST")
+    rows = [[int(v.lstrip("$"), 16) for v in m.group(1).split(",")]
+            for m in re.finditer(r"dc\.w\s+((?:\$[0-9a-f]{4},?)+)", src)]
+    grad = {}
+    for b in range(blocks):
+        hi, lo = rows[2 * b], rows[2 * b + 1]
+        cols = [tuple(((h >> sh) & 0xf) << 4 | ((l >> sh) & 0xf)
+                      for sh in (8, 4, 0)) for h, l in zip(hi, lo)]
+        for k in range(lines):
+            grad[first + b * lines + k] = cols
+    return grad
+
+
+SURF = read_surf_gradient()
+C_SURF = int(re.search(r"^C_SURF\s*=\s*(\d+)",
+                       open(os.path.join(ROOT, "src", "dgncol.i")).read(),
+                       re.M).group(1))
+N_SURF = int(re.search(r"^N_SURF\s*=\s*(\d+)",
+                       open(os.path.join(ROOT, "src", "dgncol.i")).read(),
+                       re.M).group(1))
+
+
+def copper_surf(g):
+    """Le degrade tel qu'il est vraiment dans la copperlist du jeu.
+
+    La table du fichier dit ce que le generateur a prevu ; celle-ci dit
+    ce que le materiel lira, flamme comprise. Une capture doit montrer
+    la seconde."""
+    base = g.mem.r32(g.addr("CopSurf"))
+    if not base:
+        return SURF
+    src = open(os.path.join(ROOT, "src", "surfgrad.i")).read()
+
+    def equ(name):
+        return int(re.search(r"^%s\s*=\s*(\d+)" % name, src, re.M).group(1))
+
+    blocks, lines, first = equ("SURF_BLOCKS"), equ("SURF_LINES"), equ("SURF_FIRST")
+    out, off = {}, 0
+    for b in range(blocks):
+        off += 8                                  # le WAIT et le BPLCON3
+        hi = []
+        for _ in range(N_SURF):
+            off += 2
+            hi.append(g.mem.r16(base + off))
+            off += 2
+        off += 4                                  # le BPLCON3 qui arme LOCT
+        lo = []
+        for _ in range(N_SURF):
+            off += 2
+            lo.append(g.mem.r16(base + off))
+            off += 2
+        cols = [tuple(((h >> sh) & 0xf) << 4 | ((l >> sh) & 0xf)
+                      for sh in (8, 4, 0)) for h, l in zip(hi, lo)]
+        for k in range(lines):
+            out[first + b * lines + k] = cols
+    return out
+
+
+def colour(idx, y, surf=None):
+    """La couleur d'un pixel, copper compris."""
+    if C_SURF <= idx < C_SURF + N_SURF:
+        cols = (surf or SURF).get(y)
+        if cols:
+            return cols[idx - C_SURF]
+    return PALETTE[idx]
+
+
 def grab(g, buf="ShowBuf"):
     base = g.mem.r32(g.addr(buf))
     raw = bytes(g.mem.r8(base + i) for i in range(PLANESIZE * DEPTH))
@@ -72,9 +152,9 @@ def grab(g, buf="ShowBuf"):
     return px
 
 
-def png(path, px):
+def png(path, px, surf=None):
     rows = b"".join(b"\0" + bytes(c for i in range(SCRW)
-                                  for c in PALETTE[px[y * SCRW + i]])
+                                  for c in colour(px[y * SCRW + i], y, surf))
                     for y in range(SCRH))
 
     def chunk(tag, data):
@@ -89,7 +169,7 @@ def png(path, px):
 
 def shoot(g, name):
     out = os.path.join(ROOT, "docs", f"emu-{name}.png")
-    png(out, grab(g, "ShowBuf"))
+    png(out, grab(g, "ShowBuf"), copper_surf(g))
     print("  ", os.path.relpath(out, ROOT))
 
 
@@ -168,6 +248,27 @@ if __name__ == "__main__":
                 break
             while g.w("InCombat") and not g.w("GameOver"):
                 g.key(T.K_A)
+    # Un couloir degage : c'est la que le degrade du copper se voit, le
+    # sol et la voute occupant presque toute la vue.
+    for _ in range(200):
+        grid = P.terrain(g)
+        dx, dy = P.DIRS[g.w("Dir")]
+        x, y = g.w("PosX"), g.w("PosY")
+        far = 0
+        for k in range(1, 6):
+            cx, cy = x + dx * k, y + dy * k
+            if not (0 <= cx < P.MAPW and 0 <= cy < P.MAPH):
+                break
+            if not P.passable(grid[cy][cx]):
+                break
+            far = k
+        if far >= 3:
+            break
+        g.key(T.K_RIGHT if g.w("Dir") % 2 else T.K_UP)
+        while g.w("InCombat") and not g.w("GameOver"):
+            g.key(T.K_A)
+    shoot(g, "couloir")
+
     g.key(0x37)                           # M : la carte du niveau
     shoot(g, "carte")
     g.key(0x37)

@@ -41,7 +41,18 @@ chn_Trigger	= 30			; word : note a lancer
 chn_SetRep	= 32			; word : boucle a armer au prochain tick
 chn_DmaBit	= 34			; word
 chn_PlayPer	= 36			; word : periode reellement envoyee
-chn_SIZEOF	= 40
+chn_VibPos	= 38			; word : position dans la sinusoide
+chn_VibCmd	= 40			; word : vitesse et amplitude (4xy)
+chn_TremPos	= 42			; word
+chn_TremCmd	= 44			; word (7xy)
+chn_Offset	= 46			; word : depart dans le sample (9xx)
+chn_Retrig	= 48			; word : relance tous les n tics (E9x)
+chn_CutAt	= 50			; word : tic ou la note se tait (ECx)
+chn_DelayTo	= 52			; word : tic ou la note part (EDx)
+chn_HeldPer	= 54			; word : periode gardee sous le coude
+chn_HeldIns	= 56			; word : instrument idem
+chn_RealVol	= 58			; word : volume hors tremolo
+chn_SIZEOF	= 60
 
 ; --- table d'instruments ---
 ins_Data	= 0			; long
@@ -128,6 +139,17 @@ PT_Init:
 	clr.w	chn_ArpPos(a3)
 	clr.w	chn_Trigger(a3)
 	clr.w	chn_SetRep(a3)
+	clr.w	chn_VibPos(a3)
+	clr.w	chn_VibCmd(a3)
+	clr.w	chn_TremPos(a3)
+	clr.w	chn_TremCmd(a3)
+	clr.w	chn_Offset(a3)
+	clr.w	chn_Retrig(a3)
+	move.w	#-1,chn_CutAt(a3)
+	move.w	#-1,chn_DelayTo(a3)
+	clr.w	chn_HeldPer(a3)
+	clr.w	chn_HeldIns(a3)
+	clr.w	chn_RealVol(a3)
 	add.l	#$10,d0
 	add.w	d1,d1
 	lea	chn_SIZEOF(a3),a3
@@ -139,6 +161,9 @@ PT_Init:
 	clr.w	PT_Pos
 	clr.w	PT_DoJump
 	clr.w	PT_DoBreak
+	clr.w	PT_PattDelay
+	clr.w	PT_LoopRow
+	clr.w	PT_LoopCnt
 
 	clr.w	PT_SfxLock
 	move.b	CIAAPRA,PT_OldFilter	; filtre passe-bas coupe (bit 1 = LED)
@@ -196,6 +221,12 @@ PT_Tick:
 	cmp.w	PT_Speed,d0
 	blt.s	.effects
 	clr.w	PT_TickCnt
+	tst.w	PT_PattDelay		; EEx : la ligne est retenue
+	beq.s	.newRow
+	subq.w	#1,PT_PattDelay
+	bsr	PT_Effects
+	bra.s	.hardware
+.newRow:
 	bsr	PT_NewRow
 	bra.s	.hardware
 .effects:
@@ -359,14 +390,38 @@ PT_DecodeNote:
 	move.w	d5,chn_Effect(a5)
 	move.w	d4,chn_Param(a5)
 
+	move.w	#-1,chn_CutAt(a5)	; les ordres de la case precedente
+	move.w	#-1,chn_DelayTo(a5)	; ne durent pas
+	clr.w	chn_Retrig(a5)
+	cmp.w	#$e,d5			; EDx : la note part plus tard
+	bne.s	.notDelay
+	move.w	d4,d0
+	and.w	#$00f0,d0
+	cmp.w	#$00d0,d0
+	bne.s	.notDelay
+	move.w	d4,d0
+	and.w	#$000f,d0
+	beq.s	.notDelay
+	move.w	d0,chn_DelayTo(a5)
+	move.w	d2,chn_HeldPer(a5)	; on garde la note sous le coude
+	move.w	d6,chn_HeldIns(a5)
+	moveq	#0,d2			; et la case ne declenche rien
+.notDelay:
 	tst.w	d2			; periode : nouvelle note ?
-	beq.s	.noNote
+	beq	.noNote
 	cmp.w	#3,d5			; sauf portamento vers la note, qui
 	beq.s	.portaTarget		; vise sans relancer le sample
 	cmp.w	#5,d5
 	beq.s	.portaTarget
 	move.w	d2,chn_Period(a5)
 	clr.w	chn_ArpPos(a5)
+	cmp.w	#4,d5			; une note remet la sinusoide a zero,
+	beq.s	.keepVib		; sauf si le vibrato continue
+	cmp.w	#6,d5
+	beq.s	.keepVib
+	clr.w	chn_VibPos(a5)
+.keepVib:
+	clr.w	chn_TremPos(a5)
 	move.w	#1,chn_Trigger(a5)
 	bra.s	.noNote
 .portaTarget:
@@ -380,6 +435,35 @@ PT_DecodeNote:
 	beq.s	.notPorta
 	move.w	d4,chn_PortaSpd(a5)
 .notPorta:
+	cmp.w	#$4,d5			; 4xy : vibrato. Un parametre nul
+	bne.s	.notVib			; reprend le precedent, comme sur
+	tst.w	d4			; ProTracker ; 6xy garde toujours
+	beq.s	.notVib			; celui de la derniere commande 4
+	move.w	d4,chn_VibCmd(a5)
+.notVib:
+	cmp.w	#$7,d5			; 7xy : tremolo
+	bne.s	.notTrem
+	tst.w	d4
+	beq.s	.notTrem
+	move.w	d4,chn_TremCmd(a5)
+.notTrem:
+	cmp.w	#$9,d5			; 9xx : demarrer plus loin dans le
+	bne.s	.notOffset		; sample
+	tst.w	d4
+	beq.s	.useOffset
+	move.w	d4,chn_Offset(a5)
+.useOffset:
+	tst.w	chn_Trigger(a5)
+	beq.s	.notOffset
+	moveq	#0,d0
+	move.w	chn_Offset(a5),d0
+	lsl.l	#7,d0			; xx * 256 octets, soit xx * 128 mots
+	cmp.w	chn_Len(a5),d0
+	bge.s	.notOffset		; au-dela du sample : on n'y touche pas
+	sub.w	d0,chn_Len(a5)
+	add.l	d0,d0			; le pointeur, lui, compte en octets
+	add.l	d0,chn_Data(a5)
+.notOffset:
 	cmp.w	#$c,d5			; Cxx : volume
 	bne.s	.notVol
 	cmp.w	#64,d4
@@ -401,6 +485,91 @@ PT_DecodeNote:
 	move.w	d4,PT_JumpPos
 	move.w	#1,PT_DoJump
 .notJump:
+	cmp.w	#$e,d5			; Exy : les commandes etendues
+	bne	.notExt
+	move.w	d4,d0
+	lsr.w	#4,d0			; x : laquelle
+	move.w	d4,d1
+	and.w	#$000f,d1		; y : son parametre
+
+	cmp.w	#$0,d0			; E0x : filtre passe-bas (la diode)
+	bne.s	.notFilter
+	tst.w	d1
+	bne.s	.filterOff
+	bclr	#1,CIAAPRA
+	bra	.notExt
+.filterOff:
+	bset	#1,CIAAPRA
+	bra	.notExt
+.notFilter:
+	cmp.w	#$1,d0			; E1x : glissando fin vers l'aigu
+	bne.s	.notFineUp
+	sub.w	d1,chn_Period(a5)
+	cmp.w	#113,chn_Period(a5)
+	bge	.notExt
+	move.w	#113,chn_Period(a5)
+	bra	.notExt
+.notFineUp:
+	cmp.w	#$2,d0			; E2x : et vers le grave
+	bne.s	.notFineDn
+	add.w	d1,chn_Period(a5)
+	cmp.w	#856,chn_Period(a5)
+	ble	.notExt
+	move.w	#856,chn_Period(a5)
+	bra	.notExt
+.notFineDn:
+	cmp.w	#$6,d0			; E6x : boucle de pattern
+	bne.s	.notLoop
+	tst.w	d1
+	bne.s	.loopSet
+	move.w	PT_Row,PT_LoopRow	; E60 : ici commence la boucle
+	bra	.notExt
+.loopSet:
+	tst.w	PT_LoopCnt
+	bne.s	.loopAgain
+	move.w	d1,PT_LoopCnt		; premier passage : n tours
+	bra.s	.loopBack
+.loopAgain:
+	subq.w	#1,PT_LoopCnt
+	beq	.notExt			; tours epuises : on continue
+.loopBack:
+	move.w	PT_LoopRow,d2
+	subq.w	#1,d2			; PT_Row sera incremente ensuite
+	move.w	d2,PT_Row
+	bra	.notExt
+.notLoop:
+	cmp.w	#$9,d0			; E9x : relancer la note tous les y tics
+	bne.s	.notRetrig
+	move.w	d1,chn_Retrig(a5)
+	bra.s	.notExt
+.notRetrig:
+	cmp.w	#$a,d0			; EAx : volume fin vers le haut
+	bne.s	.notFineVolUp
+	add.w	d1,chn_Volume(a5)
+	cmp.w	#64,chn_Volume(a5)
+	ble.s	.notExt
+	move.w	#64,chn_Volume(a5)
+	bra.s	.notExt
+.notFineVolUp:
+	cmp.w	#$b,d0			; EBx : et vers le bas
+	bne.s	.notFineVolDn
+	sub.w	d1,chn_Volume(a5)
+	bpl.s	.notExt
+	clr.w	chn_Volume(a5)
+	bra.s	.notExt
+.notFineVolDn:
+	cmp.w	#$c,d0			; ECx : couper la note au tic y
+	bne.s	.notCut
+	move.w	d1,chn_CutAt(a5)
+	bra.s	.notExt
+.notCut:
+	cmp.w	#$e,d0			; EEx : tenir la ligne y tours de plus
+	bne.s	.notPattDelay
+	move.w	d1,PT_PattDelay
+.notPattDelay:
+.notExt:
+	move.w	chn_Volume(a5),chn_RealVol(a5)
+
 	cmp.w	#$d,d5			; Dxx : break, parametre en BCD
 	bne.s	.notBreak
 	move.w	d4,d0
@@ -429,6 +598,37 @@ PT_Effects:
 	move.w	chn_Period(a5),d4	; periode a jouer par defaut
 	move.w	chn_Effect(a5),d0
 	move.w	chn_Param(a5),d1
+	move.w	chn_RealVol(a5),chn_Volume(a5)	; le tremolo ne s'accumule pas
+
+	move.w	PT_TickCnt,d2		; --- ECx : la note se tait
+	cmp.w	chn_CutAt(a5),d2
+	bne.s	.notCutNow
+	clr.w	chn_Volume(a5)
+	clr.w	chn_RealVol(a5)
+.notCutNow:
+	cmp.w	chn_DelayTo(a5),d2	; --- EDx : la note part enfin
+	bne.s	.notDelayNow
+	move.w	#-1,chn_DelayTo(a5)
+	move.w	chn_HeldPer(a5),d3
+	beq.s	.notDelayNow
+	move.w	d3,chn_Period(a5)
+	move.w	d3,d4
+	clr.w	chn_VibPos(a5)
+	clr.w	chn_TremPos(a5)
+	move.w	#1,chn_Trigger(a5)
+	bsr	PT_Restart
+.notDelayNow:
+	move.w	chn_Retrig(a5),d3	; --- E9x : on relance en boucle
+	beq.s	.notRetrigNow
+	move.w	d2,d5
+	and.l	#$0000ffff,d5
+	divu.w	d3,d5
+	swap	d5
+	tst.w	d5
+	bne.s	.notRetrigNow
+	move.w	#1,chn_Trigger(a5)
+	bsr	PT_Restart
+.notRetrigNow:
 
 	tst.w	d0			; 0xy : arpege
 	bne.s	.not0
@@ -458,26 +658,32 @@ PT_Effects:
 	bsr	PT_TonePorta
 	bra.s	.keep
 .not3:
+	cmp.w	#$4,d0			; 4xy : vibrato
+	bne.s	.not4
+	bsr	PT_Vibrato
+	bra	.store			; la periode jouee bouge, pas la vraie
+.not4:
+	cmp.w	#$5,d0			; 5xy : portamento et volume
+	bne.s	.not5
+	bsr	PT_TonePorta
+	bsr	PT_VolSlide
+	bra	.keep
+.not5:
+	cmp.w	#$6,d0			; 6xy : vibrato et volume
+	bne.s	.not6
+	bsr	PT_Vibrato
+	bsr	PT_VolSlide
+	bra	.store
+.not6:
+	cmp.w	#$7,d0			; 7xy : tremolo
+	bne.s	.not7
+	bsr	PT_Tremolo
+	bra	.store
+.not7:
 	cmp.w	#$a,d0			; Axy : volume slide
 	bne.s	.store
-	move.w	chn_Volume(a5),d2
-	move.w	d1,d3
-	lsr.w	#4,d3
-	beq.s	.slideDown
-	add.w	d3,d2
-	cmp.w	#64,d2
-	ble.s	.slideSet
-	moveq	#64,d2
-	bra.s	.slideSet
-.slideDown:
-	move.w	d1,d3
-	and.w	#$000f,d3
-	sub.w	d3,d2
-	bge.s	.slideSet
-	moveq	#0,d2
-.slideSet:
-	move.w	d2,chn_Volume(a5)
-	bra.s	.store
+	bsr	PT_VolSlide
+	bra	.store
 .keep:
 	move.w	d4,chn_Period(a5)	; glissandos : la periode change
 .store:
@@ -485,6 +691,166 @@ PT_Effects:
 	lea	chn_SIZEOF(a5),a5
 	dbf	d7,.chLoop
 	rts
+
+;----------------------------------------------------------------------
+; PT_SineTable : un quart de sinusoide, comme ProTracker
+;----------------------------------------------------------------------
+PT_SineTable:
+	dc.b	0,24,49,74,97,120,141,161
+	dc.b	180,197,212,224,235,244,250,253
+	dc.b	255,253,250,244,235,224,212,197
+	dc.b	180,161,141,120,97,74,49,24
+	even
+
+;----------------------------------------------------------------------
+; PT_Vibrato : 4xy fait onduler la hauteur sans toucher a la note.
+;   d1 = parametre, a5 = canal, d4 = periode a jouer
+;
+; C'est la meme sinusoide que ProTracker : trente-deux points pour une
+; demi-periode, le signe venant du bit 5 de la position.
+;----------------------------------------------------------------------
+PT_Vibrato:
+	movem.l	d0/d2-d3/d5-d6/a1,-(sp)
+	move.w	chn_VibCmd(a5),d5
+	beq.s	.done
+	move.w	chn_VibPos(a5),d6
+	move.w	d6,d0
+	lsr.w	#2,d0
+	and.w	#31,d0
+	lea	PT_SineTable,a1
+	moveq	#0,d2
+	move.b	(a1,d0.w),d2
+	move.w	d5,d3
+	and.w	#$000f,d3		; y : amplitude
+	mulu.w	d3,d2
+	lsr.w	#7,d2
+	btst	#5,d6			; la seconde moitie descend
+	beq.s	.up
+	sub.w	d2,d4
+	bra.s	.step
+.up:
+	add.w	d2,d4
+.step:
+	move.w	d5,d3
+	lsr.w	#4,d3			; x : vitesse
+	add.w	d3,d3
+	add.w	d3,d6
+	and.w	#63,d6
+	move.w	d6,chn_VibPos(a5)
+	cmp.w	#113,d4
+	bge.s	.hi
+	move.w	#113,d4
+	bra.s	.done
+.hi:
+	cmp.w	#856,d4
+	ble.s	.done
+	move.w	#856,d4
+.done:
+	movem.l	(sp)+,d0/d2-d3/d5-d6/a1
+	rts
+
+;----------------------------------------------------------------------
+; PT_Tremolo : 7xy, le vibrato du volume
+;----------------------------------------------------------------------
+PT_Tremolo:
+	movem.l	d0/d2-d3/d5-d6/a1,-(sp)
+	move.w	chn_TremCmd(a5),d5
+	beq.s	.done
+	move.w	chn_TremPos(a5),d6
+	move.w	d6,d0
+	lsr.w	#2,d0
+	and.w	#31,d0
+	lea	PT_SineTable,a1
+	moveq	#0,d2
+	move.b	(a1,d0.w),d2
+	move.w	d5,d3
+	and.w	#$000f,d3
+	mulu.w	d3,d2
+	lsr.w	#6,d2
+	move.w	chn_RealVol(a5),d3
+	btst	#5,d6
+	beq.s	.up
+	sub.w	d2,d3
+	bpl.s	.set
+	moveq	#0,d3
+	bra.s	.set
+.up:
+	add.w	d2,d3
+	cmp.w	#64,d3
+	ble.s	.set
+	moveq	#64,d3
+.set:
+	move.w	d3,chn_Volume(a5)	; le volume reel, lui, ne bouge pas
+	move.w	d5,d3
+	lsr.w	#4,d3
+	add.w	d3,d3
+	add.w	d3,d6
+	and.w	#63,d6
+	move.w	d6,chn_TremPos(a5)
+.done:
+	movem.l	(sp)+,d0/d2-d3/d5-d6/a1
+	rts
+
+;----------------------------------------------------------------------
+; PT_VolSlide : le Axy de ProTracker, partage par 5xy, 6xy et Axy
+;   d1 = parametre, a5 = canal
+;----------------------------------------------------------------------
+PT_VolSlide:
+	movem.l	d2-d3,-(sp)
+	move.w	chn_RealVol(a5),d2
+	move.w	d1,d3
+	lsr.w	#4,d3
+	beq.s	.down
+	add.w	d3,d2
+	cmp.w	#64,d2
+	ble.s	.set
+	moveq	#64,d2
+	bra.s	.set
+.down:
+	move.w	d1,d3
+	and.w	#$000f,d3
+	sub.w	d3,d2
+	bge.s	.set
+	moveq	#0,d2
+.set:
+	move.w	d2,chn_RealVol(a5)
+	move.w	d2,chn_Volume(a5)
+	movem.l	(sp)+,d2-d3
+	rts
+
+;----------------------------------------------------------------------
+; PT_Restart : relance le sample d'un canal en plein milieu d'une ligne
+;
+; E9x et EDx ne tombent pas sur une nouvelle ligne : la sequence de
+; Paula -- DMA coupe, registres, attente, DMA -- doit se rejouer ici
+; pour ce seul canal.
+;----------------------------------------------------------------------
+PT_Restart:
+	movem.l	d0-d1/a0-a1,-(sp)
+	move.w	chn_DmaBit(a5),d0
+	cmp.w	#8,d0			; canal 3 pris par un bruitage ?
+	bne.s	.go
+	tst.w	PT_SfxLock
+	beq.s	.go
+	clr.w	chn_Trigger(a5)
+	bra.s	.done
+.go:
+	lea	CUSTOM,a1
+	move.w	d0,DMACON(a1)
+	move.l	chn_AudBase(a5),a0
+	move.l	chn_Data(a5),AUDx_LC(a0)
+	move.w	chn_Len(a5),AUDx_LEN(a0)
+	move.w	chn_Period(a5),AUDx_PER(a0)
+	move.w	chn_Volume(a5),AUDx_VOL(a0)
+	bsr	PT_WaitLines
+	or.w	#DMAF_SETCLR,d0
+	move.w	d0,DMACON(a1)
+	clr.w	chn_Trigger(a5)
+	move.w	#1,chn_SetRep(a5)
+.done:
+	movem.l	(sp)+,d0-d1/a0-a1
+	rts
+
 
 ;----------------------------------------------------------------------
 ; PT_Arpeggio : 0xy alterne note, note + x demi-tons, note + y
@@ -619,5 +985,8 @@ PT_BreakRow:	ds.w	1
 PT_SfxLock:	ds.w	1
 PT_OldFilter:	ds.b	1
 	even
+PT_PattDelay:	ds.w	1		; EEx : lignes tenues
+PT_LoopRow:	ds.w	1		; E60 : ligne de retour
+PT_LoopCnt:	ds.w	1		; E6x : tours restants
 PT_Channels:	ds.b	chn_SIZEOF*4
 PT_Instruments:	ds.b	ins_SIZEOF*31

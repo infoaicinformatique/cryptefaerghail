@@ -99,6 +99,7 @@ MATERIALS = [
                     (0x38, 0x54, 0xb4), (0x74, 0xa4, 0xf0),
                     (0xd8, 0xee, 0xff)]),
 ]
+MATERIALS_BY_NAME = [(n, pts) for n, _, pts in MATERIALS]
 
 # Quelques teintes isolees pour l'interface, nommees une a une.
 SINGLES = [
@@ -124,6 +125,31 @@ SINGLES = [
 ]
 
 
+# Les sprites AGA prennent leurs couleurs dans un bloc de seize aligne
+# sur seize, choisi par ESPRM/OSPRM dans BPLCON4. On leur reserve le
+# dernier bloc, $f0-$ff, que rien d'autre n'occupe : le pointeur de
+# souris ne coute alors pas une seule teinte au decor.
+# Le sol et la voute ne prennent pas leur teinte dans la palette fixe :
+# le copper reecrit ces douze cases a chaque paire de lignes, si bien
+# que la profondeur se lit en degrade continu et non en marches. Elles
+# tombent dans le bloc des sprites, dont ceux-ci n'utilisent que les
+# quatre premieres : le materiel lit les memes registres, chacun n'y
+# regarde que ce qui le concerne.
+SURFBASE = 0xf4
+NSURF_STONE = 8                          # variation locale du dallage
+NSURF_EARTH = 2                          # joints de terre
+NSURF_MOSS = 2                           # touffes de mousse
+NSURF = NSURF_STONE + NSURF_EARTH + NSURF_MOSS
+
+SPRBASE = 0xf0
+SPRITE = [
+    (0x00, 0x00, 0x00),                  # 0 : transparent, jamais lu
+    (0xff, 0xe8, 0xb4),                  # 1 : corps du pointeur
+    (0x20, 0x18, 0x10),                  # 2 : son cerne
+    (0xc6, 0x8a, 0x30),                  # 3 : son ombre, ton bronze
+]
+
+
 def build():
     """-> (liste de 256 RGB, {nom: (debut, longueur)})."""
     palette = [(0, 0, 0)]
@@ -134,8 +160,27 @@ def build():
     for name, rgb in SINGLES:
         index[name] = (len(palette), 1)
         palette.append(rgb)
-    assert len(palette) <= 256, f"{len(palette)} couleurs, maximum 256"
+    assert len(palette) <= SPRBASE, \
+        f"{len(palette)} couleurs, le bloc des sprites commence a {SPRBASE}"
+    palette += [(0, 0, 0)] * (SPRBASE - len(palette))
+    index["SPRITE"] = (SPRBASE, len(SPRITE))
+    palette += SPRITE
+    palette += [(0, 0, 0)] * (SURFBASE - len(palette))
+    # Valeurs de repli : ce que le copper ecrirait a mi-profondeur. Sans
+    # elles, un ecran sans copper -- l'accueil, une capture -- montrerait
+    # du noir a la place du sol.
+    index["SURF"] = (SURFBASE, NSURF)
+    stone = gradient(dict(MATERIALS_BY_NAME)["STONE"], 64)
+    earth = gradient(dict(MATERIALS_BY_NAME)["EARTH"], 64)
+    moss = gradient(dict(MATERIALS_BY_NAME)["MOSS"], 64)
+    for k in range(NSURF_STONE):
+        palette.append(stone[max(0, 63 - int((0.55 + k * 0.05) * 63))])
+    for k in range(NSURF_EARTH):
+        palette.append(earth[max(0, 63 - int(min(1.0, 0.91 + k * 0.11) * 63))])
+    for k in range(NSURF_MOSS):
+        palette.append(moss[max(0, 63 - int(min(1.0, 0.77 + k * 0.11) * 63))])
     palette += [(0, 0, 0)] * (256 - len(palette))
+    assert len(palette) == 256
     return palette, index
 
 
@@ -162,6 +207,24 @@ def lit(name, t):
 
 def one(name):
     return INDEX[name][0]
+
+
+def rgb(name, t):
+    """La couleur continue d'une matiere, t de 0 (sombre) a 1 (clair).
+
+    shade() rend un index, donc une des N teintes retenues ; celle-ci
+    rend la couleur exacte, entre deux points de controle. C'est ce que
+    le copper ecrit : lui n'est pas tenu par la palette."""
+    pts = dict(MATERIALS_BY_NAME)[name]
+    t = max(0.0, min(1.0, t))
+    seg = t * (len(pts) - 1)
+    k = min(len(pts) - 2, int(seg))
+    return lerp(pts[k], pts[k + 1], seg - k)
+
+
+def dark(name, t):
+    """t de 0 (clair) a 1 (sombre) : le sens des routines de dessin."""
+    return rgb(name, 1.0 - t)
 
 
 def write_palette(path):
@@ -192,10 +255,15 @@ def write_names(path):
         f.write("\n")
         for name, _ in SINGLES:
             f.write(f"C_{name}\t\t= {INDEX[name][0]}\n")
+        f.write(f"\nC_SPRITE\t\t= {SPRBASE}\n")
+        f.write(f"C_SURF\t\t= {SURFBASE}\n")
+        f.write(f"N_SURF\t\t= {NSURF}\n")
+        f.write(f"C_SURF_EARTH\t= {SURFBASE + NSURF_STONE}\n")
+        f.write(f"C_SURF_MOSS\t= {SURFBASE + NSURF_STONE + NSURF_EARTH}\n")
 
 
 if __name__ == "__main__":
-    used = sum(n for _, n, _ in MATERIALS) + len(SINGLES) + 1
+    used = sum(n for _, n, _ in MATERIALS) + len(SINGLES) + 1 + len(SPRITE) + NSURF
     write_palette(os.path.join(ROOT, "src", "dgnpal.i"))
     write_names(os.path.join(ROOT, "src", "dgncol.i"))
     print(f"src/dgnpal.i, src/dgncol.i : {used} couleurs sur 256, "

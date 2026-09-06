@@ -112,6 +112,20 @@ MONSTERS = [
      SP_MULTI | SP_REGEN | SP_FEAR),
 ]
 
+# Les rencontres, etage par etage : indices dans MONSTERS, ranges par
+# facteur de puissance. Cette liste etait ecrite deux fois -- ici et
+# dans gen_dungeon.py -- et rien ne garantissait qu'elles restent
+# d'accord ; le generateur de donjons la lit maintenant d'ici.
+#
+#   1 : FP 0,25 a 0,5   2 : 0,5 a 1   3 : 1 a 3   4 : 3 a 5   5 : 5 a 7
+TIERS = [
+    [0, 1, 2, 3, 4, 5],
+    [4, 5, 6, 7, 8, 9, 14],
+    [7, 8, 9, 10, 11, 14, 12, 13],
+    [12, 13, 16, 15, 17, 18, 19],
+    [20, 22, 23, 21, 24, 15, 19],
+]
+
 # Ce que rapporte une victoire, selon le facteur de puissance (FP) :
 # le SRD donne 300 x FP pour un groupe de niveau egal, divise par quatre
 # aventuriers, ce qui tient dans un mot.
@@ -244,13 +258,12 @@ with open(OUT, "w") as f:
             f"\t; le gardien, au bout du dernier etage\n")
 
     f.write("\n; rencontres par niveau de donjon : numeros de monstres\n")
-    tiers = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-             [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16],
-             [13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]]
-    for i, t in enumerate(tiers):
+    for i, t in enumerate(TIERS):
         f.write(f"Encounter{i}:\n\tdc.b\t" + ",".join(str(v) for v in t) + "\n")
         f.write(f"\tdc.b\t{len(t)}\n\teven\n")
-    f.write("EncounterTab:\n\tdc.l\tEncounter0,Encounter1,Encounter2\n")
+    f.write("EncounterTab:\n\tdc.l\t"
+            + ",".join(f"Encounter{i}" for i in range(len(TIERS))) + "\n")
+    f.write(f"NTIERS\t\t= {len(TIERS)}\n")
 
     f.write("\n; nom (12), de de vie, attaque, sauvegardes fortes, lanceur\n")
     f.write("ClassTable:\n")

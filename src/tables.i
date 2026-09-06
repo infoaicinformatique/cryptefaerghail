@@ -189,19 +189,28 @@ MON_BOSS	= 25	; le gardien, au bout du dernier etage
 
 ; rencontres par niveau de donjon : numeros de monstres
 Encounter0:
-	dc.b	0,1,2,3,4,5,6,7,8,9
-	dc.b	10
+	dc.b	0,1,2,3,4,5
+	dc.b	6
 	even
 Encounter1:
-	dc.b	4,5,6,7,8,9,10,11,12,13,14,16
-	dc.b	12
+	dc.b	4,5,6,7,8,9,14
+	dc.b	7
 	even
 Encounter2:
-	dc.b	13,15,16,17,18,19,20,21,22,23,24
-	dc.b	11
+	dc.b	7,8,9,10,11,14,12,13
+	dc.b	8
+	even
+Encounter3:
+	dc.b	12,13,16,15,17,18,19
+	dc.b	7
+	even
+Encounter4:
+	dc.b	20,22,23,21,24,15,19
+	dc.b	7
 	even
 EncounterTab:
-	dc.l	Encounter0,Encounter1,Encounter2
+	dc.l	Encounter0,Encounter1,Encounter2,Encounter3,Encounter4
+NTIERS		= 5
 
 ; nom (12), de de vie, attaque, sauvegardes fortes, lanceur
 ClassTable:

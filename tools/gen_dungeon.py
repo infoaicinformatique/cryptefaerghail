@@ -1414,12 +1414,12 @@ SHOP, TRAP = 9, 10                       # echoppe et dallage piege
 NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
-# Rencontres par niveau : indices dans MonTypes (gen_tables.py)
-ENCOUNTERS = [
-    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
-    [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16],
-    [13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
-]
+# Rencontres par niveau : lues chez gen_tables, qui les ecrit aussi dans
+# tables.i. Elles etaient recopiees ici, et rien ne garantissait que les
+# deux listes restent d'accord.
+import gen_tables
+ENCOUNTERS = gen_tables.TIERS
+LEVELS = len(ENCOUNTERS)
 
 # Objets : doivent suivre exactement ItemTable dans src/crawl.s
 ITEMS = {
@@ -1439,12 +1439,18 @@ ITEMS = {
 LOOT = [
     ["DAGUE", "EPEE COURTE", "BATON", "ARMURE DE CUIR", "POTION DE SOIN",
      "PARCHEMIN 1", "PARCHEMIN 2", "ARC COURT", "GEMME"],
+    ["EPEE COURTE", "HACHE", "MASSE", "ARMURE DE CUIR", "BOUCLIER",
+     "POTION DE SOIN", "PARCHEMIN 2", "PARCHEMIN 3", "GEMME"],
     ["EPEE LONGUE", "HACHE", "MASSE", "COTTE DE MAILLES", "BOUCLIER",
      "POTION DE SOIN", "POTION MAJEURE", "PARCHEMIN 3", "PARCHEMIN 4", "GEMME"],
+    ["EPEE LONGUE", "HACHE DE GUERRE", "COTTE DE MAILLES", "BOUCLIER",
+     "POTION MAJEURE", "EPEE LONGUE +1", "PARCHEMIN 4", "PARCHEMIN 5",
+     "GEMME"],
     ["HACHE DE GUERRE", "EPEE LONGUE +1", "HACHE RUNIQUE +2",
      "DAGUE DE FEU +1", "HARNOIS", "POTION MAJEURE", "PARCHEMIN 5",
      "PARCHEMIN 6", "COURONNE"],
 ]
+assert len(LOOT) == LEVELS, "un butin par etage"
 
 
 def carve(level, seed):
@@ -1645,7 +1651,7 @@ def build_level(level, seed):
 def build_maps():
     out = bytearray()
     levels = []
-    for lv in range(3):
+    for lv in range(LEVELS):
         grid, par, start, stairs = build_level(lv, 1000 + lv * 77)
         check_reachable(grid, start)
         check_solvable(grid, par, start)

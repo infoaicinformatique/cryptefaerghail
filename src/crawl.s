@@ -28,7 +28,7 @@ SCRSIZE		= PLANESIZE*DEPTH
 MAPW		= 24
 MAPH		= 24
 MAPBYTES	= MAPW*MAPH
-LEVELS		= 3
+LEVELS		= 5
 LEVELSIZE	= 4+MAPBYTES*2		; entete, terrain, parametres
 
 ; --- terrain ---
@@ -6869,7 +6869,9 @@ TrapTable:
 ; ItemTable. Le prix est celui de l'objet ; il rachete a moitie.
 ShopTable:
 	dc.b	17,17,13,16,2,20,25,8	; potions, cuir, bouclier, cle
-	dc.b	17,18,14,3,6,22,21,26	; mailles, epee longue, parchemins
+	dc.b	17,17,13,16,4,20,21,25	; hache, parchemins
+	dc.b	17,18,14,3,6,22,21,26	; mailles, epee longue
+	dc.b	18,18,14,5,16,22,23,26	; hache de guerre, argent
 	dc.b	18,18,15,9,10,11,24,23	; harnois et lames enchantees
 	even
 

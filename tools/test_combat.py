@@ -315,6 +315,60 @@ if __name__ == "__main__":
     check(length >= 4, f"le combat ne dure que {length:.1f} rounds : "
           "ce n'est pas un affrontement final", fails)
 
+    print("--- la courbe des cinq etages ---")
+    # Cinq etages ne valent rien s'ils forment un mur, ou s'ils sont
+    # tous pareils. On oppose a chaque palier le groupe qu'on y aurait
+    # plausiblement, et on regarde ce qu'un monstre lui coute.
+    import re
+    src = open(os.path.join(ROOT, "src", "tables.i")).read()
+    tiers = [[int(v) for v in m.group(1).split(",")] for m in
+             re.finditer(r"Encounter\d+:\n\tdc\.b\t([0-9,]+)", src)]
+    levels = equ("LEVELS")
+    check(len(tiers) == levels,
+          f"{len(tiers)} paliers de rencontres pour {levels} etages", fails)
+
+    profils = [(1, 12, 3), (3, 22, 3), (5, 32, 4), (6, 40, 9), (7, 46, 9)]
+    cout = []
+    for lv in range(levels):
+        plvl, php, weapon = profils[lv]
+        wins = taken = n = 0
+        for kind in tiers[lv]:
+            for _ in range(3):
+                g.setw("MonKind", kind)
+                g.call(g.addr("StartCombat"))
+                for i in range(4):
+                    h = g.addr("Heroes") + i * HR["hr_SIZEOF"]
+                    g.mem.w16(h + equ("hr_Level"), plvl)
+                    g.mem.w16(h + HR["hr_HpMax"], php)
+                    g.mem.w16(h + HR["hr_Hp"], php)
+                    g.mem.w16(h + HR["hr_Str"], 15)
+                    g.mem.w16(h + HR["hr_Stun"], 0)
+                    g.mem.w16(h + HR["hr_StrLoss"], 0)
+                    g.mem.w16(h + equ("hr_Weapon"), weapon)
+                g.setw("GameOver", 0)
+                prev, k = sum(f.party("hr_Hp")), 0
+                while g.w("InCombat") and not g.w("GameOver") and k < 60:
+                    g.call(g.addr("CombatRound"))
+                    k += 1
+                    now = sum(f.party("hr_Hp"))
+                    if now < prev:        # une montee de niveau soigne :
+                        taken += prev - now   # on ne compte que les baisses
+                    prev = now
+                n += 1
+                if not g.w("GameOver") and not g.w("InCombat"):
+                    wins += 1
+        part = 100.0 * taken / n / (4 * php)
+        cout.append(part)
+        print(f"  etage {lv + 1} : groupe niveau {plvl}, {100 * wins // n:3d} %"
+              f" de victoires, un monstre coute {part:4.1f} % du groupe")
+        check(100 * wins // n >= 80, f"etage {lv + 1} : le groupe ne gagne "
+              f"que {100 * wins // n} % de ses combats", fails)
+        check(part < 40, f"etage {lv + 1} : un seul monstre coute "
+              f"{part:.0f} % du groupe, l'usure serait fatale", fails)
+    check(cout[-1] > cout[0] * 1.5,
+          f"le dernier etage ({cout[-1]:.1f} %) ne coute pas plus cher que "
+          f"le premier ({cout[0]:.1f} %) : la courbe est plate", fails)
+
     print()
     if fails:
         print(f"{len(fails)} anomalie(s) :")

@@ -49,6 +49,7 @@ HR = {k: read_equ(k, 0) for k in
       ("hr_Name", "hr_Class", "hr_Level", "hr_Xp", "hr_Hp", "hr_HpMax",
        "hr_Mp", "hr_MpMax", "hr_Str", "hr_Weapon", "hr_SIZEOF", "hr_Slots")}
 MAPW = 24
+LEVELS = read_equ("LEVELS", 3)
 
 
 def load_symbols(path):
@@ -673,7 +674,7 @@ if __name__ == "__main__":
             break
         if not check(g.w("InvCursor") < 24, f"InvCursor={g.w('InvCursor')}", fails):
             break
-        if not check(g.w("Level") < 3, f"Level={g.w('Level')}", fails):
+        if not check(g.w("Level") < LEVELS, f"Level={g.w('Level')}", fails):
             break
         if not check(g.sw("Gold") >= 0, f"Or negatif {g.sw('Gold')}", fails):
             break

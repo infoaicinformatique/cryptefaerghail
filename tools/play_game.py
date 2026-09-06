@@ -21,6 +21,7 @@ MAPW = MAPH = 24
 T_FLOOR, T_WALL, T_DOOR, T_STAIRS, T_LOCKED, T_NICHE, T_RUNE = range(7)
 T_LEVER, T_GATE = 7, 8
 T_SHOP, T_TRAP = 9, 10
+LEVELS = T.read_equ("LEVELS", 3)
 C_CHEST, C_MONSTER, C_ITEM, C_MASK = 0x10, 0x20, 0x30, 0x30
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]     # meme ordre que DirTable
 
@@ -300,7 +301,7 @@ def check_state(g, fails):
             fails.append(f"heros {i} : arme {g.hero(i, 'hr_Weapon')}")
     if g.sw("Gold") < 0:
         fails.append(f"or negatif : {g.sw('Gold')}")
-    if not 0 <= g.w("Level") < 3:
+    if not 0 <= g.w("Level") < LEVELS:
         fails.append(f"niveau de donjon {g.w('Level')}")
     if not 0 <= g.w("UiMode") <= 8:
         fails.append(f"UiMode {g.w('UiMode')}")

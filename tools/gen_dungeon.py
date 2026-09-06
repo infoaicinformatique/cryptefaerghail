@@ -62,11 +62,19 @@ C = [
 BRICK_W, BRICK_H = 0.25, 0.125           # taille d'un bloc, en cases
 
 
+def torch(dist):
+    """Profondeur d'ombre a cette distance.
+
+    Une seule loi pour les murs, le sol et la voute : tant que chaque
+    surface avait sa propre formule, elles ne s'accordaient pas et le
+    couloir se lisait comme trois materiaux poses cote a cote."""
+    return min(1.0, 0.08 + 0.185 * (dist - 1.0))
+
+
 def wall_tone(dist, side):
-    """Profondeur d'ombre d'un mur : plus c'est loin, plus c'est sombre,
-    et les murs lateraux prennent un cran de plus. En 256 couleurs on
-    peut travailler en continu au lieu de six paliers."""
-    return (dist - 1.0) * 0.185 + (0.14 if side else 0.0) + 0.08
+    """Un mur lateral prend un cran d'ombre de plus qu'un mur de face :
+    la lumiere du groupe le frappe en rasant."""
+    return torch(dist) + (0.14 if side else 0.0)
 
 
 def jitter(a, b):
@@ -97,7 +105,9 @@ def brick(u, v, dist, side):
     if du < jx or dv < jy:
         return pal.lit("MORTAR", min(1.0, 0.62 + 0.22 * (dist - 1.0)))
 
-    t = wall_tone(dist, side) + 0.030 * jitter(col, row)
+    t = wall_tone(dist, side) + 0.030 * jitter(col, row) \
+        + 0.09 * min(1.0, abs(u) / 3.0)              # la torche s'eteint
+
     if dv < 0.28:                                    # arete eclairee du bloc
         t -= 0.055
     elif dv > 0.82 or du > 0.93:                     # arete a l'ombre
@@ -250,39 +260,212 @@ def make_side(i, lateral):
 
 
 def make_background():
-    """Sol et plafond en dalles, avec la perspective : a la ligne y, le sol
-    est a la distance F/|y-CY| et sa coordonnee laterale vaut
-    (x-CX)/|y-CY| ; les joints suivent donc exactement la fuite."""
+    """Sol et voute, en perspective et dans la meme pierre que les murs.
+
+    A la ligne y, la surface est a la distance F/|y-CY| et sa
+    coordonnee laterale vaut (x-CX)/|y-CY| : les joints suivent donc
+    exactement la fuite. Les deux surfaces empruntent la loi de lumiere
+    des murs, plus un assombrissement lateral qui donne au couloir la
+    lueur d'une torche portee par le groupe.
+    """
     p = Piece(0, 0, VIEW_W, VIEW_H)
+    slab = 0.5                                       # une dalle par demi-case
     for y in range(VIEW_H):
         dy = abs(y - CY)
-        if dy < 2:
+        if dy < 2:                                   # la ligne de fuite
             for x in range(VIEW_W):
-                p.set(x, y, 0)                       # ligne d'horizon
+                p.set(x, y, stone(0.97))
             continue
         dist = F / dy
         floor = y > CY
         for x in range(VIEW_W):
-            lat = (x - CX) / dy                      # position laterale, en cases
-            gu = (lat + 8.0) % 1.0
-            gv = (dist + 8.0) % 1.0
-            joint = gu < 0.06 or gv < 0.06
-            depth = min(1.0, 0.06 + 0.24 * dist)
+            lat = (x - CX) / dy                      # position laterale
+            gu = ((lat + 8.0) / slab) % 1.0
+            gv = ((dist + 8.0) / slab) % 1.0
+            edge = min(gu, gv, 1.0 - gu, 1.0 - gv)
+            # Le fond du couloir s'eteint, mais jamais tout a fait : un
+            # noir franc s'y lisait comme un trou rectangulaire.
+            t = min(0.93, torch(dist)) + 0.11 * min(1.0, abs(lat) / 3.0)
+
             if floor:
-                t = depth + 0.10 * noise(int(lat * 30), int(dist * 30), 21)
-                if joint:
-                    t += 0.28
-                if noise(int(lat * 18), int(dist * 18), 23) > 0.88:
-                    base = pal.lit("MOSS", min(1.0, depth + 0.25))
-                else:
-                    base = pal.lit("EARTH", max(0.0, min(1.0, t)))
-            else:                                    # voute, plus sombre
-                t = depth + 0.34
-                if joint:
-                    t += 0.16
-                base = stone(max(0.0, min(1.0, t)))
-            p.set(x, y, base)
+                t += 0.05                            # le sol prend la lumiere
+                if edge < 0.05:                      # joint garni de terre
+                    p.set(x, y, pal.lit("EARTH", min(1.0, t + 0.36)))
+                    continue
+                if abs(lat) < 0.55:                  # le passage, use et poli
+                    t -= 0.05
+                t += 0.06 * (noise(int(lat * 42), int(dist * 42), 21) - 0.5)
+                if abs(lat) > 0.7 and \
+                        noise(int(lat * 16), int(dist * 16), 23) > 0.90:
+                    p.set(x, y, pal.lit("MOSS", min(1.0, t + 0.22)))
+                    continue
+                p.set(x, y, stone(max(0.0, min(1.0, t))))
+            else:                                    # la voute
+                t += 0.24
+                if edge < 0.06:                      # nervure, elle accroche
+                    t -= 0.09                        # la lumiere
+                t += 0.05 * (noise(int(lat * 38), int(dist * 38), 27) - 0.5)
+                if noise(int(lat * 9), int(dist * 9), 29) > 0.90:
+                    t += 0.13                        # suie des torches
+                p.set(x, y, stone(max(0.0, min(1.0, t))))
     return p
+
+
+# --- ecran-titre ------------------------------------------------------
+TITLE_W, TITLE_H = 320, 176
+
+
+def glyph_rows(ch):
+    """Les huit lignes d'un caractere, en bits, depuis la police 8x8."""
+    import gen_data
+    rows = gen_data.GLYPHS.get(ch.upper())
+    if rows is None:
+        return [0] * 8
+    out = []
+    for row in rows:
+        bits = 0
+        for x, c in enumerate(row):
+            if c == "#":
+                bits |= 0x80 >> (x + 1)
+        out.append(bits)
+    return out + [0]
+
+
+def carve_text(p, text, x0, y0, scale, face, lit, dark):
+    """Un titre grave : le glyphe agrandi, une arete claire en haut a
+    gauche et une ombre en bas a droite. La police du jeu suffit --
+    doublee, elle prend l'allure d'une inscription."""
+    for i, ch in enumerate(text):
+        rows = glyph_rows(ch)
+        bx = x0 + i * 8 * scale
+        for ry, bits in enumerate(rows):
+            for rx in range(8):
+                if not (bits & (0x80 >> rx)):
+                    continue
+                for sy in range(scale):
+                    for sx in range(scale):
+                        x, y = bx + rx * scale + sx, y0 + ry * scale + sy
+                        p.set(x, y, face)
+                        p.set(x - 1, y - 1, lit)
+                        p.set(x + scale, y + scale, dark)
+    # deuxieme passe : le corps de la lettre repasse par-dessus le relief
+    for i, ch in enumerate(text):
+        rows = glyph_rows(ch)
+        bx = x0 + i * 8 * scale
+        for ry, bits in enumerate(rows):
+            for rx in range(8):
+                if bits & (0x80 >> rx):
+                    for sy in range(scale):
+                        for sx in range(scale):
+                            p.set(bx + rx * scale + sx,
+                                  y0 + ry * scale + sy, face)
+
+
+def make_title():
+    """L'entree de la crypte : une arche de pierre, sa porte bardee de
+    fer, deux torches qui la rechauffent, et le titre grave au linteau."""
+    p = Piece(0, 0, TITLE_W, TITLE_H)
+    cx = TITLE_W // 2
+    arch_w, arch_top, arch_bot = 54, 74, 168         # demi-largeur, hauteur
+    torches = ((cx - 108, 86), (cx + 108, 86))
+
+    for y in range(TITLE_H):
+        for x in range(TITLE_W):
+            # --- lumiere : deux torches plus un fond declinant
+            glow = 0.0
+            for tx, ty in torches:
+                d2 = ((x - tx) / 86.0) ** 2 + ((y - ty) / 74.0) ** 2
+                glow += max(0.0, 1.0 - d2) ** 2
+            t = 0.70 - 0.56 * min(1.0, glow) + 0.24 * (y / TITLE_H)
+
+            dx, dy = x - cx, y - arch_bot
+            inside = abs(dx) < arch_w and arch_top < y < arch_bot
+            if abs(dx) < arch_w:                     # le cintre de l'arche
+                r = (dx / arch_w) ** 2 + ((y - arch_top) / 34.0) ** 2
+                if y <= arch_top and r <= 1.0:
+                    inside = True
+
+            if inside:
+                p.set(x, y, door_panel(dx, y, arch_w, arch_bot, t))
+                continue
+
+            ring = abs(dx) - arch_w                  # les voussoirs
+            arc = (dx / (arch_w + 13.0)) ** 2 + \
+                  ((y - arch_top) / 47.0) ** 2
+            if (0 <= ring < 13 and arch_top < y < arch_bot) or \
+                    (y <= arch_top and arc <= 1.0):
+                wedge = int((math.atan2(arch_top - y, dx) + 4) * 6) % 2
+                p.set(x, y, stone(max(0.0, min(1.0, t - 0.22 + 0.07 * wedge))))
+                continue
+
+            row = y // 22                            # l'appareil du mur
+            off = 0.5 if row & 1 else 0.0
+            col = (x / 44.0 + off) % 1.0
+            if col < 0.045 or (y % 22) < 3:
+                p.set(x, y, pal.lit("MORTAR", min(1.0, t + 0.22)))
+                continue
+            t += 0.06 * (noise(int(x * 0.7), int(y * 0.7), 41) - 0.5)
+            p.set(x, y, stone(max(0.0, min(1.0, t))))
+
+    for tx, ty in torches:                           # les torches elles-memes
+        for y in range(ty, ty + 30):                 # le manche
+            for x in range(tx - 2, tx + 3):
+                p.set(x, y, pal.lit("WOOD", 0.30 + 0.16 * abs(x - tx)))
+        for y in range(ty - 3, ty + 7):              # la corbeille de fer
+            for x in range(tx - 7, tx + 8):
+                if abs(x - tx) > 7 - (y - ty + 3) // 3:
+                    continue
+                if abs(x - tx) > 4 or y > ty + 3:
+                    p.set(x, y, pal.lit("IRON", 0.40 + 0.03 * (y - ty)))
+        for y in range(ty - 34, ty + 2):             # la flamme
+            k = (y - (ty - 34)) / 36.0
+            w = 1 + int(11 * k * (1.25 - k))
+            for x in range(tx - w, tx + w + 1):
+                r = abs(x - tx) / max(1.0, w)
+                n = noise(x, y, 43)
+                if r + 0.26 * n > 1.05:
+                    continue
+                p.set(x, y, pal.lit("FIRE", 0.04 + 0.70 * r + 0.16 * (1 - k)))
+
+    for i, (top, w) in enumerate(((168, 78), (172, 96), (176, 118))):
+        for y in range(top, min(TITLE_H, top + 5)):  # trois marches usees
+            for x in range(cx - w, cx + w + 1):
+                if not 0 <= x < TITLE_W:
+                    continue
+                lip = 0.16 if y == top else 0.44 + 0.02 * i
+                p.set(x, y, stone(min(1.0, lip + 0.24 * abs(x - cx) / w)))
+
+    carve_text(p, "LA CRYPTE", cx - 9 * 8 * 2 // 2, 12, 2,
+               pal.lit("GOLD", 0.24), pal.lit("GOLD", 0.05),
+               pal.lit("GOLD", 0.82))
+    carve_text(p, "DE FAERGHAIL", cx - 12 * 8 * 2 // 2, 34, 2,
+               pal.lit("GOLD", 0.30), pal.lit("GOLD", 0.08),
+               pal.lit("GOLD", 0.86))
+    return p
+
+
+def door_panel(dx, y, half, bottom, t):
+    """Le vantail de chene, dans l'ouverture de l'arche."""
+    if y > bottom - 5:                               # le seuil
+        return stone(min(1.0, t + 0.30))
+    plank = (dx + 200.0) / 13.0
+    edge = plank % 1.0
+    # le chene reste sombre, mais pas noir : il ne prend qu'une part de
+    # l'ombre du mur, sinon l'arche se lit comme un trou
+    v = 0.28 + 0.44 * t + 0.12 * noise(int(plank), y // 3, 45)
+    if edge < 0.10:
+        v += 0.28
+    elif edge > 0.88:
+        v -= 0.06
+    for band in (bottom - 92, bottom - 34):          # les ferrures
+        if band < y < band + 9:
+            rivet = abs((dx + 200.0) / 11.0 % 1.0 - 0.5)
+            return pal.lit("IRON", 0.30 if rivet < 0.16 else 0.58 + 0.2 * t)
+    if abs(dx - 30) < 9 and abs(y - (bottom - 60)) < 11:
+        r = ((dx - 30) / 8.0) ** 2 + ((y - (bottom - 60)) / 10.0) ** 2
+        if 0.34 < r <= 1.0:                          # l'anneau
+            return pal.lit("GOLD", 0.26 + 0.34 * t)
+    return pal.lit("WOOD", max(0.0, min(1.0, v)))
 
 
 def make_lever(pulled):
@@ -960,6 +1143,8 @@ def build_art():
     pieces += [make_side(i, -1.5) for i in (2, 3)]
     ART_INDEX["ART_OUTERR"] = len(pieces)
     pieces += [make_side(i, 1.5) for i in (2, 3)]
+    ART_INDEX["ART_TITLE"] = len(pieces)
+    pieces += [make_title()]
     ART_INDEX["ART_GATE"] = len(pieces)
     pieces += [make_front(k, gate=True) for k in (1, 2, 3)]
     ART_INDEX["ART_LEVER"] = len(pieces)
@@ -1126,22 +1311,26 @@ def build_level(level, seed):
     # Herses et leviers : la herse coupe un couloir loin du depart, le
     # levier qui la commande est scelle dans un mur atteignable avant
     # elle. Le parametre porte le numero du mecanisme, pour les apparier.
-    gates = 0
+    gates, placed_levers = 0, []
     for x, y in far_cells:
         if gates >= 1 + (level > 0):
             break
         if grid[y][x] != FLOOR:
             continue
-        blocked = distances(grid, start, blocked={(x, y)})
-        if far not in blocked:                       # ne pas murer la sortie
+        # distances(...) exclut deja les herses posees : en ajoutant la
+        # case candidate on obtient exactement ce que le groupe pourra
+        # atteindre une fois cette herse-la fermee.
+        open_side = distances(grid, start, blocked={(x, y)})
+        if far in open_side:                         # elle ne coupe rien
             continue
-        lever = None
-        want = dist[(x, y)] * 0.6              # ni sur le pas de la porte,
-        for cx, cy in sorted(free,             # ni au pied de la herse
-                             key=lambda c: abs(dist.get(c, 99) - want)):
-            d = dist.get((cx, cy), 99)
-            if grid[cy][cx] != FLOOR or not 3 <= d < dist[(x, y)]:
-                continue
+        if any(not any((px + dx, py + dy) in open_side      # ni enfermer un
+                       for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))
+               for px, py in placed_levers):                # levier deja pose
+            continue
+        lever = None                                 # le levier doit rester
+        for cx, cy in sorted(open_side, key=lambda c: -open_side[c]):
+            if grid[cy][cx] != FLOOR or open_side[(cx, cy)] < 3:
+                continue                             # du bon cote de la herse
             for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                 nx, ny = cx + dx, cy + dy
                 if grid[ny][nx] == WALL and not par[ny][nx]:
@@ -1155,6 +1344,7 @@ def build_level(level, seed):
         par[y][x] = gates + 1
         grid[lever[1]][lever[0]] = LEVER
         par[lever[1]][lever[0]] = gates + 1
+        placed_levers.append(lever)
         free.remove((x, y))
         gates += 1
 
@@ -1250,7 +1440,10 @@ def check_solvable(grid, par, start):
                     continue
                 if not (0 <= nx < MAPW and 0 <= ny < MAPH):
                     continue
-                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, LOCKED):
+                # Une serrure ne coupe pas la route : le groupe a des
+                # cles. Seule la herse compte, c'est tout l'objet du
+                # controle.
+                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER):
                     continue
                 reach.add((nx, ny))
                 q.append((nx, ny))
@@ -1342,7 +1535,8 @@ if __name__ == "__main__":
         f.write(";----------------------------------------------------------\n\n")
         for k in ("ART_BG", "ART_FRONT", "ART_LEFT", "ART_RIGHT", "ART_DOOR",
                   "ART_MONSTER", "ART_FRONTL", "ART_FRONTR", "ART_OUTERL",
-                  "ART_OUTERR", "ART_GATE", "ART_LEVER", "ART_NICHE",
+                  "ART_OUTERR", "ART_TITLE", "ART_GATE", "ART_LEVER",
+                  "ART_NICHE",
                   "ART_PORTRAIT", "ART_ICON"):
             f.write(f"{k}\t= {ART_INDEX[k]}\n")
         f.write(f"NMONSTERART\t= {NMONSTERART}\n")

@@ -208,7 +208,7 @@ def write_png(path, screen):
     for line in screen:
         raw.append(0)
         for idx in line:
-            raw += bytes(G.PALETTE[idx & 15])
+            raw += bytes(G.PALETTE[idx & 0xff])
 
     def chunk(tag, data):
         c = struct.pack(">I", len(data)) + tag + data

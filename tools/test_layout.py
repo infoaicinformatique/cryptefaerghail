@@ -23,8 +23,16 @@ VIEW = (16, 16, 208, 152)                # ce que le fond du donjon repeint
 FRAME = (11, 11, 213, 157)               # bord interieur du cadre cisele
 
 
+NOIR = S.PALETTE[0]
+
+
 def outside(px):
-    """Pixels allumes entre le cadre et la zone repeinte."""
+    """Pixels visibles entre le cadre et la zone que le decor repeint.
+
+    On compare la couleur rendue, pas l'index : le jeu efface avec une
+    teinte nommee de la palette, qui est noire mais n'est pas l'index
+    zero -- la comparer a zero faisait crier le banc a tort.
+    """
     x0, y0, x1, y1 = VIEW
     fx0, fy0, fx1, fy1 = FRAME
     bad = []
@@ -32,7 +40,7 @@ def outside(px):
         for x in range(fx0 + 1, fx1 - 1):
             if x0 <= x < x1 and y0 <= y < y1:
                 continue
-            if px[y * SCRW + x]:
+            if S.PALETTE[px[y * SCRW + x]] != NOIR:
                 bad.append((x, y))
     return bad
 
@@ -56,9 +64,11 @@ def widest(g):
     g.setw("NeedRedraw", 1)
 
 
-def shot(g, name, fails):
+def shot(g, name, fails, ring=True):
+    """`ring` a faux pour l'accueil : son illustration couvre l'ecran
+    entier, elle a le droit d'occuper la bordure."""
     px = S.grab(g, "ShowBuf")
-    bad = outside(px)
+    bad = outside(px) if ring else []
     if bad:
         xs = sorted({x for x, _ in bad})
         ys = sorted({y for _, y in bad})
@@ -71,6 +81,8 @@ if __name__ == "__main__":
     fails = []
     g = T.Game()
     print("--- ecrans, avec les textes les plus larges des tables ---")
+    shot(g, "titre", fails, ring=False)
+    g.key(T.K_1)                          # sortir de l'accueil
     shot(g, "creation", fails)
     g.key(T.K_1 + 6)
     shot(g, "jets", fails)

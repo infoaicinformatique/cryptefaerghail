@@ -13,6 +13,7 @@ qui passe par le processeur, en revanche, s'execute pour de vrai.
 
     python3 tools/run68k.py [bin/AGACrawl]
 """
+import os
 import struct
 import sys
 
@@ -23,6 +24,7 @@ BASE = 0x00010000                        # ou l'on charge les hunks
 STACK = 0x0000f000
 EXECBASE = 0x00001000
 GFXBASE = 0x00002000
+DOSBASE = 0x00003000
 CUSTOM = 0xdff000
 CIAA = 0xbfe001
 
@@ -92,6 +94,15 @@ class Loader:
         return self.segments
 
 
+# --- dos.library : un vrai acces au disque, servi par l'hote -----------
+# Les souches rendent zero, ce qui suffit pour graphics.library mais
+# laisserait la sauvegarde intestable. On installe donc a chaque LVO de
+# dos.library une ecriture dans un guichet memoire : le callback Python
+# lit les registres du 68000 et fait l'operation pour de vrai.
+DOSPORT = 0x00f10000
+DOS_LVOS = {-30: "open", -36: "close", -42: "read", -48: "write"}
+
+
 # --- souches de bibliotheques : un petit bout de 68k a chaque LVO ------
 def stub_library(mem, base, returns=None):
     """rts a chaque vecteur negatif ; certains renvoient une valeur."""
@@ -120,6 +131,7 @@ class Harness:
         self.icr = 0
         self.custom = {}
         self.bad_blits = []
+        self.dos_dir = os.environ.get("AGA_SAVEDIR", "/tmp")
         self.audio = []
         self.finished = False
         self.setup_hw()
@@ -282,8 +294,110 @@ class Harness:
     def setup_os(self):
         m = self.mem
         m.w32(4, EXECBASE)
-        stub_library(m, EXECBASE, {-552: GFXBASE})   # OpenLibrary
+        stub_library(m, EXECBASE)
         stub_library(m, GFXBASE)
+        stub_library(m, DOSBASE)
+        self.setup_dos()
+        thunk = EXECBASE + 0x400                     # OpenLibrary : le nom
+        m.w16(EXECBASE - 552, 0x4ef9)                # decide de la base
+        m.w32(EXECBASE - 552 + 2, thunk)
+        m.w16(thunk, 0x23c9)                         # move.l a1,$00f10008
+        m.w32(thunk + 2, DOSPORT + 8)
+        m.w16(thunk + 6, 0x2039)                     # move.l $00f1000c,d0
+        m.w32(thunk + 8, DOSPORT + 12)
+        m.w16(thunk + 12, 0x4e75)
+
+    # --- dos.library ------------------------------------------------
+    def setup_dos(self):
+        """Chaque vecteur de dos.library ecrit son numero dans un
+        guichet ; le callback fait l'appel sur le disque de l'hote."""
+        self.files = {}
+        self.next_fh = 1
+        self.dos_calls = []
+        m = self.mem
+        # Les vecteurs sont espaces de six octets : on n'y met qu'un saut
+        # vers une amorce rangee plus loin, sinon les sequences se
+        # recouvrent et le premier vecteur ecrit se fait effacer.
+        for i, off in enumerate(DOS_LVOS):
+            thunk = DOSBASE + 0x400 + i * 16
+            m.w16(DOSBASE + off, 0x4ef9)             # jmp (xxx).L
+            m.w32(DOSBASE + off + 2, thunk)
+            m.w16(thunk, 0x33fc)                     # move.w #n,$00f10000
+            m.w16(thunk + 2, i)
+            m.w32(thunk + 4, DOSPORT)
+            m.w16(thunk + 8, 0x2039)                 # move.l $00f10004,d0
+            m.w32(thunk + 10, DOSPORT + 4)
+            m.w16(thunk + 14, 0x4e75)                # rts
+
+        def r_port(addr, *a):
+            if addr == DOSPORT + 4:
+                return self.dos_result & 0xffffffff
+            if addr == DOSPORT + 12:                 # base de bibliotheque
+                name = self.cstr(self.lib_name)
+                return DOSBASE if name.startswith("dos") else GFXBASE
+            return 0
+
+        def w_port(addr, val, *a):
+            if addr == DOSPORT:
+                self.dos_result = self.dos_call(list(DOS_LVOS)[val & 0xff])
+            elif addr == DOSPORT + 8:
+                self.lib_name = val
+
+        self.dos_result = 0
+        self.lib_name = 0
+        self.mem.reserve_special_range()
+        self.mem.set_special_range_read_funcs(DOSPORT, 1, r_port, r_port,
+                                              r_port)
+        self.mem.set_special_range_write_funcs(DOSPORT, 1, w_port, w_port,
+                                               w_port)
+
+    def cstr(self, addr):
+        out = b""
+        while len(out) < 256:
+            c = self.mem.r8(addr + len(out))
+            if not c:
+                break
+            out += bytes([c])
+        return out.decode("latin-1")
+
+    def dos_call(self, off):
+        name = DOS_LVOS[off]
+        d1 = self.cpu.r_reg(1)
+        d2 = self.cpu.r_reg(2)
+        d3 = self.cpu.r_reg(3)
+        self.dos_calls.append(name)
+        if name == "open":
+            path = self.cstr(d1).replace("PROGDIR:", "")
+            full = os.path.join(self.dos_dir, path)
+            mode = "r+b" if d2 == 1005 else "w+b"
+            try:
+                fh = open(full, mode)
+            except OSError:
+                return 0
+            self.next_fh += 1
+            self.files[self.next_fh] = fh
+            return self.next_fh
+        if name == "close":
+            fh = self.files.pop(d1, None)
+            if fh:
+                fh.close()
+            return 1
+        if name == "read":
+            fh = self.files.get(d1)
+            if not fh:
+                return -1
+            data = fh.read(d3)
+            for i, b in enumerate(data):
+                self.mem.w8(d2 + i, b)
+            return len(data)
+        if name == "write":
+            fh = self.files.get(d1)
+            if not fh:
+                return -1
+            fh.write(bytes(self.mem.r8(d2 + i) for i in range(d3)))
+            fh.flush()
+            return d3
+        return 0
         m.w32(GFXBASE + 34, 0)                       # ActiView
         m.w32(GFXBASE + 38, 0x00030000)              # copinit
         # les registres custom et le CIA sont servis par les callbacks

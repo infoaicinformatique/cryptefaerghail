@@ -159,6 +159,10 @@ SFX_DEATH	= 12
 ; --- phases et ecrans ---
 PHASE_CREATE	= 0
 PHASE_PLAY	= 1
+PHASE_TITLE	= 2			; l'ecran d'accueil
+TITLEH		= 176			; hauteur de l'illustration
+SAVEMAGIC	= $46414552		; "FAER"
+SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -218,6 +222,11 @@ Start:
 	jsr	_LVOOpenLibrary(a6)
 	move.l	d0,GfxBase
 	beq	ExitNoGfx
+	lea	DosName,a1		; pour lire et ecrire la sauvegarde
+	moveq	#0,d0
+	jsr	_LVOOpenLibrary(a6)
+	move.l	d0,DosBase
+	bsr	CheckSave
 	jsr	_LVOForbid(a6)
 
 	move.l	GfxBase,a6
@@ -243,6 +252,7 @@ Start:
 
 	bsr	InitScreen
 	bsr	NewGame
+	move.w	#PHASE_TITLE,Phase	; on arrive par l'accueil
 	bsr	PT_Init
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 
@@ -282,7 +292,13 @@ MainLoop:
 	bsr	PollKey
 	tst.w	d0
 	bmi.s	.noKey
-	tst.w	Phase
+	move.w	Phase,d1
+	cmp.w	#PHASE_TITLE,d1
+	bne.s	.notTitleKey
+	bsr	TitleKey
+	bra.s	.noKey
+.notTitleKey:
+	tst.w	d1
 	bne.s	.playKey
 	bsr	CreateKey
 	bra.s	.noKey
@@ -302,6 +318,12 @@ MainLoop:
 	bsr	RestoreSystem
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
+	move.l	DosBase,d0
+	beq.s	.noDos
+	move.l	d0,a1
+	move.l	4.w,a6
+	jsr	_LVOCloseLibrary(a6)
+.noDos:
 	move.l	GfxBase,a1
 	move.l	4.w,a6
 	jsr	_LVOCloseLibrary(a6)
@@ -1389,8 +1411,13 @@ DrawScene:
 ;----------------------------------------------------------------------
 Redraw:
 	movem.l	d0-d7/a0-a6,-(sp)
-	tst.w	Phase			; le releve suit le groupe
-	beq.s	.noMark
+	cmp.w	#PHASE_TITLE,Phase
+	bne.s	.game
+	bsr	DrawTitle
+	bra	.drawn
+.game:
+	cmp.w	#PHASE_PLAY,Phase	; le releve suit le groupe
+	bne.s	.noMark
 	bsr	MarkSeen
 .noMark:
 	move.w	#PANEL_X,d0
@@ -1429,6 +1456,7 @@ Redraw:
 	bsr	MusicPoll
 	bsr	DrawLog
 	bsr	DrawStatus
+.drawn:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -1669,6 +1697,248 @@ DrawStatus:
 	move.w	#C_TEXTLOW,d2
 	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Ecran d'accueil
+;----------------------------------------------------------------------
+DrawTitle:
+	movem.l	d0-d7/a0-a6,-(sp)
+	moveq	#ART_TITLE,d0		; l'illustration, copie simple
+	moveq	#1,d1
+	moveq	#0,d2
+	bsr	BlitPieceAt
+
+	moveq	#0,d0
+	move.w	#TITLEH,d1
+	move.w	#SCRW,d2
+	move.w	#SCRH-TITLEH,d3
+	move.w	#C_PANEL,d4
+	bsr	FillRect
+	moveq	#8,d0
+	move.w	#TITLEH+6,d1
+	move.w	#304,d2
+	move.w	#66,d3
+	bsr	DrawFrame
+
+	lea	TxtMenuNew,a0
+	moveq	#5,d0
+	move.w	#TITLEH+14,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	lea	TxtMenuLoad,a0
+	moveq	#5,d0
+	move.w	#TITLEH+28,d1
+	move.w	#C_HILITE,d2
+	tst.w	HasSave
+	bne.s	.hasSave
+	move.w	#C_TEXTLOW,d2		; rien a reprendre : en gris
+.hasSave:
+	bsr	DrawText
+
+	lea	TxtMenuQuit,a0
+	moveq	#5,d0
+	move.w	#TITLEH+42,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+
+	lea	TxtMenuHint,a0
+	moveq	#5,d0
+	move.w	#TITLEH+58,d1
+	move.w	#C_TEXTLOW,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; ClearScreens : les deux tampons d'un coup. En quittant l'accueil,
+; l'illustration restait visible dans la bordure que le decor ne
+; repeint pas -- huit pixels tout autour de la vue.
+ClearScreens:
+	movem.l	d0-d4/a0,-(sp)
+	move.l	DrawBuf,a0
+	move.l	ShowBuf,DrawBuf
+	bsr	.wipe
+	move.l	a0,DrawBuf
+	bsr	.wipe
+	movem.l	(sp)+,d0-d4/a0
+	rts
+.wipe:
+	moveq	#0,d0
+	moveq	#0,d1
+	move.w	#SCRW,d2
+	move.w	#SCRH,d3
+	move.w	#C_BLACK,d4
+	bra	FillRect
+
+TitleKey:
+	movem.l	d1-d7/a0-a6,-(sp)
+	cmp.w	#KEY_ESC,d0
+	bne.s	.notEsc
+	move.w	#1,Quit
+	bra	.done
+.notEsc:
+	cmp.w	#KEY_1,d0
+	bne.s	.notNew
+	bsr	NewGame			; une nouvelle equipe
+	bsr	ClearScreens
+	clr.w	Phase
+	bra.s	.redraw
+.notNew:
+	cmp.w	#KEY_1+1,d0
+	bne.s	.done
+	tst.w	HasSave
+	beq.s	.done
+	bsr	LoadGame
+	tst.w	d0
+	beq.s	.done
+	bsr	ClearScreens
+	move.w	#PHASE_PLAY,Phase
+	lea	TxtResumed,a0
+	bsr	LogAdd
+.redraw:
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d1-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Sauvegarde : un bloc unique ecrit par dos.library.
+;
+; Le jeu tourne sous Forbid ; dos.library a besoin du multitache, on
+; rend donc la main le temps de l'acces au fichier, puis on la reprend.
+;----------------------------------------------------------------------
+PackSave:
+	movem.l	d0/a0-a2,-(sp)
+	lea	SaveBuf,a1
+	move.l	#SAVEMAGIC,(a1)+
+	lea	SaveList,a2
+.loop:
+	move.l	(a2)+,a0
+	move.l	(a2)+,d0
+	cmp.l	#0,a0
+	beq.s	.done
+	subq.l	#1,d0
+.copy:
+	move.b	(a0)+,(a1)+
+	dbf	d0,.copy
+	bra.s	.loop
+.done:
+	movem.l	(sp)+,d0/a0-a2
+	rts
+
+UnpackSave:				; -> d0 = 1 si la sauvegarde est bonne
+	movem.l	d1/a0-a2,-(sp)
+	lea	SaveBuf,a1
+	cmp.l	#SAVEMAGIC,(a1)+
+	bne.s	.bad
+	lea	SaveList,a2
+.loop:
+	move.l	(a2)+,a0
+	move.l	(a2)+,d1
+	cmp.l	#0,a0
+	beq.s	.good
+	subq.l	#1,d1
+.copy:
+	move.b	(a1)+,(a0)+
+	dbf	d1,.copy
+	bra.s	.loop
+.bad:
+	moveq	#0,d0
+	bra.s	.done
+.good:
+	moveq	#1,d0
+.done:
+	movem.l	(sp)+,d1/a0-a2
+	rts
+
+SaveGame:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.l	DosBase,d0
+	beq	.done
+	bsr	PackSave
+	move.l	4.w,a6
+	jsr	_LVOPermit(a6)
+	move.l	DosBase,a6
+	move.l	#SaveName,d1
+	move.l	#MODE_NEWFILE,d2
+	jsr	_LVOOpen(a6)
+	move.l	d0,d4
+	beq.s	.reforbid
+	move.l	d4,d1
+	move.l	#SaveBuf,d2
+	move.l	#SAVESIZE,d3
+	jsr	_LVOWrite(a6)
+	move.l	d4,d1
+	jsr	_LVOClose(a6)
+	move.w	#1,HasSave
+.reforbid:
+	move.l	4.w,a6
+	jsr	_LVOForbid(a6)
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+LoadGame:				; -> d0 = 1 si la partie est reprise
+	movem.l	d1-d7/a0-a6,-(sp)
+	moveq	#0,d5
+	move.l	DosBase,d0
+	beq.s	.done
+	move.l	4.w,a6
+	jsr	_LVOPermit(a6)
+	move.l	DosBase,a6
+	move.l	#SaveName,d1
+	move.l	#MODE_OLDFILE,d2
+	jsr	_LVOOpen(a6)
+	move.l	d0,d4
+	beq.s	.reforbid
+	move.l	d4,d1
+	move.l	#SaveBuf,d2
+	move.l	#SAVESIZE,d3
+	jsr	_LVORead(a6)
+	cmp.l	#SAVESIZE,d0
+	bne.s	.close
+	moveq	#1,d5
+.close:
+	move.l	d4,d1
+	jsr	_LVOClose(a6)
+.reforbid:
+	move.l	4.w,a6
+	jsr	_LVOForbid(a6)
+	tst.w	d5
+	beq.s	.done
+	bsr	UnpackSave
+	move.w	d0,d5
+.done:
+	move.w	d5,d0
+	movem.l	(sp)+,d1-d7/a0-a6
+	rts
+
+CheckSave:				; y a-t-il une partie a reprendre ?
+	movem.l	d0-d4/a0-a6,-(sp)
+	clr.w	HasSave
+	move.l	DosBase,d0
+	beq.s	.done
+	move.l	DosBase,a6
+	move.l	#SaveName,d1
+	move.l	#MODE_OLDFILE,d2
+	jsr	_LVOOpen(a6)
+	move.l	d0,d4
+	beq.s	.done
+	move.l	d4,d1
+	move.l	#SaveBuf,d2
+	moveq	#4,d3
+	jsr	_LVORead(a6)
+	cmp.l	#4,d0
+	bne.s	.close
+	cmp.l	#SAVEMAGIC,SaveBuf
+	bne.s	.close
+	move.w	#1,HasSave
+.close:
+	move.l	d4,d1
+	jsr	_LVOClose(a6)
+.done:
+	movem.l	(sp)+,d0-d4/a0-a6
 	rts
 
 ;----------------------------------------------------------------------
@@ -2414,6 +2684,7 @@ CommitHero:
 	cmp.w	#NHEROES,d0
 	blt.s	.done
 	bsr	StartAdventure
+	bsr	SaveGame		; l'equipe est prete : on la garde
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -3497,6 +3768,7 @@ Descend:
 	move.w	d0,Level
 	bsr	LoadLevel
 	bsr	PartyRest
+	bsr	SaveGame		; un etage franchi, une partie sauvee
 	moveq	#SFX_DOOR,d0
 	bsr	SfxPlay
 	lea	TxtDescend,a0
@@ -4526,6 +4798,7 @@ HandleKey:
 	bsr	LogAdd
 	bra	.redraw
 .reallyQuit:
+	bsr	SaveGame		; on ne perd pas la partie en sortant
 	move.w	#1,Quit
 	bra	.done
 .notEsc:
@@ -4751,6 +5024,20 @@ DirTable:
 	dc.w	0,1
 	dc.w	-1,0
 
+SaveName:	dc.b	"PROGDIR:AGACrawl.sav",0
+DosName:	dc.b	"dos.library",0
+	even
+
+; Ce qu'une partie contient : adresse et longueur de chaque bloc.
+SaveList:
+	dc.l	PosX,12			; PosX, PosY, Dir, Level, Gold, KeyCount
+	dc.l	Heroes,NHEROES*hr_SIZEOF
+	dc.l	Inventory,INVSIZE
+	dc.l	MapTerrain,MAPBYTES
+	dc.l	MapParam,MAPBYTES
+	dc.l	MapSeen,MAPBYTES
+	dc.l	0,0
+
 DirNames:
 	dc.l	TxtNord,TxtEst,TxtSud,TxtOuest
 
@@ -4922,6 +5209,12 @@ TxtHelpMove:	dc.b	"FLECHES ESPACE C FICHE I SAC M CARTE",0
 TxtRaised:	dc.b	" SE RELEVE.",0
 TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
 TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
+TxtMenuNew:	dc.b	"1   COMMENCER UNE NOUVELLE PARTIE",0
+TxtMenuLoad:	dc.b	"2   REPRENDRE LA PARTIE SAUVEE",0
+TxtMenuQuit:	dc.b	"ESC QUITTER",0
+TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ETAGE",0
+TxtResumed:	dc.b	"VOUS REPRENEZ VOTRE DESCENTE.",0
+TxtSaved:	dc.b	"LA PARTIE EST SAUVEE.",0
 TxtMapTitle:	dc.b	"CARTE NIVEAU ",0
 TxtDash2:	dc.b	" - ",0
 TxtNord:	dc.b	"NORD",0
@@ -4964,6 +5257,7 @@ SfxSilence:
 ;======================================================================
 
 GfxBase:	ds.l	1
+DosBase:	ds.l	1
 OldView:	ds.l	1
 OldCopper:	ds.l	1
 ShowBuf:	ds.l	1
@@ -4987,6 +5281,7 @@ MonHp:		ds.w	1
 MonStun:	ds.w	1
 AtkMax:		ds.w	1
 QuitArm:	ds.w	1
+HasSave:	ds.w	1
 SpellCount:	ds.w	1
 SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1
@@ -5027,6 +5322,8 @@ Inventory:	ds.b	INVSIZE
 MapTerrain:	ds.b	MAPBYTES
 MapParam:	ds.b	MAPBYTES
 MapSeen:	ds.b	MAPBYTES
+	even
+SaveBuf:	ds.b	SAVESIZE
 LogBuf:		ds.b	LOGLINES*(LOGWIDTH+2)
 TmpStr:		ds.b	96
 NumBuf:		ds.b	14

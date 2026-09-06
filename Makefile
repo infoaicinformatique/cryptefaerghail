@@ -77,6 +77,7 @@ check:
 test:
 	python3 tools/test_game.py
 	python3 tools/test_sfx.py
+	python3 tools/test_save.py
 	python3 tools/test_layout.py
 	python3 tools/play_game.py
 

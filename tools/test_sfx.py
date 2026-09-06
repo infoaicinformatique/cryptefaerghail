@@ -181,6 +181,8 @@ def check_in_game(g, sfx, fails):
         fails.append("aucun grincement en ouvrant une porte")
 
     P.pull_levers(g)                                  # ouvrir les herses
+    while g.w("InCombat") and not g.w("GameOver"):    # finir un combat
+        g.key(T.K_A)                                  # commence en chemin
     heard = probe(lambda c: c & 0x30 == 0x20)         # un monstre
     if heard is None:
         fails.append("aucun monstre atteignable pour l'essai")

@@ -161,7 +161,12 @@ class Game(R.Harness):
 
 
 def create_party(g, classes=(0, 6, 1, 5)):
-    """Choix de classe, acceptation des jets, nom par defaut."""
+    """Choix de classe, acceptation des jets, nom par defaut.
+
+    Le jeu s'ouvre sur l'ecran d'accueil : on demande d'abord une
+    nouvelle partie."""
+    if g.w("Phase") == 2:
+        g.key(K_1)
     for c in classes:
         g.key(K_1 + c)                   # touche 1 a 8
         g.key(K_RET)                     # garder les caracteristiques
@@ -180,8 +185,9 @@ if __name__ == "__main__":
     fails = []
     g = Game()
     print("--- amorcage ---")
-    check(g.w("Phase") == 0, "le jeu devrait demarrer en creation", fails)
-    print(f"  phase de creation, {len(g.syms)} symboles")
+    check(g.w("Phase") == 2, "le jeu devrait demarrer sur l" + chr(39)
+          + "accueil", fails)
+    print(f"  ecran d'accueil, {len(g.syms)} symboles")
 
     print("--- creation du groupe ---")
     phase = create_party(g)
@@ -242,7 +248,7 @@ if __name__ == "__main__":
         ui, phase = g.w("UiMode"), g.w("Phase")
         if not check(ui <= 5, f"UiMode={ui}", fails):
             break
-        if not check(phase <= 1, f"Phase={phase}", fails):
+        if not check(phase <= 2, f"Phase={phase}", fails):
             break
         if not check(g.w("InvCursor") < 24, f"InvCursor={g.w('InvCursor')}", fails):
             break

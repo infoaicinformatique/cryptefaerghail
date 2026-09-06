@@ -9,6 +9,16 @@ AGACRAWL - LA CRYPTE DE FAERGHAIL
 Dungeon crawler en vue subjective, dans l'esprit de Black Crypt, avec
 des regles inspirees de D&D 3.5.
 
+L'ACCUEIL
+  Le jeu s'ouvre sur le portail de la crypte.
+    1    commencer une nouvelle partie
+    2    reprendre la partie sauvee
+    ESC  quitter
+  La partie se sauve toute seule : des que le groupe est forme, a
+  chaque etage franchi, et quand vous abandonnez par ESC. Le fichier
+  s'appelle AGACrawl.sav et se range a cote du programme (PROGDIR:) ;
+  effacez-le pour repartir de zero.
+
 CREATION DU GROUPE
   Quatre aventuriers, chacun d'une des huit classes :
     GUERRIER    de de vie 10, attaque a chaque niveau, epee et cotte
@@ -56,6 +66,14 @@ LES PORTRAITS
   Un visage par classe, dessine en trente-deux pixels de cote : le
   volume vient d'un eclairage venu d'en haut a gauche, les yeux, le nez
   et la bouche sont poses au pixel.
+
+LES SURFACES
+  Murs, sol et voute partagent la meme pierre et la meme loi de
+  lumiere : plus c'est loin, plus c'est sombre, et le couloir s'eteint
+  sur les cotes comme sous une torche portee. Le sol est dalle de la
+  meme pierre que les murs, avec de la terre dans les joints et de la
+  mousse le long des parois ; la voute porte ses nervures et la suie
+  des torches.
 
 L'IMAGE
   Le jeu tourne en huit bitplanes AGA : 256 couleurs choisies parmi

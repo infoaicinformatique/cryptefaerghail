@@ -113,6 +113,14 @@ _LVOPermit      = -138
 _LVOOpenLibrary = -552
 _LVOCloseLibrary = -414
 
+; --- dos.library : sauvegarde de la partie ---
+_LVOOpen        = -30
+_LVOClose       = -36
+_LVORead        = -42
+_LVOWrite       = -48
+MODE_OLDFILE    = 1005
+MODE_NEWFILE    = 1006
+
 ; --- LVO graphics.library ---
 _LVOLoadView    = -222
 _LVOWaitBlit    = -228

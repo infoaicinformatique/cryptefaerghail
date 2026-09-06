@@ -27,7 +27,6 @@ CX, CY = VIEW_W // 2, VIEW_H // 2        # point de fuite
 F = 64.0                                 # demi-taille d'un mur a distance 1
 SCRBPL = 40                              # octets par ligne d'un plan d'ecran
 DEPTHS = 8                               # AGA : huit bitplanes
-NMONSTERART = 9                          # familles de silhouettes
 NCLASSPORTRAIT = 8                       # un visage par classe
 
 # --- palette : 256 couleurs AGA, decrites dans tools/palette.py ------
@@ -1093,6 +1092,25 @@ def ellipse(p, cx, cy, rx, ry, idx):
                 p.set(x, y, idx)
 
 
+def blob(p, cx, cy, rx, ry, mat, light=0.16, dark=0.88):
+    """Une masse eclairee d'en haut a gauche, dans une matiere.
+
+    Les creatures etaient peintes d'un seul aplat pris dans la table de
+    compatibilite seize couleurs : a huit bitplanes c'est du gachis, et
+    cela les rendait toutes pareilles quelle que soit leur silhouette."""
+    for y in range(int(cy - ry), int(cy + ry) + 1):
+        for x in range(int(cx - rx), int(cx + rx) + 1):
+            u = (x - cx) / float(rx)
+            v = (y - cy) / float(ry)
+            d = u * u + v * v
+            if d > 1.0:
+                continue
+            n = math.sqrt(max(0.0, 1.0 - d))         # normale approchee
+            lum = 0.52 * n + 0.32 * (-u) + 0.26 * (-v)
+            t = dark - (dark - light) * max(0.0, min(1.0, lum))
+            p.set(x, y, pal.lit(mat, t))
+
+
 def limb(p, x0, y0, x1, y1, thick, idx):
     """Trait epais : membres, cous, armes."""
     steps = max(abs(x1 - x0), abs(y1 - y0), 1)
@@ -1105,15 +1123,95 @@ def limb(p, x0, y0, x1, y1, thick, idx):
                     p.set(int(x) + dx, int(y) + dy, idx)
 
 
+def tube(p, x0, y0, x1, y1, thick, mat, light=0.24, dark=0.90):
+    """Un membre rond : le meme trait, mais galbe."""
+    steps = max(abs(x1 - x0), abs(y1 - y0), 1)
+    for i in range(steps + 1):
+        x = x0 + (x1 - x0) * i / steps
+        y = y0 + (y1 - y0) * i / steps
+        for dx in range(-thick, thick + 1):
+            for dy in range(-thick, thick + 1):
+                r = math.sqrt(dx * dx + dy * dy) / float(thick)
+                if r > 1.0:
+                    continue
+                n = math.sqrt(max(0.0, 1.0 - r * r))
+                lum = 0.55 * n + 0.35 * (-dx / float(thick))
+                t = dark - (dark - light) * max(0.0, min(1.0, lum))
+                p.set(int(x) + dx, int(y) + dy, pal.lit(mat, t))
+
+
 def eyes(p, cx, cy, spread, idx=15, size=2):
     for e in (-spread, spread):
         ellipse(p, cx + e, cy, size, size, idx)
 
 
+def glare(p, cx, cy, spread, mat="FIRE", size=1, halo=False):
+    """Des yeux. Un cerne ne sert qu'aux creatures dont le regard luit :
+    pose sur tout le monde, il donnait a chaque monstre les memes gros
+    yeux ronds et annulait la variete des silhouettes."""
+    for e in (-spread, spread):
+        if halo:
+            ellipse(p, cx + e, cy, size + 1, size + 1, pal.one("SHADOW"))
+        ellipse(p, cx + e, cy, size, size, pal.lit(mat, 0.12))
+
+
+def blade(p, x, y, length, width, mat, curve=0.0):
+    """Un fer de hache ou d'epee : un coin, pas une boule. Le dos est
+    epais, le tranchant s'affine et prend la lumiere."""
+    for i in range(length):
+        t = i / float(length - 1) if length > 1 else 0.0
+        half = max(1, int(width * (0.35 + 0.65 * math.sin(math.pi * t))))
+        bow = int(curve * math.sin(math.pi * t))
+        for dy in range(-half, half + 1):
+            e = abs(dy) / float(half)
+            p.set(x + i + bow, y + dy,
+                  pal.lit(mat, 0.20 + 0.55 * e))
+
+
+def fangs(p, cx, cy, spread, n=3):
+    """Des crocs qui depassent, plutot qu'une rangee de dents droites."""
+    for k in range(n):
+        e = -spread + 2 * spread * k // max(1, n - 1)
+        for t in range(2 + (k % 2)):
+            p.set(cx + e, cy + t, pal.lit("BONE", 0.10 + 0.12 * t))
+
+
+# Une silhouette et une matiere par entree : c'est le couple qui fait la
+# creature. Le meme humanoide arme devient orc en peau, homme-lezard en
+# ecailles, gnoll en pelage sombre -- neuf formes suffisaient a peine a
+# vingt-six monstres, dix-neuf apparences les distinguent.
+MONSTER_LOOKS = [
+    (0, "HIDE", "BLOOD"),                # 0  bete brune : rat, loup
+    (0, "IRON", "BLOOD"),                # 1  bete grise : worg
+    (1, "BONE", "MAGIC"),                # 2  squelette
+    (1, "ROT", "MOSS"),                  # 3  chair morte : zombi, goule
+    (2, "SCALE", "GOLD"),                # 4  petit reptilien : kobold
+    (2, "MOSS", "STEEL"),                # 5  petit vert : gobelin
+    (3, "HIDE", "STEEL"),                # 6  humanoide arme : orc, hobgobelin
+    (3, "SCALE", "STEEL"),               # 7  homme-lezard
+    (3, "ROT", "IRON"),                  # 8  gnoll, bugbear
+    (4, "HIDE", "IRON"),                 # 9  grand brutal : ogre, geant
+    (4, "MOSS", "IRON"),                 # 10 troll
+    (5, "MAGIC", "WHITE"),               # 11 ombre
+    (5, "IRON", "MAGIC"),                # 12 spectre, gardien
+    (6, "BONE", "GOLD"),                 # 13 momie
+    (7, "STONE", "FIRE"),                # 14 gargouille
+    (7, "HIDE", "FIRE"),                 # 15 harpie
+    (8, "SCALE", "FIRE"),                # 16 hydre
+    (9, "HIDE", "BONE"),                 # 17 oursaloup
+    (10, "HIDE", "BONE"),                # 18 minotaure
+]
+NMONSTERART = len(MONSTER_LOOKS)
+
+
 def make_monster(kind, frame=0):
-    """Neuf familles de creatures, deux poses chacune. Les couleurs
-    restent dans la palette du donjon : gris de pierre, vert, rouge,
-    ocre, blanc.  Chaque famille sert plusieurs entrees du bestiaire."""
+    """Une apparence du bestiaire, en deux poses.
+
+    `kind` designe une entree de MONSTER_LOOKS : une forme et les deux
+    matieres qui l'habillent. Les teintes viennent des gammes de la
+    palette AGA -- peau, ecaille, pourriture, os, mousse, fer, pierre --
+    et non plus de la table de compatibilite seize couleurs."""
+    shape, mat, accent = MONSTER_LOOKS[kind % len(MONSTER_LOOKS)]
     w, h = 96, 88                                    # largeur multiple de 16
     x0 = ((CX - w // 2) // 16) * 16
     p = Piece(x0, CY - h // 2 + 6, w, h)
@@ -1121,153 +1219,211 @@ def make_monster(kind, frame=0):
     cy = CY - h // 2 + 6 + h // 2
     f = 1 if frame else 0                            # deuxieme pose
     sway = 2 if frame else -2
+    dk = pal.lit(mat, 0.94)                          # le trait le plus sombre
 
-    if kind == 0:                                    # --- bete a quatre pattes
-        body, dark = C[4], C[6]
-        ellipse(p, cx + 2, cy + 10, 26, 15, body)
-        ellipse(p, cx + 2, cy + 6, 24, 11, C[3])        # dos eclaire
+    if shape == 0:                                   # --- bete a quatre pattes
+        blob(p, cx + 2, cy + 10, 26, 15, mat)
         for s, off in ((-1, -16), (-1, 8), (1, -12), (1, 12)):
-            limb(p, cx + off, cy + 18, cx + off + s * 3, cy + 28 + f * 2, 3, dark)
-        ellipse(p, cx - 26, cy + 2, 13, 11, body)    # tete
-        ellipse(p, cx - 34, cy + 4, 6, 5, C[3])         # museau
-        limb(p, cx - 31, cy - 8, cx - 27, cy - 2, 2, dark)   # oreilles
-        limb(p, cx - 24, cy - 10, cx - 22, cy - 3, 2, dark)
-        eyes(p, cx - 29, cy - 1, 0, C[15], 1)
+            tube(p, cx + off, cy + 18, cx + off + s * 3, cy + 28 + f * 2,
+                 3, mat)
+        blob(p, cx - 26, cy + 2, 13, 11, mat)        # tete
+        blob(p, cx - 34, cy + 4, 6, 5, mat, light=0.30)
+        tube(p, cx - 31, cy - 8, cx - 27, cy - 2, 2, mat)      # oreilles
+        tube(p, cx - 24, cy - 10, cx - 22, cy - 3, 2, mat)
+        glare(p, cx - 29, cy - 1, 0, accent, 1)
         for t in range(26):                          # queue
-            p.set(cx + 27 + t // 2, cy + 6 - t + (t * sway) // 14, dark)
+            p.set(cx + 27 + t // 2, cy + 6 - t + (t * sway) // 14, dk)
         for t in range(-6, 7):                       # crocs
             if t % 3 == 0:
-                p.set(cx - 36 + abs(t) // 2, cy + 8, 13)
+                p.set(cx - 36 + abs(t) // 2, cy + 8, pal.lit("BONE", 0.10))
 
-    elif kind == 1:                                  # --- squelette
-        bone, shade = C[13], C[2]
-        ellipse(p, cx, cy - 24, 11, 13, bone)        # crane
+    elif shape == 1:                                 # --- mort qui marche
+        blob(p, cx, cy - 24, 11, 13, mat, light=0.10)   # crane
         for e in (-4, 4):
-            ellipse(p, cx + e, cy - 26, 3, 4, C[0])
+            ellipse(p, cx + e, cy - 26, 3, 4, pal.one("SHADOW"))
         for t in range(-4, 5, 2):                    # machoire
-            p.set(cx + t, cy - 14, C[0])
-        limb(p, cx, cy - 12, cx, cy + 14, 3, bone)   # colonne
+            p.set(cx + t, cy - 14, pal.one("SHADOW"))
+        tube(p, cx, cy - 12, cx, cy + 14, 3, mat)    # colonne
         for r in range(-8, 12, 5):                   # cotes
             for x in range(-12, 13):
                 if abs(x) > 3:
-                    p.set(cx + x, cy + r + abs(x) // 4, shade)
-        limb(p, cx - 12, cy - 8, cx - 20 - f * 3, cy + 6 - f * 8, 2, bone)
-        limb(p, cx + 12, cy - 8, cx + 20, cy + 10, 2, bone)
-        limb(p, cx - 6, cy + 16, cx - 9, cy + 34, 3, bone)
-        limb(p, cx + 6, cy + 16, cx + 9, cy + 34, 3, bone)
-        limb(p, cx + 20, cy + 10, cx + 26, cy - 16, 2, C[4])     # arme
+                    p.set(cx + x, cy + r + abs(x) // 4,
+                          pal.lit(mat, 0.55 + 0.02 * abs(x)))
+        tube(p, cx - 12, cy - 8, cx - 20 - f * 3, cy + 6 - f * 8, 2, mat)
+        tube(p, cx + 12, cy - 8, cx + 20, cy + 10, 2, mat)
+        tube(p, cx - 6, cy + 16, cx - 9, cy + 34, 3, mat)
+        tube(p, cx + 6, cy + 16, cx + 9, cy + 34, 3, mat)
+        tube(p, cx + 20, cy + 10, cx + 26, cy - 16, 2, "IRON")     # arme
         for t in range(6):
-            p.set(cx + 26 + t // 3, cy - 18 - t, C[2])
+            p.set(cx + 26 + t // 3, cy - 18 - t, pal.lit("STEEL", 0.25))
 
-    elif kind == 2:                                  # --- petit humanoide
-        skin, cloth = C[12], C[9]
-        ellipse(p, cx, cy + 8, 13, 16, skin)         # corps
-        ellipse(p, cx, cy - 12, 11, 11, skin)        # tete
-        limb(p, cx - 9, cy - 18, cx - 14, cy - 24, 2, skin)   # oreilles
-        limb(p, cx + 9, cy - 18, cx + 14, cy - 24, 2, skin)
-        eyes(p, cx, cy - 13, 4, C[14], 2)
-        for t in range(-4, 5, 2):
-            p.set(cx + t, cy - 6, C[13])                # dents
-        limb(p, cx - 12, cy + 4, cx - 18 - f * 2, cy + 16, 3, skin)
-        limb(p, cx + 12, cy + 2, cx + 18, cy - 10 - f * 4, 3, skin)
-        limb(p, cx + 18, cy - 26 - f * 4, cx + 18, cy + 14, 1, C[4])  # lance
-        limb(p, cx - 6, cy + 22, cx - 8, cy + 34, 3, cloth)
-        limb(p, cx + 6, cy + 22, cx + 8, cy + 34, 3, cloth)
+    elif shape == 2:                                 # --- petit humanoide
+        blob(p, cx + 1, cy + 12, 15, 13, mat)        # corps ramasse
+        blob(p, cx - 2, cy - 6, 11, 10, mat)         # tete basse, en avant
+        tube(p, cx - 11, cy - 10, cx - 18, cy - 18, 2, mat)    # oreilles
+        tube(p, cx + 7, cy - 12, cx + 13, cy - 20, 2, mat)
+        glare(p, cx - 2, cy - 7, 4, accent, 1)
+        fangs(p, cx - 2, cy - 1, 4, 3)               # crocs
+        tube(p, cx - 13, cy + 10, cx - 20 - f * 2, cy + 20, 3, mat)
+        tube(p, cx + 13, cy + 8, cx + 19, cy - 4 - f * 4, 3, mat)
+        tube(p, cx + 19, cy - 22 - f * 4, cx + 19, cy + 18, 1, "WOOD")
+        tube(p, cx - 6, cy + 24, cx - 8, cy + 32, 3, mat, dark=0.96)
+        tube(p, cx + 6, cy + 24, cx + 8, cy + 32, 3, mat, dark=0.96)
 
-    elif kind == 3:                                  # --- humanoide arme
-        skin, dark = C[12], C[6]
-        ellipse(p, cx, cy + 10, 20, 20, skin)
-        ellipse(p, cx, cy + 6, 17, 15, C[3])            # torse eclaire
-        ellipse(p, cx, cy - 16, 13, 13, skin)
-        eyes(p, cx, cy - 18, 5, C[14], 2)
-        for t in (-5, 5):                            # defenses
-            p.set(cx + t, cy - 8, C[13]), p.set(cx + t, cy - 7, C[13])
-        limb(p, cx - 18, cy + 4, cx - 26, cy + 18 - f * 4, 4, skin)
-        limb(p, cx + 18, cy + 2, cx + 26, cy - 12 - f * 6, 4, skin)
-        limb(p, cx + 26, cy - 14 - f * 6, cx + 34, cy - 30 - f * 6, 2, C[4])
-        for t in range(10):                          # lame de la hache
-            p.set(cx + 30 + t // 2, cy - 32 - f * 6 + t, C[2])
-            p.set(cx + 36 - t // 3, cy - 30 - f * 6 + t, C[1])
-        limb(p, cx - 8, cy + 28, cx - 11, cy + 40, 4, dark)
-        limb(p, cx + 8, cy + 28, cx + 11, cy + 40, 4, dark)
+    elif shape == 3:                                 # --- humanoide arme
+        blob(p, cx, cy + 22, 15, 13, mat)            # bassin
+        blob(p, cx, cy + 2, 21, 15, mat)             # torse, epaules larges
+        tube(p, cx, cy - 8, cx, cy - 3, 5, mat)      # cou
+        blob(p, cx, cy - 16, 12, 12, mat)
+        glare(p, cx, cy - 18, 5, accent, 1)
+        fangs(p, cx, cy - 8, 5, 2)                   # defenses
+        tube(p, cx - 19, cy + 2, cx - 27, cy + 18 - f * 4, 4, mat)
+        tube(p, cx + 19, cy, cx + 26, cy - 12 - f * 6, 4, mat)
+        tube(p, cx + 26, cy - 14 - f * 6, cx + 34, cy - 34 - f * 8, 2, "WOOD")
+        blade(p, cx + 30, cy - 38 - f * 8, 12, 7, accent, curve=3)
+        tube(p, cx - 8, cy + 30, cx - 12, cy + 40, 4, mat, dark=0.96)
+        tube(p, cx + 8, cy + 30, cx + 12, cy + 40, 4, mat, dark=0.96)
 
-    elif kind == 4:                                  # --- grand brutal
-        skin, dark = C[3], C[5]
-        ellipse(p, cx, cy + 14, 27, 26, skin)
-        ellipse(p, cx, cy + 10, 23, 20, C[2])
-        ellipse(p, cx, cy - 18, 16, 15, skin)
-        limb(p, cx - 14, cy - 30, cx - 20, cy - 38, 3, C[13])    # cornes
-        limb(p, cx + 14, cy - 30, cx + 20, cy - 38, 3, C[13])
-        eyes(p, cx, cy - 20, 6, C[15], 2)
-        for t in range(-6, 7, 3):
-            p.set(cx + t, cy - 10, C[13])
-        limb(p, cx - 24, cy + 6, cx - 34, cy + 22 - f * 4, 5, skin)
-        limb(p, cx + 24, cy + 4, cx + 32, cy - 14 - f * 6, 5, skin)
-        limb(p, cx + 32, cy - 16 - f * 6, cx + 38, cy - 36 - f * 8, 4, C[9])
-        ellipse(p, cx + 38, cy - 38 - f * 8, 8, 8, C[9])         # masse
-        limb(p, cx - 10, cy + 36, cx - 13, cy + 42, 6, dark)
-        limb(p, cx + 10, cy + 36, cx + 13, cy + 42, 6, dark)
+    elif shape == 4:                                 # --- grand brutal
+        blob(p, cx, cy + 18, 29, 24, mat)            # masse basse
+        for e in (-20, 20):                          # epaules hautes
+            blob(p, cx + e, cy - 8, 13, 12, mat)
+        blob(p, cx, cy - 12, 13, 12, mat)            # petite tete enfoncee
+        tube(p, cx - 11, cy - 22, cx - 17, cy - 30, 3, "BONE")   # cornes
+        tube(p, cx + 11, cy - 22, cx + 17, cy - 30, 3, "BONE")
+        glare(p, cx, cy - 14, 5, accent, 2)
+        fangs(p, cx, cy - 5, 5, 3)
+        tube(p, cx - 24, cy - 4, cx - 34, cy + 22 - f * 4, 5, mat)
+        tube(p, cx + 24, cy - 6, cx + 32, cy - 20 - f * 6, 5, mat)
+        tube(p, cx + 32, cy - 22 - f * 6, cx + 38, cy - 40 - f * 8, 4, "WOOD")
+        blob(p, cx + 38, cy - 42 - f * 8, 9, 9, "WOOD", light=0.30)
+        tube(p, cx - 11, cy + 38, cx - 14, cy + 43, 6, mat, dark=0.96)
+        tube(p, cx + 11, cy + 38, cx + 14, cy + 43, 6, mat, dark=0.96)
 
-    elif kind == 5:                                  # --- spectre
-        for r in range(30, 7, -3):                   # voile en degrade
-            idx = 5 if r > 20 else (6 if r > 12 else 7)
-            ellipse(p, cx, cy + 6 + f, max(2, r - 6), r, idx)
+    elif shape == 5:                                 # --- ombre, spectre
+        for i, r in enumerate(range(30, 7, -3)):     # voile en degrade
+            blob(p, cx, cy + 6 + f, max(2, r - 6), r, mat,
+                 light=0.62 - 0.05 * i, dark=0.97)
         for t in range(24):                          # lambeaux
-            p.set(cx - 22 + t, cy + 34 + (t % 5) - f * 2, 6)
-        ellipse(p, cx, cy - 16, 12, 13, C[7])           # capuche
-        ellipse(p, cx, cy - 14, 9, 10, C[0])
-        eyes(p, cx, cy - 16, 4, C[12], 2)
-        limb(p, cx - 14, cy - 2, cx - 24 - f * 2, cy - 12, 2, C[6])
-        limb(p, cx + 14, cy - 2, cx + 24, cy - 14 - f * 2, 2, C[6])
+            p.set(cx - 22 + t, cy + 34 + (t % 5) - f * 2, pal.lit(mat, 0.90))
+        blob(p, cx, cy - 16, 12, 13, mat, light=0.50, dark=0.97)  # capuche
+        ellipse(p, cx, cy - 14, 9, 10, pal.one("SHADOW"))
+        glare(p, cx, cy - 16, 4, accent, 2, halo=True)
+        tube(p, cx - 14, cy - 2, cx - 24 - f * 2, cy - 12, 2, mat, dark=0.93)
+        tube(p, cx + 14, cy - 2, cx + 24, cy - 14 - f * 2, 2, mat, dark=0.93)
 
-    elif kind == 6:                                  # --- momie
-        wrap, shade = C[2], C[4]
-        ellipse(p, cx, cy + 12, 18, 24, wrap)
-        ellipse(p, cx, cy - 16, 12, 14, wrap)
+    elif shape == 6:                                 # --- momie
+        blob(p, cx, cy + 12, 18, 24, mat)
+        blob(p, cx, cy - 16, 12, 14, mat)
         for r in range(-28, 36, 5):                  # bandelettes
             for x in range(-20, 21):
                 if abs(x) < 19 - abs(r) // 6:
-                    p.set(cx + x + (r // 4) % 3, cy + r, shade)
-        ellipse(p, cx - 4, cy - 18, 3, 3, C[0])
-        ellipse(p, cx + 4, cy - 18, 3, 3, C[0])
-        limb(p, cx - 16, cy + 2, cx - 30, cy - 6 - f * 3, 4, wrap)
-        limb(p, cx + 16, cy + 2, cx + 30, cy - 4 - f * 3, 4, wrap)
+                    p.set(cx + x + (r // 4) % 3, cy + r, pal.lit(mat, 0.72))
+        ellipse(p, cx - 4, cy - 18, 3, 3, pal.one("SHADOW"))
+        ellipse(p, cx + 4, cy - 18, 3, 3, pal.one("SHADOW"))
+        tube(p, cx - 16, cy + 2, cx - 30, cy - 6 - f * 3, 4, mat)
+        tube(p, cx + 16, cy + 2, cx + 30, cy - 4 - f * 3, 4, mat)
         for t in range(8):                           # bandelettes qui pendent
-            p.set(cx - 30 + t % 3, cy + 2 + t, shade)
-            p.set(cx + 30 - t % 3, cy + 4 + t, shade)
+            p.set(cx - 30 + t % 3, cy + 2 + t, pal.lit(mat, 0.80))
+            p.set(cx + 30 - t % 3, cy + 4 + t, pal.lit(mat, 0.80))
+        for e in (-6, 6):                            # amulette
+            p.set(cx + e, cy - 2, pal.lit(accent, 0.15))
 
-    elif kind == 7:                                  # --- creature ailee
-        body, wing = C[6], C[5]
+    elif shape == 7:                                 # --- creature ailee
         for s in (-1, 1):                            # ailes
             for i in range(5):
-                limb(p, cx + s * 10, cy - 4,
-                     cx + s * (30 + i * 2), cy - 22 + i * 9 + f * 4, 2, wing)
-            ellipse(p, cx + s * 24, cy - 4 + f * 2, 13, 20 - f * 3, wing)
-        ellipse(p, cx, cy + 8, 14, 18, body)
-        ellipse(p, cx, cy - 14, 11, 11, body)
-        limb(p, cx - 10, cy - 22, cx - 14, cy - 30, 2, body)  # cornes
-        limb(p, cx + 10, cy - 22, cx + 14, cy - 30, 2, body)
-        eyes(p, cx, cy - 15, 4, C[14], 2)
-        limb(p, cx - 6, cy + 24, cx - 10, cy + 34, 3, body)   # serres
-        limb(p, cx + 6, cy + 24, cx + 10, cy + 34, 3, body)
+                tube(p, cx + s * 10, cy - 4,
+                     cx + s * (30 + i * 2), cy - 22 + i * 9 + f * 4, 2, mat,
+                     dark=0.93)
+            blob(p, cx + s * 24, cy - 4 + f * 2, 13, 20 - f * 3, mat,
+                 light=0.42, dark=0.95)
+        blob(p, cx, cy + 8, 14, 18, mat)
+        blob(p, cx, cy - 14, 11, 11, mat)
+        tube(p, cx - 10, cy - 22, cx - 14, cy - 30, 2, mat)   # cornes
+        tube(p, cx + 10, cy - 22, cx + 14, cy - 30, 2, mat)
+        glare(p, cx, cy - 15, 4, accent, 1)
+        tube(p, cx - 6, cy + 24, cx - 10, cy + 34, 3, mat)    # serres
+        tube(p, cx + 6, cy + 24, cx + 10, cy + 34, 3, mat)
 
-    else:                                            # --- hydre
-        ellipse(p, cx, cy + 22, 24, 14, C[12])          # corps
-        ellipse(p, cx, cy + 18, 20, 10, C[3])
+    elif shape == 8:                                 # --- hydre
+        blob(p, cx, cy + 22, 24, 14, mat)            # corps
         necks = ((-30, -18), (-16, -30), (0, -36), (16, -30), (30, -16))
         for i, (hx, hy) in enumerate(necks):
             wob = f * (2 if i % 2 else -2)
-            limb(p, cx, cy + 16, cx + hx, cy + hy + wob, 3, C[12])
-            ellipse(p, cx + hx, cy + hy + wob, 8, 6, C[12])
-            ellipse(p, cx + hx + (2 if hx > 0 else -2), cy + hy + wob + 2,
-                    5, 3, 15)
-            eyes(p, cx + hx, cy + hy + wob - 2, 3, C[14], 1)
+            tube(p, cx, cy + 16, cx + hx, cy + hy + wob, 3, mat)
+            blob(p, cx + hx, cy + hy + wob, 8, 6, mat)
+            blob(p, cx + hx + (2 if hx > 0 else -2), cy + hy + wob + 2,
+                 5, 3, mat, light=0.34)
+            glare(p, cx + hx, cy + hy + wob - 2, 3, accent, 1)
         for t in range(20):                          # queue
-            p.set(cx + 24 + t // 2, cy + 28 + t // 3, C[12])
+            p.set(cx + 24 + t // 2, cy + 28 + t // 3, dk)
+
+    elif shape == 9:                                 # --- oursaloup
+        blob(p, cx, cy + 14, 25, 24, mat)            # masse d'ours
+        blob(p, cx, cy - 14, 15, 14, mat)            # tete ronde
+        for s in (-1, 1):                            # touffes d'oreilles
+            tube(p, cx + s * 11, cy - 24, cx + s * 15, cy - 34, 3, mat)
+        blob(p, cx, cy - 8, 7, 6, accent, light=0.10)   # bec
+        for t in range(7):                           # sa pointe crochue
+            p.set(cx + t - 3, cy - 2 + abs(t - 3) // 2, pal.lit(accent, 0.40))
+        glare(p, cx, cy - 17, 6, "GOLD", 2, halo=True)          # grands yeux ronds
+        tube(p, cx - 22, cy + 4, cx - 34, cy - 8 - f * 6, 5, mat)
+        tube(p, cx + 22, cy + 4, cx + 34, cy - 6 - f * 6, 5, mat)
+        for s in (-1, 1):                            # griffes
+            for t in range(3):
+                tube(p, cx + s * 34, cy - 8 - f * 6,
+                     cx + s * (40 + t * 2), cy - 16 - f * 6 + t * 5, 1,
+                     "BONE")
+        tube(p, cx - 10, cy + 34, cx - 13, cy + 42, 6, mat, dark=0.96)
+        tube(p, cx + 10, cy + 34, cx + 13, cy + 42, 6, mat, dark=0.96)
+
+    else:                                            # --- minotaure
+        blob(p, cx, cy + 12, 22, 24, mat)            # torse d'homme
+        blob(p, cx, cy - 18, 13, 12, mat)            # tete de taureau
+        blob(p, cx, cy - 10, 8, 6, mat, light=0.34)  # museau
+        for s in (-1, 1):                            # cornes recourbees
+            tube(p, cx + s * 12, cy - 26, cx + s * 22, cy - 32, 3, accent)
+            tube(p, cx + s * 22, cy - 32, cx + s * 26, cy - 22, 3, accent)
+        glare(p, cx, cy - 20, 5, "BLOOD", 1, halo=True)
+        p.set(cx - 3, cy - 8, pal.one("SHADOW"))     # naseaux
+        p.set(cx + 3, cy - 8, pal.one("SHADOW"))
+        tube(p, cx - 20, cy + 2, cx - 30, cy + 16 - f * 4, 4, mat)
+        tube(p, cx + 20, cy, cx + 28, cy - 16 - f * 6, 4, mat)
+        tube(p, cx + 28, cy - 18 - f * 6, cx + 36, cy - 38 - f * 8, 2, "WOOD")
+        blade(p, cx + 30, cy - 40 - f * 8, 14, 9, "STEEL", curve=4)
+        blade(p, cx + 44, cy - 40 - f * 8, 14, 9, "STEEL", curve=-4)
+        tube(p, cx - 9, cy + 32, cx - 12, cy + 42, 5, mat, dark=0.96)
+        tube(p, cx + 9, cy + 32, cx + 12, cy + 42, 5, mat, dark=0.96)
     return p
 
 
-# --- encodage planaire --------------------------------------------------
+def trim(p):
+    """Ramene un morceau a ce qu'il dessine vraiment.
+
+    Chaque creature etait stockee sur un rectangle de 96 x 88, qu'elle
+    ne remplissait pas : a neuf plans -- huit bitplanes et le masque --
+    cela faisait pres de dix mille octets par pose, pour beaucoup de
+    vide. Le blitter y gagne autant que la disquette : il ne recopie
+    plus les bords transparents.
+
+    L'abscisse est ramenee sur un multiple de seize : les blits se font
+    sans decalage, et un morceau doit rester cale sur un mot."""
+    xs = [x for y in range(p.h) for x in range(p.w) if p.px[y][x] is not None]
+    if not xs:
+        return p
+    ys = [y for y in range(p.h) if any(v is not None for v in p.px[y])]
+    x0 = (min(xs) // 16) * 16
+    x1 = -(-(max(xs) + 1) // 16) * 16
+    y0, y1 = min(ys), max(ys) + 1
+    if x0 == 0 and x1 == p.w and y0 == 0 and y1 == p.h:
+        return p
+    q = Piece(p.x0 + x0, p.y0 + y0, x1 - x0, y1 - y0)
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            q.px[y - y0][x - x0] = p.px[y][x]
+    return q
+
+
 def encode(piece):
     """Masque puis quatre plans, mots de 16 pixels."""
     wwords = piece.w // 16
@@ -1336,8 +1492,9 @@ def build_art():
     ART_INDEX["ART_ICON"] = len(pieces)
     pieces += [make_icon(k) for k in range(5)]
 
-    blobs, descs = [], []
-    offset = 2 + len(pieces) * 12
+    pieces = [pieces[0]] + [trim(p) for p in pieces[1:]]   # le fond couvre
+    blobs, descs = [], []                                  # tout : rien a
+    offset = 2 + len(pieces) * 12                          # y recadrer
     for p in pieces:
         data, wwords = encode(p)
         dst = (VIEW_Y + p.y0) * SCRBPL + (VIEW_X + p.x0) // 8

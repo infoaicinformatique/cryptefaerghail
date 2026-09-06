@@ -74,18 +74,19 @@ make preview       # écrit docs/preview.png
 
 ## Disquette prête à l'emploi
 
-`dist/AGADemos.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
-de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source du jeu
-(`crawl.s` et les deux fichiers écrits à la main dont il dépend), un
-`Lisezmoi.txt` et un `S/Startup-Sequence` qui lance le jeu au démarrage.
+**Trois disquettes** 880 Ko OFS (DOS0, lisibles de Kickstart 1.3 à 3.x) :
 
-Elle ne peut plus tout porter : à huit bitplanes le jeu pèse à lui seul plus
-d'un demi-mégaoctet — six cent mille octets une fois sur la disquette, où un
-bloc de 512 n'en porte que 488 — et les trois programmes en occupent six cent
-trente mille sur huit cent quatre-vingt. Le reste — le source des deux démos,
-les données générées, et les tables en `dc.w` dont `surfgrad.i` qui pèse à lui
-seul quatre-vingt mille octets — vit dans **`dist/AGADemos.lha`**, qui porte
-tout. Les générateurs Python refont les tables en une seconde.
+| | | |
+|---|---|---|
+| `dist/Faerghail.adf` | amorçable | le jeu, son `Lisezmoi` et son `Startup-Sequence` |
+| `dist/AGADemos.adf` | amorçable | les deux démos |
+| `dist/Source.adf` | | tout le source et les tables générées |
+
+Une seule ne suffit plus : à huit bitplanes et dix-neuf apparences de
+créatures, le jeu pèse 660 Ko — 700 Ko une fois sur l'ADF, où un bloc de 512
+n'en porte que 488. Les trois programmes plus le source dépassaient les 880 Ko
+d'une disquette. `dist/AGADemos.lha` porte le dépôt entier en une archive,
+pour un transfert par réseau, CF ou Gotek.
 
 ```sh
 make disk          # refabrique les deux -- nécessite pip install amitools
@@ -197,6 +198,32 @@ beholder ou le flagelleur mental, sont donc absentes :
 Guerrier, barbare, roublard, rôdeur, paladin, clerc, magicien, ensorceleur —
 chacune avec son dé de vie, sa progression d'attaque, ses sauvegardes fortes
 et son type de lanceur (profane sur l'Intelligence, divin sur la Sagesse).
+
+### Le bestiaire dessiné
+
+Vingt-six créatures partageaient **neuf** silhouettes, peintes d'un seul aplat
+pris dans la table de compatibilité seize couleurs héritée d'avant l'AGA. Elles
+en ont **dix-neuf**, et chacune a du volume : `blob()` et `tube()` éclairent
+chaque masse d'en haut à gauche à partir d'une normale approchée, dans une
+gamme de la palette — peau, écaille, pourriture, os, mousse, fer, pierre.
+
+C'est le **couple forme + matière** qui fait la créature : le même humanoïde
+armé devient orc en peau, homme-lézard en écailles, gnoll en pelage sombre.
+Onze formes, dont deux nouvelles pour les créatures qu'on ne confond pas —
+l'oursaloup à bec et le minotaure à cornes recourbées.
+
+Deux corrections en passant : les yeux étaient de gros disques cerclés posés
+identiquement sur tout le monde, ce qui annulait la variété des silhouettes ;
+et les haches étaient des boules répétées, remplacées par un vrai coin dont le
+tranchant s'affine et prend la lumière.
+
+**Les morceaux sont recadrés** sur ce qu'ils dessinent (`trim()`), l'abscisse
+ramenée sur un multiple de seize pour que les blits restent sans décalage.
+Chaque créature occupait un rectangle de 96 × 88 qu'elle ne remplissait pas :
+à neuf plans — huit bitplanes et le masque — cela faisait près de dix mille
+octets par pose, pour beaucoup de vide. Dix-neuf apparences coûtent maintenant
+518 Ko là où neuf en coûtaient 490, et le blitter ne recopie plus les bords
+transparents.
 
 ### Les créatures, et ce qui les distingue
 

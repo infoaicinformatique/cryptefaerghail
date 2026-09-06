@@ -75,41 +75,40 @@ SP_MULTI = 0x40                          # elle frappe deux fois
 
 # nom, des de vie, faces, bonus PV, CA, attaque, des degats, faces, bonus
 # degats, marge critique (19 = 19-20), multiplicateur, Vig, Ref, Vol, FP,
-# or, silhouette (0 bete, 1 mort-vivant, 2 humanoide, 3 monstre aile),
+# or, apparence (indice dans MONSTER_LOOKS de gen_dungeon.py),
 # capacites
 MONSTERS = [
-    ("KOBOLD", 1, 8, 0, 15, 1, 1, 6, -1, 20, 2, 2, 2, 0, 0.25, 4, 2, 0),
-    ("GOBELIN", 1, 8, 1, 15, 2, 1, 6, 0, 20, 2, 3, 1, -1, 0.33, 6, 2, 0),
+    ("KOBOLD", 1, 8, 0, 15, 1, 1, 6, -1, 20, 2, 2, 2, 0, 0.25, 4, 4, 0),
+    ("GOBELIN", 1, 8, 1, 15, 2, 1, 6, 0, 20, 2, 3, 1, -1, 0.33, 6, 5, 0),
     ("RAT SANGUIN", 1, 8, 1, 15, 4, 1, 4, 0, 20, 2, 3, 3, 3, 0.33, 0, 0, SP_POISON),
-    ("SQUELETTE", 1, 12, 0, 15, 1, 1, 6, 1, 18, 2, 0, 1, 2, 0.33, 0, 1, 0),
-    ("ORC", 1, 8, 1, 15, 4, 2, 4, 4, 18, 2, 3, 0, -2, 0.5, 10, 3, 0),
-    ("HOBGOBELIN", 1, 8, 2, 15, 2, 1, 8, 1, 19, 2, 4, 1, -1, 0.5, 12, 2, 0),
-    ("ZOMBI", 2, 12, 3, 11, 2, 1, 6, 1, 20, 2, 0, -1, 3, 0.5, 0, 1, SP_DR),
+    ("SQUELETTE", 1, 12, 0, 15, 1, 1, 6, 1, 18, 2, 0, 1, 2, 0.33, 0, 2, 0),
+    ("ORC", 1, 8, 1, 15, 4, 2, 4, 4, 18, 2, 3, 0, -2, 0.5, 10, 6, 0),
+    ("HOBGOBELIN", 1, 8, 2, 15, 2, 1, 8, 1, 19, 2, 4, 1, -1, 0.5, 12, 6, 0),
+    ("ZOMBI", 2, 12, 3, 11, 2, 1, 6, 1, 20, 2, 0, -1, 3, 0.5, 0, 3, SP_DR),
     ("LOUP", 2, 8, 4, 14, 3, 1, 6, 1, 20, 2, 5, 5, 1, 1.0, 0, 0, SP_MULTI),
-    ("GNOLL", 2, 8, 2, 15, 3, 1, 8, 2, 20, 3, 4, 0, 0, 1.0, 14, 3, 0),
-    ("GOULE", 2, 12, 0, 14, 2, 1, 6, 1, 20, 2, 0, 2, 5, 1.0, 0, 1, SP_PARALYSE),
-    ("BUGBEAR", 3, 8, 3, 17, 5, 1, 8, 2, 20, 2, 4, 3, 1, 2.0, 22, 3, 0),
-    ("WORG", 4, 10, 8, 14, 7, 1, 6, 4, 20, 2, 6, 6, 3, 2.0, 0, 0, SP_MULTI),
-    ("OMBRE", 3, 12, 0, 13, 3, 1, 6, 0, 20, 2, 1, 3, 4, 3.0, 0, 5, SP_DRAIN),
-    ("OGRE", 4, 8, 11, 16, 8, 2, 8, 7, 20, 2, 6, 0, 1, 3.0, 45, 4, 0),
-    ("HOMME-LEZARD", 2, 8, 2, 15, 3, 1, 8, 1, 20, 2, 3, 3, 0, 1.0, 12, 3, 0),
-    ("GARGOUILLE", 4, 8, 19, 16, 6, 1, 4, 2, 20, 2, 5, 6, 4, 4.0, 30, 7, SP_DR),
-    ("OMBRE BLEME", 4, 12, 0, 15, 3, 1, 4, 1, 20, 2, 1, 2, 5, 3.0, 25, 5, SP_DRAIN | SP_FEAR),
-    ("OURSALOUP", 5, 10, 25, 15, 9, 1, 6, 5, 20, 2, 9, 5, 2, 4.0, 0, 0, SP_MULTI),
-    ("HARPIE", 7, 8, 0, 15, 7, 1, 6, 0, 20, 2, 2, 7, 6, 4.0, 40, 7, SP_FEAR),
-    ("MINOTAURE", 6, 8, 12, 15, 9, 3, 6, 6, 20, 3, 6, 5, 5, 4.0, 60, 4, SP_MULTI),
-    ("TROLL", 6, 8, 36, 16, 9, 1, 6, 6, 20, 2, 11, 4, 3, 5.0, 55, 4, SP_REGEN | SP_MULTI),
-    ("SPECTRE", 7, 12, 0, 15, 6, 1, 8, 0, 20, 2, 2, 5, 7, 7.0, 70, 5, SP_DRAIN | SP_FEAR),
-    ("MOMIE", 8, 12, 3, 20, 11, 1, 6, 10, 20, 2, 4, 2, 8, 5.0, 90, 6, SP_FEAR | SP_DR),
-    ("HYDRE", 5, 10, 28, 15, 6, 1, 10, 3, 20, 2, 9, 5, 3, 5.0, 80, 8, SP_MULTI),
-    ("GEANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4, 0),
+    ("GNOLL", 2, 8, 2, 15, 3, 1, 8, 2, 20, 3, 4, 0, 0, 1.0, 14, 8, 0),
+    ("GOULE", 2, 12, 0, 14, 2, 1, 6, 1, 20, 2, 0, 2, 5, 1.0, 0, 3, SP_PARALYSE),
+    ("BUGBEAR", 3, 8, 3, 17, 5, 1, 8, 2, 20, 2, 4, 3, 1, 2.0, 22, 8, 0),
+    ("WORG", 4, 10, 8, 14, 7, 1, 6, 4, 20, 2, 6, 6, 3, 2.0, 0, 1, SP_MULTI),
+    ("OMBRE", 3, 12, 0, 13, 3, 1, 6, 0, 20, 2, 1, 3, 4, 3.0, 0, 11, SP_DRAIN),
+    ("OGRE", 4, 8, 11, 16, 8, 2, 8, 7, 20, 2, 6, 0, 1, 3.0, 45, 9, 0),
+    ("HOMME-LEZARD", 2, 8, 2, 15, 3, 1, 8, 1, 20, 2, 3, 3, 0, 1.0, 12, 7, 0),
+    ("GARGOUILLE", 4, 8, 19, 16, 6, 1, 4, 2, 20, 2, 5, 6, 4, 4.0, 30, 14, SP_DR),
+    ("OMBRE BLEME", 4, 12, 0, 15, 3, 1, 4, 1, 20, 2, 1, 2, 5, 3.0, 25, 11, SP_DRAIN | SP_FEAR),
+    ("OURSALOUP", 5, 10, 25, 15, 9, 1, 6, 5, 20, 2, 9, 5, 2, 4.0, 0, 17, SP_MULTI),
+    ("HARPIE", 7, 8, 0, 15, 7, 1, 6, 0, 20, 2, 2, 7, 6, 4.0, 40, 15, SP_FEAR),
+    ("MINOTAURE", 6, 8, 12, 15, 9, 3, 6, 6, 20, 3, 6, 5, 5, 4.0, 60, 18, SP_MULTI),
+    ("TROLL", 6, 8, 36, 16, 9, 1, 6, 6, 20, 2, 11, 4, 3, 5.0, 55, 10, SP_REGEN | SP_MULTI),
+    ("SPECTRE", 7, 12, 0, 15, 6, 1, 8, 0, 20, 2, 2, 5, 7, 7.0, 70, 12, SP_DRAIN | SP_FEAR),
+    ("MOMIE", 8, 12, 3, 20, 11, 1, 6, 10, 20, 2, 4, 2, 8, 5.0, 90, 13, SP_FEAR | SP_DR),
+    ("HYDRE", 5, 10, 28, 15, 6, 1, 10, 3, 20, 2, 9, 5, 3, 5.0, 80, 16, SP_MULTI),
+    ("GEANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 9, 0),
     # Le gardien du dernier escalier. Ses nombres ne sont pas choisis au
     # jugé : tools/test_combat.py fait s'affronter un groupe de niveau
     # sept sans potion ni sort et exige qu'il l'emporte souvent, mais
     # pas toujours. Avec CA 22, 2d8+12 et une peau epaisse en plus de sa
     # regeneration, il gagnait dix-sept fois sur dix-huit.
-    ("LE GARDIEN", 14, 12, 60, 18, 14, 1, 10, 6, 19, 3, 14, 8, 12, 12.0, 400, 5,
-     SP_MULTI | SP_REGEN | SP_FEAR),
+    ("LE GARDIEN", 14, 12, 60, 18, 14, 1, 10, 6, 19, 3, 14, 8, 12, 12.0, 400, 12, SP_MULTI | SP_REGEN | SP_FEAR),
 ]
 
 # Les rencontres, etage par etage : indices dans MONSTERS, ranges par

@@ -6,5 +6,5 @@ echo "  Fleches bouger   ESPACE agir   C fiche   I sac"
 echo "  Combat : A attaquer  S sort  F fuir*N"
 echo "  Chargement..."
 AGACrawl
-echo "*N  Egalement sur la disquette : AGAScroll et AGADemo."
-echo "  Voir Lisezmoi.txt.*N"
+echo "*N  Les deux demos AGA sont sur la disquette AGADemos,"
+echo "  le source complet sur la disquette Faerghail-Src.*N"

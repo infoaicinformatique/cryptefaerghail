@@ -62,7 +62,8 @@ Start:
 	move.w	#$7fff,DMACON(a5)	; tout le DMA coupe
 
 	bsr	InitDemo
-	bsr	PT_Init			; module ProTracker
+	lea	PT_ModuleData,a0	; module ProTracker
+	bsr	PT_Init
 
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 

@@ -52,9 +52,20 @@ def find(grid, kind):
             if grid[y][x] & 0x0f == kind]
 
 
-def goto(g, target, log=None):
-    """Marche jusqu'a la case voulue ; False si la route se ferme."""
+def goto(g, target, log=None, on_combat=None):
+    """Marche jusqu'a la case voulue ; False si la route se ferme.
+
+    Un monstre peut se trouver sur le chemin : le combat s'engage et le
+    jeu refuse alors tout deplacement, y compris les demi-tours. Sans
+    on_combat pour le vider, le parcours restait plante la et le banc
+    n'annoncait plus que des cases bloquees."""
     for _ in range(120):
+        if g.w("InCombat"):
+            if on_combat is None:
+                return False
+            on_combat(g)
+            if g.w("GameOver"):
+                return False
         here = (g.w("PosX"), g.w("PosY"))
         if here == target:
             return True
@@ -69,6 +80,11 @@ def goto(g, target, log=None):
 def pull_levers(g, fails=None, stats=None):
     """Va tirer chaque levier, et verifie que sa herse se leve."""
     done = 0
+
+    def on_combat(gg):
+        fight(gg, fails if fails is not None else [],
+              stats if stats is not None else collections.defaultdict(int))
+
     for lx, ly in find(terrain(g), T_LEVER):
         grid = terrain(g)
         par = g.addr("MapParam")
@@ -78,8 +94,10 @@ def pull_levers(g, fails=None, stats=None):
         spot = next(((lx + dx, ly + dy) for dx, dy in DIRS
                      if 0 <= lx + dx < MAPW and 0 <= ly + dy < MAPH
                      and passable(grid[ly + dy][lx + dx])), None)
-        if spot is None or not goto(g, spot):
+        if spot is None or not goto(g, spot, on_combat=on_combat):
             continue
+        if g.w("GameOver"):
+            break
         if not face(g, DIRS.index((lx - spot[0], ly - spot[1])), []):
             continue
         g.key(T.K_SPACE)
@@ -319,7 +337,10 @@ def main():
         ("escalier", lambda c: c & 0x0f == T_STAIRS),
     ]
     exercise_ui(g, fails, stats)
+    levers = len(find(terrain(g), T_LEVER))
     pull_levers(g, fails, stats)
+    if levers and not stats["levers"]:
+        fails.append(f"{levers} levier(s) sur le niveau, aucun tire")
     for tour in range(40):
         grid = terrain(g)
         here = (g.w("PosX"), g.w("PosY"))
@@ -345,6 +366,8 @@ def main():
             log.append(("groupe aneanti", g.w("Level")))
             break
 
+    if not stats["steps"]:
+        fails.append("le groupe n'a pas fait un pas : le parcours n'eprouve rien")
     print(f"  {stats['steps']} pas, {stats['fights']} combats, "
           f"{stats['rounds']} rounds, niveau {g.w('Level')}, "
           f"or {g.w('Gold')}, PX {g.hero(0, 'hr_Xp')}, "

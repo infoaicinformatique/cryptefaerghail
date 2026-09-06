@@ -217,21 +217,30 @@ def check_in_game(g, sfx, fails):
         fails.append("ni impact ni esquive pendant le combat")
 
 
+def loaded(g):
+    """Le nom du module que le replayer joue en ce moment."""
+    base = g.mem.r32(g.addr("PT_Patterns")) - 1084
+    return bytes(g.mem.r8(base + i) for i in range(20)).split(b"\0")[0]
+
+
 def check_music(g, fails):
-    """La musique doit vraiment tourner : trois voies au moins, et le
-    module charge doit etre celui du jeu."""
+    """La musique doit vraiment tourner, et chaque ecran avoir la sienne :
+    la procession devant le portail, la marche dans le donjon."""
+    for nom, fichier in (("accueil", "titlemus.mod"),
+                         ("donjon", "crawlmus.mod")):
+        attendu = open(os.path.join(ROOT, "data", fichier), "rb").read()[:20]
+        if nom == "donjon":                # on quitte l'accueil
+            g.key(T.K_1)
+        if loaded(g) != attendu.split(b"\0")[0]:
+            fails.append(f"{nom} : module {loaded(g)!r} au lieu de "
+                         f"{attendu.split(chr(0).encode())[0]!r}")
     g.audio.clear()
     for _ in range(120):                  # deux secondes de replay
         g.call(g.addr("PT_Tick"))
     voies = {off & 0xf0 for off, _ in g.audio if 0xa0 <= off < 0xe0}
     if len(voies) < 3:
         fails.append(f"la musique n'anime que {len(voies)} voie(s)")
-    mod = open(os.path.join(ROOT, "data", "crawlmus.mod"), "rb").read()
-    base = g.addr("PT_ModuleData")
-    titre = bytes(g.mem.r8(base + i) for i in range(20))
-    if titre != mod[:20]:
-        fails.append(f"module charge inattendu : {titre!r}")
-    return len(voies), titre.split(b"\0")[0].decode("latin-1")
+    return len(voies), loaded(g).decode("latin-1")
 
 
 def write_wav(sfx, raw):
@@ -274,7 +283,7 @@ if __name__ == "__main__":
 
     print("--- la musique tourne-t-elle ---")
     voies, titre = check_music(g, fails)
-    print(f"  {voies} voies animees, module \"{titre}\"")
+    print(f"  {voies} voies animees, module \"{titre}\" une fois descendu")
 
     print("--- le replayer respecte-t-il le verrou ---")
     check_lock(g, fails)

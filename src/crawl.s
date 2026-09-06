@@ -258,7 +258,9 @@ Start:
 	move.w	#PHASE_TITLE,Phase	; on arrive par l'accueil
 	move.w	#1,OptMusic
 	move.w	#1,OptSfx
-	bsr	PT_Init
+	move.w	#-1,CurMusic		; l'accueil a sa propre musique
+	moveq	#0,d0
+	bsr	PlayMusic
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 
 	bsr	Redraw
@@ -2068,6 +2070,8 @@ OptToggle:				; agit sur la ligne visee
 	clr.w	UiMode
 	move.w	#PHASE_TITLE,Phase
 	bsr	ClearScreens
+	moveq	#0,d0			; et sa musique revient avec lui
+	bsr	PlayMusic
 .redraw:
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -2160,6 +2164,27 @@ DrawTitle:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+; PlayMusic : d0 = 0 pour l'accueil, 1 pour le donjon. Le replayer ne
+; tient qu'un module a la fois : on l'arrete, on le reinitialise sur
+; l'autre partition, et on rend le DMA audio que PT_Stop avait coupe.
+PlayMusic:
+	movem.l	d0-d1/a0-a1/a5,-(sp)
+	cmp.w	CurMusic,d0
+	beq.s	.done
+	move.w	d0,CurMusic
+	bsr	PT_Stop
+	lea	PT_TitleModule,a0
+	tst.w	d0
+	beq.s	.init
+	lea	PT_ModuleData,a0
+.init:
+	bsr	PT_Init
+	lea	CUSTOM,a5
+	move.w	#DMAF_SETCLR|DMAF_AUDIO,DMACON(a5)
+.done:
+	movem.l	(sp)+,d0-d1/a0-a1/a5
+	rts
+
 ; ClearScreens : les deux tampons d'un coup. En quittant l'accueil,
 ; l'illustration restait visible dans la bordure que le decor ne
 ; repeint pas -- huit pixels tout autour de la vue.
@@ -2191,6 +2216,8 @@ TitleKey:
 	bne.s	.notNew
 	bsr	NewGame			; une nouvelle equipe
 	bsr	ClearScreens
+	moveq	#1,d0			; on descend : la marche du donjon
+	bsr	PlayMusic
 	clr.w	Phase
 	bra.s	.redraw
 .notNew:
@@ -2202,6 +2229,8 @@ TitleKey:
 	tst.w	d0
 	beq.s	.done
 	bsr	ClearScreens
+	moveq	#1,d0
+	bsr	PlayMusic
 	move.w	#PHASE_PLAY,Phase
 	lea	TxtResumed,a0
 	bsr	LogAdd
@@ -5773,6 +5802,7 @@ BookTop:	ds.w	1
 OptCursor:	ds.w	1
 OptMusic:	ds.w	1
 OptSfx:	ds.w	1
+CurMusic:	ds.w	1
 SpellCount:	ds.w	1
 SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1

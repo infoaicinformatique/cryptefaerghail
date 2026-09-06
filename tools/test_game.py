@@ -12,6 +12,7 @@ seul l'affichage manque, pas la logique.
 
     python3 tools/test_game.py
 """
+import collections
 import os
 import random
 import struct
@@ -161,6 +162,73 @@ class Game(R.Harness):
             self.key(k, slices)
 
 
+MAPH = 24
+DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
+T_WALL, T_NICHE, T_LEVER, T_GATE = 1, 5, 7, 8
+C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
+
+
+def grid_of(g):
+    base = g.addr("MapTerrain")
+    return [[g.mem.r8(base + y * MAPW + x) for x in range(MAPW)]
+            for y in range(MAPH)]
+
+
+def walk_towards(g, want, budget=60):
+    """Marche vers la case la plus proche satisfaisant want().
+
+    Le banc tirait ses deplacements au hasard : selon la graine et le
+    trace du niveau le groupe pouvait tourner en rond sans jamais
+    croiser un monstre, et toute la partie combat restait alors sans
+    objet. On y va donc en droite ligne."""
+    for _ in range(budget):
+        if g.w("InCombat"):
+            return True
+        grid = grid_of(g)
+        here = (g.w("PosX"), g.w("PosY"))
+        seen, q, path = {here: None}, collections.deque([here]), None
+        while q:
+            cur = q.popleft()
+            if cur != here and want(grid[cur[1]][cur[0]]):
+                path = []
+                while cur:
+                    path.append(cur)
+                    cur = seen[cur]
+                path.reverse()
+                break
+            for dx, dy in DIRS:
+                nxt = (cur[0] + dx, cur[1] + dy)
+                if not (0 <= nxt[0] < MAPW and 0 <= nxt[1] < MAPH):
+                    continue
+                t = grid[nxt[1]][nxt[0]] & 0x0f
+                if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE):
+                    continue
+                seen[nxt] = cur
+                q.append(nxt)
+        if not path or len(path) < 2:
+            return g.w("InCombat") != 0
+        step = path[1]
+        d = (step[0] - here[0], step[1] - here[1])
+        for _ in range(4):                       # se tourner vers la case
+            if g.w("Dir") == DIRS.index(d):
+                break
+            g.key(K_RIGHT)
+        g.key(K_UP)
+        if (g.w("PosX"), g.w("PosY")) == here:   # porte close : l'ouvrir
+            g.key(K_SPACE)
+            if g.w("UiMode") == 4:               # une enigme barre le chemin
+                for answer in range(3):
+                    g.key(K_1 + answer)
+                    if g.w("UiMode") != 4:
+                        break
+                else:
+                    g.key(K_ESC)
+            g.key(K_UP)
+            if (g.w("PosX"), g.w("PosY")) == here:
+                return g.w("InCombat") != 0
+    return g.w("InCombat") != 0
+
+
 def create_party(g, classes=(0, 6, 1, 5)):
     """Choix de classe, acceptation des jets, nom par defaut.
 
@@ -220,16 +288,19 @@ if __name__ == "__main__":
 
     print("--- combats ---")
     fights = rounds = 0
-    for _ in range(400):
-        if g.w("InCombat"):
-            hp0 = g.w("MonHp")
-            g.key(K_A)
-            rounds += 1
-            if not g.w("InCombat"):
-                fights += 1
-            check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
-        else:
+    monster = lambda c: (c & C_MASK) == C_MONSTER
+    for _ in range(300):
+        if fights >= 3:
+            break
+        if not g.w("InCombat") and not walk_towards(g, monster, 30):
             g.key(random.choice(moves))
+            continue
+        hp0 = g.w("MonHp")
+        g.key(K_A)
+        rounds += 1
+        if not g.w("InCombat"):
+            fights += 1
+        check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
         for i in range(4):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
@@ -239,6 +310,10 @@ if __name__ == "__main__":
     print(f"  {rounds} rounds, {fights} monstres vaincus, "
           f"or {g.w('Gold')}, PX {g.hero(0,'hr_Xp')}, "
           f"fin de partie {g.w('GameOver')}")
+    check(fights > 0, "aucun combat mene : la partie combat n" + chr(39)
+          + "a rien eprouve", fails)
+    check(rounds == 0 or g.hero(0, "hr_Xp") > 0 or g.w("GameOver"),
+          "des combats sans le moindre point d" + chr(39) + "experience", fails)
 
     print("--- fuzzing clavier ---")
     allkeys = [K_UP, K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_A, K_S, K_F, K_I,

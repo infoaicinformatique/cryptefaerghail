@@ -131,7 +131,7 @@ tools/play_game.py   pilote le jeu vers les monstres, les objets, l'escalier
 tools/shot68k.py     photographie les écrans dessinés par le processeur émulé
 tools/test_sfx.py    vérifie les bruitages aux registres de Paula
 tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
-tools/gen_score.py   générateur de la musique du jeu (data/crawlmus.mod)
+tools/gen_score.py   générateur des deux musiques (accueil et donjon)
 tools/palette.py     la palette 256 couleurs AGA, décrite matière par matière
 tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
 tools/test_layout.py contrôle qu'aucun panneau ne déborde de la vue

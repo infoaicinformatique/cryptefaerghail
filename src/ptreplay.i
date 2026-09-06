@@ -54,9 +54,10 @@ ins_SIZEOF	= 16
 ;----------------------------------------------------------------------
 ; PT_Init : analyse l'entete du module et prepare les 4 canaux
 ;----------------------------------------------------------------------
+; PT_Init : a0 = module ProTracker a jouer. Le pointeur est passe par
+; l'appelant depuis qu'un programme peut en avoir plusieurs.
 PT_Init:
 	movem.l	d0-d7/a0-a6,-(sp)
-	lea	PT_ModuleData,a0
 	moveq	#0,d0
 	move.b	950(a0),d0		; longueur du morceau
 	move.w	d0,PT_SongLen
@@ -593,6 +594,12 @@ PT_ModuleData:
 	incbin	"data/music.mod"
 	endif
 	even
+
+	ifd	PT_SCORE
+PT_TitleModule:				; devant le portail, avant la descente
+	incbin	"data/titlemus.mod"
+	even
+	endif
 
 ;======================================================================
 	SECTION	ptbss,BSS

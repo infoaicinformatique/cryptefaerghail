@@ -15,6 +15,10 @@ dont l'interruption s'entend le moins.
     voie 3  choeur et cordes (accords, arpeges)
     voie 4  timbales et cymbale   <- empruntee par les bruitages
 
+Deux morceaux en sortent : celui du donjon, une marche, et celui de
+l'ecran d'accueil, beaucoup plus lent et depouille -- on est devant le
+portail, pas encore descendu.
+
     python3 tools/gen_score.py
 """
 import math
@@ -24,6 +28,7 @@ import struct
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "data", "crawlmus.mod")
+OUT_TITLE = os.path.join(ROOT, "data", "titlemus.mod")
 
 NOTE_NAMES = ["C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#",
               "A-", "A#", "B-"]
@@ -292,19 +297,75 @@ def sample_header(name, data, volume, loop):
             + struct.pack(">HH", rep_start, rep_len))
 
 
-def build():
-    patterns = [
-        pattern_bytes(build_pattern(SECTION_A, THEME_A, opening=True)),
-        pattern_bytes(build_pattern(SECTION_A, THEME_A2, plucks=True)),
-        pattern_bytes(build_pattern(SECTION_B, THEME_B)),
-        pattern_bytes(build_pattern(SECTION_B, THEME_B2, roll=True,
-                                    plucks=True)),
-    ]
-    order = [0, 1, 2, 3, 0, 1, 3, 2]
+# --- l'accueil : lent, large, presque immobile -----------------------
+# Meme monde tonal que le donjon, mais quatre fois moins de notes et un
+# tempo de procession : le portail attend, il ne presse personne.
+TITLE_SECTIONS = [
+    [(["D-1", "A-1", "F-1"], ["D-2", "F-2", "A-2"]),
+     (["D-1", "F-1", "A-1"], ["D-2", "F-2", "A-2"]),
+     (["A#1", "F-1", "D-1"], ["A#2", "D-3", "F-3"]),
+     (["A-1", "E-1", "C#1"], ["A-2", "C#3", "E-3"])],
+    [(["D-1", "A-1", "F-1"], ["D-2", "F-2", "A-2"]),
+     (["F-1", "C-2", "A-1"], ["F-2", "A-2", "C-3"]),
+     (["A#1", "F-1", "D-1"], ["A#2", "D-3", "F-3"]),
+     (["A-1", "E-1", "C#1"], ["A-2", "C#3", "E-3"])],
+]
+TITLE_THEMES = [
+    [["D-2", None, None, None, None, None, None, None,
+      "A-2", None, None, None, None, None, None, None],
+     ["F-2", None, None, None, None, None, "E-2", None,
+      None, None, "D-2", None, None, None, None, None],
+     ["D-3", None, None, None, None, None, None, None,
+      "C-3", None, None, None, "A#2", None, None, None],
+     ["A-2", None, None, None, None, None, None, None,
+      "C#3", None, None, None, None, None, None, None]],
+    [["A-2", None, None, None, None, None, "D-3", None,
+      None, None, None, None, None, None, None, None],
+     ["C-3", None, None, None, None, None, None, None,
+      "A-2", None, None, None, None, "F-2", None, None],
+     ["D-3", None, None, None, None, None, "F-3", None,
+      None, None, None, None, "E-3", None, None, None],
+     ["E-3", None, None, None, None, None, None, None,
+      "C#3", None, None, None, None, "A-2", None, None]],
+]
 
+
+def build_title_pattern(section, theme, opening=False):
+    """Un motif d'accueil : une note tenue par voie et par demi-mesure,
+    et la percussion reduite a une frappe sourde en tete de phrase."""
+    rows = [[cell() for _ in range(4)] for _ in range(64)]
+    for bar, (bass, chord) in enumerate(section):
+        base = bar * 16
+        for step in range(16):
+            row = base + step
+            if step == 0:                        # basse : la fondamentale
+                rows[row][0] = cell(bass[0], DRONE)
+            elif step == 10:                     # puis une note d'appui
+                rows[row][0] = cell(bass[1], DRONE)
+
+            note = theme[bar][step]
+            if note:
+                rows[row][1] = cell(note, HORN)
+
+            if step == 0:                        # choeur tenu
+                rows[row][2] = cell(chord[0], CHOIR)
+            elif step == 8:                      # cordes a mi-mesure
+                rows[row][2] = cell(chord[2], STR)
+            elif step == 13 and bar % 2 == 1:
+                rows[row][2] = cell(chord[1], HARP)
+
+            if step == 0 and bar % 2 == 0:       # une frappe par phrase
+                rows[row][3] = cell("C-2", TAIKO)
+    if opening:
+        rows[0][3] = cell("C-2", CYM)
+    rows[0][0] = cell(section[0][0][0], DRONE, 0xF, 12)  # tres lent
+    return rows
+
+
+def assemble(title, patterns, order):
+    """Entete, entetes de samples, ordre, puis motifs et echantillons."""
     out = bytearray()
-    out += b"Crypte de Faerghail".ljust(20, b"\0")
-
+    out += title.encode("ascii")[:20].ljust(20, b"\0")
     samples = []
     for i in range(31):
         if i < len(INSTRUMENTS):
@@ -319,7 +380,6 @@ def build():
         else:
             out += sample_header("", [], 0, None)
             samples.append(b"")
-
     out += bytes((len(order), 127))
     out += bytes(order).ljust(128, b"\0")
     out += b"M.K."
@@ -330,9 +390,33 @@ def build():
     return bytes(out)
 
 
+def build_title():
+    patterns = [
+        pattern_bytes(build_title_pattern(TITLE_SECTIONS[0], TITLE_THEMES[0],
+                                          opening=True)),
+        pattern_bytes(build_title_pattern(TITLE_SECTIONS[1], TITLE_THEMES[1])),
+    ]
+    return assemble("Le portail", patterns, [0, 1])
+
+
+def build():
+    patterns = [
+        pattern_bytes(build_pattern(SECTION_A, THEME_A, opening=True)),
+        pattern_bytes(build_pattern(SECTION_A, THEME_A2, plucks=True)),
+        pattern_bytes(build_pattern(SECTION_B, THEME_B)),
+        pattern_bytes(build_pattern(SECTION_B, THEME_B2, roll=True,
+                                    plucks=True)),
+    ]
+    return assemble("Crypte de Faerghail", patterns, [0, 1, 2, 3, 0, 1, 3, 2])
+
+
 if __name__ == "__main__":
-    data = build()
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
+    data = build()
     open(OUT, "wb").write(data)
     print(f"{OUT} : {len(data)} octets, 4 motifs, "
           f"{len(INSTRUMENTS)} instruments, 8 positions")
+    data = build_title()
+    open(OUT_TITLE, "wb").write(data)
+    print(f"{OUT_TITLE} : {len(data)} octets, 2 motifs, "
+          f"{len(INSTRUMENTS)} instruments, 2 positions")

@@ -162,6 +162,8 @@ UI_INV		= 2
 UI_SPELL	= 3
 UI_RIDDLE	= 4
 rd_SIZEOF	= 28
+MAXCLEVEL	= 10			; plafond de niveau des heros
+SPELLMENU	= 10			; entrees du menu : touches 1 a 9 et 0
 
 ; --- codes clavier bruts ---
 KEY_UP		= $4c
@@ -248,7 +250,9 @@ Start:
 ;----------------------------------------------------------------------
 MainLoop:
 	bsr	WaitVBlank
-	bsr	MusicTick
+	move.w	VHPOSR+CUSTOM,d0	; le balayage brasse le hasard : sans
+	eor.w	d0,RngSeed+2		; cela, chaque partie serait identique
+	bsr	MusicPoll
 
 	tst.w	DrawReady
 	beq.s	.noSwap
@@ -316,32 +320,31 @@ RestoreSystem:
 	rts
 
 ;----------------------------------------------------------------------
-; MusicTick : un tic de module, cadence sur le balayage
-; MusicPoll : meme chose, mais seulement si une image s'est ecoulee ;
+; MusicPoll : un tic de module par trame, cadence sur le balayage ;
 ; a semer dans les traitements longs pour que le son ne decroche pas
 ;----------------------------------------------------------------------
-MusicTick:
-	bsr	PT_Tick
-	move.w	#1,MusicDone
-	rts
-
+; MusicPoll : un tic de replay par trame, ou que l'on en soit.
+;
+; L'ancienne version n'acceptait de rattraper un tic que si le balayage
+; se trouvait dans le retour trame : treize lignes sur trois cent
+; treize. Pendant un redessin qui dure deux trames, presque tous les
+; appels tombaient a cote et la musique hoquetait -- c'est le defaut
+; entendu en se deplacant. On regarde maintenant si le balayage a
+; reboucle depuis le dernier appel : cela marche a n'importe quel
+; moment de la trame.
 MusicPoll:
-	movem.l	d0/a5,-(sp)
+	movem.l	d0-d1/a5,-(sp)
 	lea	CUSTOM,a5
 	move.l	VPOSR(a5),d0
 	and.l	#$0001ff00,d0
-	lsr.l	#8,d0
-	cmp.w	#300,d0			; on vient d'entrer dans le retour trame
-	blt.s	.notYet
-	tst.w	MusicDone
-	bne.s	.done
-	bsr	PT_Tick
-	move.w	#1,MusicDone
-	bra.s	.done
-.notYet:
-	clr.w	MusicDone
+	lsr.l	#8,d0			; ligne courante
+	move.w	MusicLine,d1
+	move.w	d0,MusicLine
+	cmp.w	d1,d0
+	bge.s	.done			; toujours dans la meme trame
+	bsr	PT_Tick			; le balayage a reboucle
 .done:
-	movem.l	(sp)+,d0/a5
+	movem.l	(sp)+,d0-d1/a5
 	rts
 
 ;----------------------------------------------------------------------
@@ -353,6 +356,11 @@ MusicPoll:
 ;----------------------------------------------------------------------
 SfxPlay:
 	movem.l	d0-d3/a0-a2/a6,-(sp)
+	cmp.w	#SFX_STEP,d0		; le pas ne coupe pas un bruit en cours,
+	bne.s	.play			; sinon la melodie hoquete quand on
+	tst.w	PT_SfxLock		; enchaine les deplacements
+	bne	.skip
+.play:
 	lea	SfxData,a0
 	move.w	d0,d1
 	mulu.w	#12,d1
@@ -371,6 +379,7 @@ SfxPlay:
 	move.l	#SfxSilence,(a2)	; puis boucle sur du silence
 	move.w	#1,4(a2)
 	move.w	10(a1),PT_SfxLock
+.skip:
 	movem.l	(sp)+,d0-d3/a0-a2/a6
 	rts
 
@@ -1415,8 +1424,18 @@ DrawStatus:
 	move.w	UiMode,d0
 	beq.s	.helpView
 	cmp.w	#UI_INV,d0
-	bne.s	.helpOther
+	bne.s	.helpSpell
 	lea	TxtHelpInv,a0
+	bra.s	.help
+.helpSpell:
+	cmp.w	#UI_SPELL,d0
+	bne.s	.helpRiddle
+	lea	TxtHelpSpell,a0
+	bra.s	.help
+.helpRiddle:
+	cmp.w	#UI_RIDDLE,d0
+	bne.s	.helpOther
+	lea	TxtHelpRiddle,a0
 	bra.s	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
@@ -1834,16 +1853,21 @@ DrawSheet:
 	lea	TxtSpells,a0
 	bsr	StrCopy
 	moveq	#0,d7
-	moveq	#0,d6
+	moveq	#0,d6			; meme numerotation que le menu de sorts
 .spellLoop:
 	move.w	hr_Spells(a6),d0
 	btst	d7,d0
 	beq.s	.spellNext
-	move.w	d7,d0
-	addq.w	#1,d0
+	addq.w	#1,d6
+	cmp.w	#SPELLMENU,d6
+	bgt.s	.spellNext
+	move.w	d6,d0
+	cmp.w	#10,d0			; la dixieme, c'est la touche 0
+	blt.s	.spNum
+	moveq	#0,d0
+.spNum:
 	bsr	StrNum
 	move.b	#' ',(a1)+
-	moveq	#1,d6
 .spellNext:
 	addq.w	#1,d7
 	cmp.w	#NSPELLS,d7
@@ -1961,17 +1985,33 @@ DrawSpellMenu:
 	moveq	#14,d2
 	bsr	DrawText
 
+	bsr	BuildSpellMenu
 	move.w	SelHero,d0
 	bsr	HeroPtr
+	tst.w	SpellCount
+	bne.s	.list
+	lea	TxtNoSpellKnown,a0	; ce heros n'a rien appris
+	moveq	#3,d0
+	moveq	#48,d1
+	moveq	#5,d2
+	bsr	DrawText
+	bra	.done
+.list:
+	lea	SpellList,a3
 	moveq	#0,d7
 .loop:
+	move.w	(a3,d7.w*2),d4		; numero reel du sort
 	lea	TmpStr,a1
 	move.w	d7,d0
 	addq.w	#1,d0
+	cmp.w	#10,d0			; la dixieme entree, c'est la touche 0
+	blt.s	.num
+	moveq	#0,d0
+.num:
 	bsr	StrNum
 	lea	TxtDash,a0
 	bsr	StrCopy
-	move.w	d7,d0
+	move.w	d4,d0
 	bsr	SpellPtr
 	move.l	a0,a2
 	bsr	StrCopy
@@ -1983,24 +2023,48 @@ DrawSpellMenu:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	d7,d1
-	mulu.w	#13,d1
+	mulu.w	#11,d1
 	add.w	#40,d1
-	moveq	#5,d2			; sort inconnu : en gris
-	move.w	hr_Spells(a6),d3
-	btst	d7,d3
-	beq.s	.dim
 	moveq	#13,d2
 	move.w	sp_Level(a2),d3		; reste-t-il un emplacement ?
 	add.w	d3,d3
 	tst.w	hr_Slots(a6,d3.w)
-	bne.s	.dim
+	bne.s	.draw
 	moveq	#4,d2			; connu mais plus d'emplacement
-.dim:
+.draw:
 	bsr	DrawText
 	addq.w	#1,d7
-	cmp.w	#NSPELLS,d7
+	cmp.w	SpellCount,d7
 	blt	.loop
+.done:
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; BuildSpellMenu : les sorts connus du heros choisi, dans l'ordre.
+; Le menu et le clavier lisent la meme liste : la touche N lance
+; toujours le sort affiche en N, meme apres un parchemin appris.
+BuildSpellMenu:
+	movem.l	d0-d3/a0-a1/a6,-(sp)
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	lea	SpellList,a1
+	moveq	#0,d1
+	moveq	#0,d2
+.loop:
+	move.w	hr_Spells(a6),d3
+	btst	d1,d3
+	beq.s	.next
+	move.w	d1,(a1)+
+	addq.w	#1,d2
+	cmp.w	#SPELLMENU,d2
+	bge.s	.full
+.next:
+	addq.w	#1,d1
+	cmp.w	#NSPELLS,d1
+	blt.s	.loop
+.full:
+	move.w	d2,SpellCount
+	movem.l	(sp)+,d0-d3/a0-a1/a6
 	rts
 
 ;----------------------------------------------------------------------
@@ -2121,6 +2185,7 @@ CommitHero:
 
 	addq.w	#1,CreIndex
 	clr.w	CreStep
+	clr.w	CreCursor
 	clr.w	CreNameLen
 	move.w	CreIndex,d0
 	cmp.w	#NHEROES,d0
@@ -2151,11 +2216,37 @@ CreateKey:
 .notEsc:
 	move.w	CreStep,d7
 	bne	.notClass
+	cmp.w	#KEY_UP,d0		; le curseur parcourt les classes
+	bne.s	.notClsUp
+	move.w	CreCursor,d2
+	subq.w	#1,d2
+	bpl.s	.setCursor
+	moveq	#0,d2
+	bra.s	.setCursor
+.notClsUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notClsDown
+	move.w	CreCursor,d2
+	addq.w	#1,d2
+	cmp.w	#NCLASSES,d2
+	blt.s	.setCursor
+	move.w	#NCLASSES-1,d2
+.setCursor:
+	move.w	d2,CreCursor
+	bra	.redraw
+.notClsDown:
+	cmp.w	#KEY_RETURN,d0		; ENTREE prend celle qui est visee
+	bne.s	.classDigit
+	move.w	CreCursor,d2
+	bra.s	.takeClass
+.classDigit:
 	move.w	d0,d2
 	sub.w	#KEY_1,d2
 	bmi	.done
 	cmp.w	#NCLASSES,d2
 	bge	.done
+	move.w	d2,CreCursor
+.takeClass:
 	move.w	d2,CreClass
 	bsr	RollHero
 	move.w	#1,CreStep
@@ -2243,7 +2334,7 @@ CreateKey:
 
 DrawCreate:
 	movem.l	d0-d7/a0-a6,-(sp)
-	move.w	#16,d0
+	move.w	#16,d0			; strictement la zone que le fond repeint
 	moveq	#16,d1
 	move.w	#192,d2
 	move.w	#136,d3
@@ -2261,7 +2352,7 @@ DrawCreate:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
-	moveq	#22,d1
+	moveq	#18,d1
 	moveq	#14,d2
 	bsr	DrawText
 
@@ -2269,7 +2360,6 @@ DrawCreate:
 	bne	.chosen
 
 	lea	ClassTable,a6		; la liste des classes
-	lea	ClassDesc,a5
 	moveq	#0,d6
 .classLoop:
 	lea	TmpStr,a1
@@ -2284,26 +2374,30 @@ DrawCreate:
 	lea	TmpStr,a0
 	moveq	#3,d0
 	move.w	d6,d1
-	mulu.w	#24,d1
-	add.w	#42,d1
+	mulu.w	#11,d1
+	add.w	#34,d1
+	moveq	#5,d2
+	cmp.w	CreCursor,d6		; la classe visee ressort
+	bne.s	.dimClass
 	moveq	#13,d2
-	bsr	DrawText
-	move.w	d6,d0
-	lsl.w	#2,d0
-	move.l	(a5,d0.w),a0
-	moveq	#4,d0
-	move.w	d6,d1
-	mulu.w	#24,d1
-	add.w	#54,d1
-	moveq	#2,d2
+.dimClass:
 	bsr	DrawText
 	lea	cl_SIZEOF(a6),a6
 	addq.w	#1,d6
 	cmp.w	#NCLASSES,d6
 	blt	.classLoop
+
+	move.w	CreCursor,d0		; sa description, en bas du cadre
+	lsl.w	#2,d0
+	lea	ClassDesc,a5
+	move.l	(a5,d0.w),a0
+	moveq	#3,d0
+	move.w	#126,d1
+	moveq	#2,d2
+	bsr	DrawText
 	lea	TxtPickClass,a0
 	moveq	#3,d0
-	move.w	#140,d1
+	move.w	#138,d1
 	moveq	#12,d2
 	bsr	DrawText
 	bra	.done
@@ -2441,6 +2535,7 @@ NewGame:
 	dbf	d0,.clrLog
 	move.w	#PHASE_CREATE,Phase
 	clr.w	CreIndex
+	clr.w	CreCursor
 	clr.w	CreStep
 	clr.w	KbLayout
 	lea	TxtCreate1,a0
@@ -2913,11 +3008,42 @@ Descend:
 .next:
 	move.w	d0,Level
 	bsr	LoadLevel
+	bsr	PartyRest
 	moveq	#SFX_DOOR,d0
 	bsr	SfxPlay
 	lea	TxtDescend,a0
 	bsr	LogAdd
 .done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; PartyRest : une halte entre deux niveaux rend les sorts et un peu
+; de souffle. Sans elle les lanceurs restent a sec des le premier etage.
+PartyRest:
+	movem.l	d0-d7/a0-a6,-(sp)
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d6
+.loop:
+	tst.w	hr_HpMax(a6)
+	beq.s	.next
+	move.w	hr_HpMax(a6),d0
+	lsr.w	#1,d0			; la moitie des points de vie
+	tst.w	d0
+	bne.s	.heal
+	moveq	#1,d0
+.heal:
+	add.w	d0,hr_Hp(a6)
+	move.w	hr_HpMax(a6),d0
+	cmp.w	hr_Hp(a6),d0
+	bge.s	.capped
+	move.w	d0,hr_Hp(a6)
+.capped:
+	bsr	FillSlots
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.loop
+	lea	TxtRested,a0
+	bsr	LogAdd
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -2983,6 +3109,17 @@ HeroAttack:
 	bsr	StatMod
 	move.w	d0,d6			; modificateur
 	bsr	HeroBab
+	moveq	#0,d3			; le BBA seul donne les attaques
+	move.w	d0,d3
+	subq.w	#1,d3
+	bmi.s	.oneAttack
+	divu.w	#5,d3
+	and.l	#$0000ffff,d3
+	bra.s	.haveAtk
+.oneAttack:
+	moveq	#0,d3
+.haveAtk:
+	move.w	d3,AtkMax
 	add.w	d0,d6
 	add.w	PartyBless,d6
 	move.w	d6,d4			; bonus d'attaque total
@@ -3030,12 +3167,7 @@ HeroAttack:
 .next:
 	addq.w	#1,d2			; attaque suivante : bonus reduit de 5
 	sub.w	#5,d4
-	move.w	d6,d0			; une attaque de plus tous les +5
-	sub.w	#1,d0
-	and.l	#$0000ffff,d0
-	divu.w	#5,d0
-	and.l	#$0000ffff,d0
-	cmp.w	d0,d2
+	cmp.w	AtkMax,d2		; une attaque de plus tous les +5 de BBA
 	bgt.s	.done
 	cmp.w	#4,d2			; quatre attaques au maximum
 	blt	.attackLoop
@@ -3160,6 +3292,11 @@ MonsterAttack:
 	move.w	mt_Dice(a2),d0
 	move.w	mt_Faces(a2),d1
 	bsr	RollDice
+	add.w	mt_Dmg(a2),d0		; force de la creature
+	cmp.w	#1,d0			; au moins un point
+	bge.s	.dmgOk
+	moveq	#1,d0
+.dmgOk:
 	move.w	d0,d4
 	moveq	#SFX_HIT,d0
 	bsr	SfxPlay
@@ -3277,8 +3414,15 @@ MonsterDies:
 
 CheckLevel:				; a6 = heros
 	movem.l	d0-d3/a0-a1,-(sp)
-	move.w	hr_Level(a6),d0
-	mulu.w	#40,d0
+.again:
+	move.w	hr_Level(a6),d0		; palier = 150 x n x (n+1) / 2
+	cmp.w	#MAXCLEVEL,d0
+	bge	.done
+	move.w	d0,d1
+	addq.w	#1,d1
+	mulu.w	d1,d0
+	lsr.l	#1,d0
+	mulu.w	#150,d0
 	cmp.w	hr_Xp(a6),d0
 	bgt	.done
 	addq.w	#1,hr_Level(a6)
@@ -3310,6 +3454,7 @@ CheckLevel:				; a6 = heros
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	bra	.again
 .done:
 	movem.l	(sp)+,d0-d3/a0-a1
 	rts
@@ -3385,6 +3530,11 @@ CastSpell:				; d0 = sort
 	move.w	d7,d0
 	bsr	SpellPtr
 	move.l	a0,a2
+	tst.w	sp_Kind(a2)		; un sort d'attaque exige une cible
+	bne.s	.hasTarget
+	tst.w	InCombat
+	beq	.noTarget
+.hasTarget:
 	move.w	sp_Level(a2),d6		; niveau de sort
 	move.w	d6,d0
 	add.w	d0,d0
@@ -3532,6 +3682,8 @@ CastSpell:				; d0 = sort
 	lea	TxtFear,a0
 	bsr	LogAdd
 .after:
+	tst.w	InCombat		; hors combat, personne ne riposte
+	beq.s	.done
 	tst.w	MonHp
 	bgt.s	.monsterTurn
 	bsr	MonsterDies
@@ -3545,6 +3697,10 @@ CastSpell:				; d0 = sort
 	bra.s	.done
 .noSlot:
 	lea	TxtNoSlot,a0
+	bsr	LogAdd
+	bra.s	.done
+.noTarget:
+	lea	TxtNoTarget,a0
 	bsr	LogAdd
 	bra.s	.done
 .cannot:
@@ -3595,7 +3751,7 @@ HealWeakest:				; d5 = points rendus
 	moveq	#-1,d4
 	moveq	#0,d7
 .pick:
-	tst.w	hr_Hp(a6)
+	tst.w	hr_HpMax(a6)		; un heros a terre reste soignable
 	beq.s	.next
 	move.w	hr_HpMax(a6),d0
 	sub.w	hr_Hp(a6),d0
@@ -3610,12 +3766,28 @@ HealWeakest:				; d5 = points rendus
 	tst.w	d7
 	beq.s	.done
 	move.l	a5,a6
+	moveq	#0,d3
+	tst.w	hr_Hp(a6)
+	bne.s	.wasUp
+	moveq	#1,d3
+.wasUp:
 	add.w	d5,hr_Hp(a6)
 	move.w	hr_HpMax(a6),d0
 	cmp.w	hr_Hp(a6),d0
 	bge.s	.capped
 	move.w	d0,hr_Hp(a6)
 .capped:
+	tst.w	d3			; il etait a terre : il se releve
+	beq.s	.notRaised
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtRaised,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+.notRaised:
 	lea	TmpStr,a1
 	move.l	a6,a0
 	bsr	StrCopy
@@ -3646,11 +3818,21 @@ InvItem:				; -> d0 = objet sous le curseur, Z si vide
 	rts
 
 InvClear:				; vide la case sous le curseur
-	movem.l	d0-d1/a0,-(sp)
+	movem.l	d0-d1/a0-a1,-(sp)
 	lea	Inventory,a0
 	move.w	InvCursor,d1
-	clr.b	(a0,d1.w)
-	movem.l	(sp)+,d0-d1/a0
+	lea	(a0,d1.w),a0		; le sac se retasse : pas de trou
+	lea	1(a0),a1		; sous le curseur, sinon la ligne
+	move.w	#INVSIZE-1,d0		; disparait de la liste
+	sub.w	d1,d0
+	subq.w	#1,d0
+	bmi.s	.last
+.shift:
+	move.b	(a1)+,(a0)+
+	dbf	d0,.shift
+.last:
+	clr.b	(a0)
+	movem.l	(sp)+,d0-d1/a0-a1
 	rts
 
 EquipItem:
@@ -3662,7 +3844,7 @@ EquipItem:
 	move.l	a0,a2
 	move.w	SelHero,d0
 	bsr	HeroPtr
-	tst.w	hr_HpMax(a6)
+	tst.w	hr_Hp(a6)
 	beq	.done
 	move.w	it_Type(a2),d0
 	bne.s	.notWeapon
@@ -3810,9 +3992,17 @@ HandleKey:
 	clr.w	UiMode
 	bra	.redraw
 .quit:
+	tst.w	QuitArm			; une seule touche ne doit pas effacer
+	bne.s	.reallyQuit		; une partie entiere
+	move.w	#1,QuitArm
+	lea	TxtConfirmQuit,a0
+	bsr	LogAdd
+	bra	.redraw
+.reallyQuit:
 	move.w	#1,Quit
 	bra	.done
 .notEsc:
+	clr.w	QuitArm
 	tst.w	GameOver
 	bne	.done
 
@@ -3833,9 +4023,14 @@ HandleKey:
 	move.w	d0,d2
 	sub.w	#KEY_1,d2
 	bmi	.done
-	cmp.w	#NSPELLS,d2
+	cmp.w	#SPELLMENU,d2
 	bge	.done
-	move.w	d2,d0
+	bsr	BuildSpellMenu
+	cmp.w	SpellCount,d2
+	bge	.done
+	add.w	d2,d2
+	lea	SpellList,a0
+	move.w	(a0,d2.w),d0
 	bsr	CastSpell
 	bra	.done
 .notSpellUi:
@@ -3906,6 +4101,11 @@ HandleKey:
 	move.w	d1,Dir
 	bra	.redraw
 .notRight:
+	cmp.w	#KEY_S,d0		; sorts hors combat : soins, protections
+	bne.s	.notCast
+	move.w	#UI_SPELL,UiMode
+	bra	.redraw
+.notCast:
 	cmp.w	#KEY_SPACE,d0
 	bne	.done
 	bsr	DoAction
@@ -4011,6 +4211,7 @@ DirTable:
 
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
+	dc.l	TxtCls4,TxtCls5,TxtCls6,TxtCls7
 
 RiddleTable:				; trois lignes, trois reponses, la bonne
 	dc.l	TxtR0Q1,TxtR0Q2,TxtR0Q3,TxtR0A1,TxtR0A2,TxtR0A3
@@ -4025,9 +4226,13 @@ StatOffsets:
 	dc.w	hr_Str,hr_Dex,hr_Con,hr_Int,hr_Wis,hr_Cha
 
 TxtCls0:	dc.b	"SOLIDE, FRAPPE FORT",0
-TxtCls1:	dc.b	"TRES ROBUSTE, PEU SUR",0
-TxtCls2:	dc.b	"FUITE PLUS SURE, ARC",0
-TxtCls3:	dc.b	"SOINS ET SORTS DIVINS",0
+TxtCls1:	dc.b	"TRES ROBUSTE, BRUTAL",0
+TxtCls2:	dc.b	"AGILE, FUIT PLUS VITE",0
+TxtCls3:	dc.b	"ARC ET SORTS DES BOIS",0
+TxtCls4:	dc.b	"LA LAME ET LA FOI",0
+TxtCls5:	dc.b	"SOINS ET SORTS DIVINS",0
+TxtCls6:	dc.b	"FRAGILE, MAGIE VASTE",0
+TxtCls7:	dc.b	"MAGIE INNEE ET CHARME",0
 TxtFor:		dc.b	"FOR ",0
 TxtDex:		dc.b	"DEX ",0
 TxtCon:		dc.b	"CON ",0
@@ -4043,7 +4248,7 @@ TxtEmptySlot:	dc.b	"-----",0
 TxtHero:	dc.b	"HEROS ",0
 TxtOn4:		dc.b	" SUR 4",0
 TxtDash:	dc.b	" - ",0
-TxtPickClass:	dc.b	"CHOISISSEZ : 1 A 4",0
+TxtPickClass:	dc.b	"FLECHES, ENTREE OU 1-8",0
 TxtRoll:	dc.b	"R RELANCER  ENTREE OK",0
 TxtName:	dc.b	"NOM : ",0
 TxtNameHelp:	dc.b	"TAPEZ OU FLECHES",0
@@ -4146,10 +4351,16 @@ TxtR2A1:	dc.b	"LE BORGNE",0
 TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
 TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR REPONDRE  ESC",0
-TxtHelpCreate:	dc.b	"1-4 CLASSE  R DES  ENTREE OK  ESC",0
-TxtHelpMove:	dc.b	"FLECHES  ESPACE  C FICHE  I SAC  ESC",0
+TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTREE OK  ESC",0
+TxtHelpMove:	dc.b	"FLECHES ESPACE C FICHE I SAC S SORT",0
+TxtRaised:	dc.b	" SE RELEVE.",0
+TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
+TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
+TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
+TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
 TxtHelpInv:	dc.b	"E EQUIPER U UTILISER D JETER 1-4",0
+TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
 TxtHelpSheet:	dc.b	"1-4 HEROS  I SAC  C FERMER  ESC",0
 	even
 
@@ -4195,13 +4406,17 @@ MonArt:		ds.w	1
 PartyBless:	ds.w	1
 MonHp:		ds.w	1
 MonStun:	ds.w	1
+AtkMax:		ds.w	1
+QuitArm:	ds.w	1
+SpellCount:	ds.w	1
+SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1
 AnimCount:	ds.w	1
 GameOver:	ds.w	1
 Quit:		ds.w	1
 NeedRedraw:	ds.w	1
 DrawReady:	ds.w	1
-MusicDone:	ds.w	1
+MusicLine:	ds.w	1
 Phase:		ds.w	1
 UiMode:		ds.w	1
 SelHero:	ds.w	1
@@ -4212,6 +4427,7 @@ RiddleX:	ds.w	1
 RiddleY:	ds.w	1
 CreIndex:	ds.w	1
 CreStep:	ds.w	1
+CreCursor:	ds.w	1
 CreClass:	ds.w	1
 CreHp:		ds.w	1
 CreMp:		ds.w	1

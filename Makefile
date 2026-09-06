@@ -64,6 +64,15 @@ wav:
 check:
 	python3 tools/preview.py 40 /dev/null
 
+# Fait tourner le jeu dans un 68020 emule et verifie son comportement.
+test:
+	python3 tools/test_game.py
+	python3 tools/play_game.py
+
+# Photographie les ecrans tels que le processeur les dessine.
+shots:
+	python3 tools/shot68k.py
+
 preview:
 	python3 tools/preview.py 40 docs/preview.png
 

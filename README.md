@@ -125,6 +125,10 @@ tools/dungeon_preview.py rend un écran du jeu en PNG et contrôle les données
 tools/render_mod.py  rejoue le module en Python et écrit un WAV
 tools/preview.py     modèle Python du pipeline de scroll.s : contrôles + aperçu
 tools/make_lha.py    écrit l'archive LhA (et se relit pour se vérifier)
+tools/run68k.py      banc 68020 : charge l'exécutable, émule chipset et clavier
+tools/test_game.py   fait tourner le jeu et contrôle ses invariants
+tools/play_game.py   pilote le jeu vers les monstres, les objets, l'escalier
+tools/shot68k.py     photographie les écrans dessinés par le processeur émulé
 disk/                fichiers écrits à la main pour la disquette
 scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink

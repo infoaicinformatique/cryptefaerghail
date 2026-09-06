@@ -151,6 +151,55 @@ if __name__ == "__main__":
         if g.w("UiMode") == 4:
             shot(g, "enigme", fails)
             g.key(T.K_1)
+    print("--- le bandeau de combat ---")
+    # Le joueur frappait a l'aveugle : la creature etait la, ses
+    # blessures nulle part. Le bandeau doit s'ecrire dans la vue et sa
+    # jauge doit suivre les points de vie.
+    g.setw("UiMode", 0)
+    g.setw("GameOver", 0)
+    g.setw("MonKind", 0)
+    g.call(g.addr("StartCombat"))
+    g.setw("MonCount", 3)
+    g.setw("MonPack", 3)
+    x0 = T.read_equ("FOEBAR_X", 20)
+    y0 = T.read_equ("FOEBAR_Y", 20)
+    larg = T.read_equ("FOEBAR_W", 184)
+
+    def bandeau(g):
+        g.setw("NeedRedraw", 1)
+        g.key(T.K_1)                      # touche neutre : le jeu redessine
+        return S.grab(g, "ShowBuf")
+
+    px = bandeau(g)
+    fond = px[(y0 - 1) * SCRW + x0]       # le noir du bandeau, pas l'index 0
+    plein = px[(y0 + 11) * SCRW + x0]     # la couleur du plein de la jauge
+    ecrit = sum(1 for y in range(y0, y0 + 8) for x in range(x0, x0 + larg)
+                if px[y * SCRW + x] != fond)
+    print(f"  le nom et le compte tiennent en {ecrit} pixels")
+    if ecrit < 40:
+        fails.append(f"le bandeau de combat n'ecrit rien ({ecrit} pixels)")
+    if plein == fond:
+        fails.append("la jauge du bandeau ne se remplit pas")
+
+    def jauge(g):
+        p = bandeau(g)
+        y = y0 + 11
+        return sum(1 for x in range(x0, x0 + larg)
+                   if p[y * SCRW + x] == plein)
+
+    pleine = jauge(g)
+    g.setw("MonHp", max(1, g.w("MonHpMax") // 4))
+    quart = jauge(g)
+    print(f"  jauge pleine {pleine} px, au quart {quart} px")
+    if not pleine > quart:
+        fails.append(f"la jauge du bandeau ne suit pas les blessures "
+                     f"({pleine} -> {quart})")
+    if pleine > larg:
+        fails.append(f"la jauge deborde du bandeau ({pleine} > {larg})")
+    g.setw("InCombat", 0)
+    g.setw("MonCount", 0)
+    g.setw("NeedRedraw", 1)
+
     print("--- une icone par type d'objet ---")
     # Le jeu n'avait que cinq icones pour sept types et ramenait le
     # reste sur la derniere : une potion montrait un parchemin, un

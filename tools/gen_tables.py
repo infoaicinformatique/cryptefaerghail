@@ -73,6 +73,24 @@ SP_REGEN = 0x10                          # la creature se referme
 SP_DR = 0x20                             # sa peau encaisse les coups
 SP_MULTI = 0x40                          # elle frappe deux fois
 
+# Combien s'en presentent a la fois. Un monstre seul, c'est une machine
+# a sous : quatre heros frappent, un monstre riposte, et la meme scene
+# se rejoue trois cents fois. Les creatures faibles arrivent donc en
+# nombre -- c'est ce que dit le SRD lui-meme, et le facteur de
+# puissance suffit a le regler : un kobold de FP 1/4 vient a quatre, un
+# troll de FP 5 vient seul.
+def pack_size(cr, name):
+    if name == "LE GARDIEN":
+        return 1                         # il n'y en a qu'un, et c'est assez
+    if cr <= 0.5:
+        return 4
+    if cr <= 2.0:
+        return 3
+    if cr <= 4.0:
+        return 2
+    return 1
+
+
 # nom, des de vie, faces, bonus PV, CA, attaque, des degats, faces, bonus
 # degats, marge critique (19 = 19-20), multiplicateur, Vig, Ref, Vol, FP,
 # or, apparence (indice dans MONSTER_LOOKS de gen_dungeon.py),
@@ -105,10 +123,14 @@ MONSTERS = [
     ("GEANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 9, 0),
     # Le gardien du dernier escalier. Ses nombres ne sont pas choisis au
     # jugé : tools/test_combat.py fait s'affronter un groupe de niveau
-    # sept sans potion ni sort et exige qu'il l'emporte souvent, mais
-    # pas toujours. Avec CA 22, 2d8+12 et une peau epaisse en plus de sa
-    # regeneration, il gagnait dix-sept fois sur dix-huit.
-    ("LE GARDIEN", 14, 12, 60, 18, 14, 1, 10, 6, 19, 3, 14, 8, 12, 12.0, 400, 12, SP_MULTI | SP_REGEN | SP_FEAR),
+    # sept sans potion ni sort et compte les issues. Avec CA 22, 2d8+12
+    # et une peau epaisse en plus de sa regeneration, il gagnait
+    # dix-sept fois sur dix-huit ; ramene a CA 18 et 1d10+6 il perdait
+    # trente et une fois sur quarante, et l'affaire etait pliee en six
+    # rounds. CA 19 et cent soixante-six points de vie le posent a une
+    # victoire du groupe sur deux, en huit rounds -- et le groupe qui
+    # l'affronte pour de vrai a ses potions et ses sorts en plus.
+    ("LE GARDIEN", 14, 12, 75, 19, 14, 1, 10, 6, 19, 3, 14, 8, 12, 12.0, 400, 12, SP_MULTI | SP_REGEN | SP_FEAR),
 ]
 
 # Les rencontres, etage par etage : indices dans MONSTERS, ranges par
@@ -251,15 +273,18 @@ with open(OUT, "w") as f:
         f.write(pad(name, 16))
         f.write(f"\tdc.w\t{hd},{hdf},{hpb},{ac},{atk},{dice},{faces},{dmg},"
                 f"{crit},{mult},{fort},{ref},{will},{monster_xp(cr)},"
-                f"{gold},{art},{spec}\n")
+                f"{gold},{art},{spec},{pack_size(cr, name)}\n")
     f.write(f"NMONSTERS\t= {len(MONSTERS)}\n")
     f.write(f"MON_BOSS\t= {len(MONSTERS) - 1}"
             f"\t; le gardien, au bout du dernier etage\n")
 
     f.write("\n; rencontres par niveau de donjon : numeros de monstres\n")
     for i, t in enumerate(TIERS):
-        f.write(f"Encounter{i}:\n\tdc.b\t" + ",".join(str(v) for v in t) + "\n")
-        f.write(f"\tdc.b\t{len(t)}\n\teven\n")
+        # le compte en tete, pas en queue : le jeu tire une creature au
+        # hasard dans la liste, et il lui faut la longueur avant de
+        # savoir ou s'arrete la liste.
+        f.write(f"Encounter{i}:\n\tdc.b\t{len(t)}\n")
+        f.write("\tdc.b\t" + ",".join(str(v) for v in t) + "\n\teven\n")
     f.write("EncounterTab:\n\tdc.l\t"
             + ",".join(f"Encounter{i}" for i in range(len(TIERS))) + "\n")
     f.write(f"NTIERS\t\t= {len(TIERS)}\n")

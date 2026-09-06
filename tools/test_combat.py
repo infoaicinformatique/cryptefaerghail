@@ -32,10 +32,10 @@ def equ(name, src="crawl.s"):
 
 
 MT = {k: equ(k) for k in ("mt_Name", "mt_Hd", "mt_Ac", "mt_Atk", "mt_Dice",
-                          "mt_Faces", "mt_Dmg", "mt_Xp", "mt_Special",
-                          "mt_SIZEOF")}
+                          "mt_Faces", "mt_Dmg", "mt_Xp", "mt_Gold",
+                          "mt_Special", "mt_Pack", "mt_SIZEOF")}
 HR = {k: equ(k) for k in ("hr_Hp", "hr_HpMax", "hr_Str", "hr_Stun",
-                          "hr_StrLoss", "hr_SIZEOF")}
+                          "hr_StrLoss", "hr_Xp", "hr_SIZEOF")}
 
 
 class Fight:
@@ -57,11 +57,25 @@ class Fight:
         return self.g.mem.r16(self.table + kind * MT["mt_SIZEOF"]
                               + MT["mt_Special"])
 
-    def start(self, kind, hp=None, sure_hit=True):
-        """Engage ce monstre, le groupe d'aplomb et bien portant."""
+    def pack(self, kind):
+        return self.g.mem.r16(self.table + kind * MT["mt_SIZEOF"]
+                              + MT["mt_Pack"])
+
+    def start(self, kind, hp=None, sure_hit=True, count=1):
+        """Engage ce monstre, le groupe d'aplomb et bien portant.
+
+        Les creatures faibles se presentent en bande : on n'en garde
+        qu'une pour eprouver une capacite, sinon la mesure compterait
+        les coups de toute la troupe."""
         g = self.g
         g.setw("MonKind", kind)
         g.call(g.addr("StartCombat"))
+        if count is not None:
+            g.setw("MonCount", count)
+            g.setw("MonPack", count)
+        g.setw("MonRange", 0)              # la distance est comblee : ce
+                                           # qu'on mesure ici, c'est la
+                                           # capacite, pas l'approche
         if hp is not None:
             g.setw("MonHp", hp)
             g.setw("MonHpMax", hp)
@@ -239,6 +253,190 @@ if __name__ == "__main__":
           f"la seconde attaque ne double pas les coups ({twice} contre "
           f"{once})", fails)
 
+    print("--- la bande : ils ne viennent plus un par un ---")
+    levels_n = equ("LEVELS")
+    # Un monstre seul, c'est une machine a sous. Le SRD range ses
+    # creatures par facteur de puissance, et c'est lui qui dit combien
+    # s'en presentent : le kobold a quatre, le troll seul.
+    weak = [k for k in range(nmon) if f.pack(k) >= 3]
+    lone = [k for k in range(nmon) if f.pack(k) == 1]
+    print(f"  {len(weak)} creatures qui viennent en nombre, "
+          f"{len(lone)} qui viennent seules")
+    check(weak, "aucune creature ne vient en bande", fails)
+    check(lone, "toutes les creatures viennent en bande", fails)
+    check(f.pack(boss) == 1, "le gardien vient accompagne", fails)
+
+    # StartCombat doit tirer entre une et pack creatures, et jamais plus.
+    k = weak[0]
+    was = g.w("Level")
+    bands = {}
+    for lv in range(levels_n):
+        g.setw("Level", lv)
+        seen = set()
+        for _ in range(60):
+            f.start(k, count=None)
+            seen.add(g.w("MonCount"))
+        bands[lv] = sorted(seen)
+        check(min(seen) >= 1 and max(seen) <= f.pack(k),
+              f"etage {lv + 1} : bande hors bornes {sorted(seen)}", fails)
+        # La bande grossit avec la profondeur : deux au premier etage,
+        # trois au deuxieme, puis autant que l'espece en compte.
+        check(max(seen) <= lv + 2, f"etage {lv + 1} : jusqu'a {max(seen)} "
+              f"creatures d'un coup, la ou {lv + 2} etait la borne", fails)
+    print(f"  {f.name(k)} (au plus {f.pack(k)}) : "
+          + ", ".join(f"etage {lv + 1} {b}" for lv, b in bands.items()))
+    check(max(bands[levels_n - 1]) > 1,
+          f"{f.name(k)} ne vient jamais a plusieurs", fails)
+    check(max(bands[levels_n - 1]) > max(bands[0]),
+          "la bande ne grossit pas d'un etage a l'autre", fails)
+    g.setw("Level", was)
+    f.start(k, count=None)
+    check(g.w("MonPack") == g.w("MonCount"),
+          "le compte de depart ne suit pas la bande", fails)
+
+    # Toute la bande riposte : trois creatures font trois fois plus de
+    # mal qu'une seule, a coups fixes.
+    base = f.table + k * MT["mt_SIZEOF"]
+    hit = []
+    for n in (1, 3):
+        f.start(k, hp=400, count=n)
+        g.mem.w16(base + MT["mt_Special"], 0)     # rien que le coup nu
+        g.mem.w16(base + MT["mt_Dice"], 1)
+        g.mem.w16(base + MT["mt_Faces"], 1)
+        g.mem.w16(base + MT["mt_Dmg"], 0)
+        hp0 = sum(f.party("hr_Hp"))
+        g.call(g.addr("MonsterTurn"))
+        hit.append(hp0 - sum(f.party("hr_Hp")))
+    print(f"  seule elle porte {hit[0]} coup, a trois elles en portent "
+          f"{hit[1]}")
+    check(hit == [1, 3], f"la bande ne riposte pas au complet : {hit}", fails)
+
+    # L'effroi ne saisit que celle de devant : les autres avancent.
+    # Sinon un seul sort figeait toute une bande, et la magie devenait
+    # la seule reponse a tout.
+    f.start(k, hp=400, count=3)
+    g.mem.w16(base + MT["mt_Special"], 0)
+    g.mem.w16(base + MT["mt_Dice"], 1)
+    g.mem.w16(base + MT["mt_Faces"], 1)
+    g.mem.w16(base + MT["mt_Dmg"], 0)
+    g.setw("MonStun", 1)
+    hp0 = sum(f.party("hr_Hp"))
+    g.call(g.addr("MonsterTurn"))
+    reste = hp0 - sum(f.party("hr_Hp"))
+    print(f"  celle de devant terrifiee, les deux autres portent {reste} coups")
+    check(reste == 2, f"l'effroi fige toute la bande ({reste} coups sur "
+          "deux attendus)", fails)
+    check(g.w("MonStun") == 0, "l'effroi ne se dissipe pas", fails)
+
+    # Chacune tombe pour son compte : or et experience a chaque fois, et
+    # le combat ne s'acheve qu'avec la derniere.
+    f.start(k, hp=1, count=3)
+    gold0, xp0 = g.w("Gold"), f.hero(0, "hr_Xp")
+    g.call(g.addr("MonsterDies"))
+    check(g.w("InCombat") == 1, "le combat s'acheve a la premiere tombee",
+          fails)
+    check(g.w("MonCount") == 2, f"il en reste {g.w('MonCount')} sur trois",
+          fails)
+    check(g.w("MonHp") > 0, "la suivante s'avance deja morte", fails)
+    gold1, xp1 = g.w("Gold"), f.hero(0, "hr_Xp")
+    check(xp1 > xp0, "une creature tombee ne rapporte rien", fails)
+    g.call(g.addr("MonsterDies"))
+    g.call(g.addr("MonsterDies"))
+    check(g.w("InCombat") == 0, "la bande abattue, le combat continue", fails)
+    check(g.w("MonCount") == 0, f"MonCount={g.w('MonCount')} apres la "
+          "derniere", fails)
+    print(f"  trois tombees : or {gold0} -> {g.w('Gold')}, "
+          f"PX {xp0} -> {f.hero(0, 'hr_Xp')}")
+    check(g.w("Gold") > gold1 > gold0, "l'or ne vient pas creature par "
+          "creature", fails)
+    print("--- l'approche : l'arc a une salve d'avance ---")
+    # L'arc court existait, et rien ne le distinguait d'une lame : le
+    # rodeur etait un guerrier en moins. Le premier round se joue a
+    # distance -- seul l'arc porte, la bande ne riposte pas -- puis
+    # elle comble le couloir.
+    BOW = 7                               # arc court, cf. gen_tables.py
+    SWORD = 3                             # epee longue
+    def salve(arme):
+        f.start(weak[0], hp=400, count=1)
+        g.setw("MonRange", 1)
+        for i in range(4):
+            h = g.addr("Heroes") + i * HR["hr_SIZEOF"]
+            g.mem.w16(h + equ("hr_Weapon"), arme)
+            g.mem.w16(h + HR["hr_Hp"], 60)
+        hp0 = g.w("MonHp")
+        vif0 = sum(f.party("hr_Hp"))
+        g.call(g.addr("CombatRound"))
+        return hp0 - g.w("MonHp"), vif0 - sum(f.party("hr_Hp")), g.w("MonRange")
+
+    tire, recu, loin = salve(BOW)
+    print(f"  a l'arc : {tire} degats portes, {recu} recus, "
+          f"distance {'comblee' if not loin else 'gardee'}")
+    check(tire > 0, "les archers ne tirent pas pendant l'approche", fails)
+    check(recu == 0, f"la bande frappe alors qu'elle est encore loin "
+          f"({recu} degats)", fails)
+    check(loin == 0, "la distance ne se comble jamais", fails)
+    lame, recu2, _ = salve(SWORD)
+    print(f"  a la lame : {lame} degats portes, {recu2} recus")
+    check(lame == 0, f"une lame porte a distance ({lame} degats)", fails)
+    # une fois la distance comblee, la lame reprend ses droits
+    g.setw("MonRange", 0)
+    hp0 = g.w("MonHp")
+    g.call(g.addr("CombatRound"))
+    check(hp0 - g.w("MonHp") > 0, "la lame ne porte plus une fois au "
+          "contact", fails)
+    # le gardien, lui, barre l'escalier : on lui marche dessus
+    g.setw("MonKind", boss)
+    g.call(g.addr("StartCombat"))
+    check(g.w("MonRange") == 0, "le gardien laisse le temps d'une salve",
+          fails)
+    g.setw("InCombat", 0)
+
+    print("--- la halte : souffler, et ce qu'elle reveille ---")
+    # Les creatures viennent en bande depuis peu, et la halte entre
+    # deux etages ne suffisait plus : le banc de jeu voyait le groupe
+    # tomber au deuxieme etage faute d'avoir jamais pu souffler.
+    g.setw("InCombat", 0)
+    g.setw("GameOver", 0)
+    g.setw("Level", 0)
+    calmes = troubles = 0
+    for _ in range(40):
+        g.setw("InCombat", 0)
+        for i in range(4):
+            h = g.addr("Heroes") + i * HR["hr_SIZEOF"]
+            g.mem.w16(h + HR["hr_HpMax"], 40)
+            g.mem.w16(h + HR["hr_Hp"], 4)
+            g.mem.w16(h + HR["hr_StrLoss"], 0)
+        avant = sum(f.party("hr_Hp"))
+        g.call(g.addr("CampRest"))
+        apres = sum(f.party("hr_Hp"))
+        if g.w("InCombat"):
+            troubles += 1
+            check(apres == avant, "une halte troublee soigne quand meme "
+                  f"({avant} -> {apres})", fails)
+            check(g.w("MonCount") >= 1, "la halte est troublee par personne",
+                  fails)
+        else:
+            calmes += 1
+            check(apres > avant, f"une halte calme ne rend rien "
+                  f"({avant} -> {apres})", fails)
+    print(f"  40 haltes : {calmes} calmes, {troubles} troublees")
+    check(calmes > 0 and troubles > 0,
+          f"la halte est toujours pareille ({calmes} calmes, "
+          f"{troubles} troublees)", fails)
+    # Ce qui rode doit venir de l'etage, pas du fond du bestiaire.
+    g.setw("Level", 0)
+    vus = set()
+    for _ in range(60):
+        g.setw("InCombat", 0)
+        g.call(g.addr("WanderingFoe"))
+        vus.add(g.w("MonKind"))
+    print(f"  au premier etage, ce qui rode : {sorted(vus)}")
+    check(len(vus) > 1, "toujours la meme creature en maraude", fails)
+    check(max(vus) < 12, f"une creature du fond ({max(vus)}) rode au "
+          "premier etage", fails)
+    g.setw("InCombat", 0)
+    g.setw("GameOver", 0)
+
     print("--- le gardien : la sortie se merite ---")
     levels = equ("LEVELS")
     g.setw("Level", levels - 1)           # au pied du dernier escalier
@@ -263,6 +461,7 @@ if __name__ == "__main__":
     g.mem.w16(base + MT["mt_Ac"], 1)
     g.mem.w16(base + MT["mt_Special"], 0)
     g.setw("MonHp", 1)
+    g.setw("MonRange", 0)                 # il est deja sur vous
     g.call(g.addr("CombatRound"))
     g.mem.w16(base + MT["mt_Ac"], keep[0])
     g.mem.w16(base + MT["mt_Special"], keep[1])
@@ -280,10 +479,19 @@ if __name__ == "__main__":
 
     print("--- le gardien est-il seulement battable ? ---")
     # Un boss se regle par la mesure, pas au jugé. On lui oppose un
-    # groupe de niveau sept correctement arme, sans potion ni sort : il
-    # doit l'emporter souvent, sans que ce soit acquis. Avec ses nombres
-    # d'origine -- CA 22, 2d8+12, peau epaisse en plus de sa
-    # regeneration -- il gagnait dix-sept fois sur dix-huit.
+    # groupe de niveau sept correctement arme, sans potion ni sort, et
+    # on compte : ni mur ni formalite. Avec ses nombres d'origine -- CA
+    # 22, 2d8+12, peau epaisse en plus de sa regeneration -- c'est lui
+    # qui gagnait dix-sept fois sur dix-huit ; a CA 18 et 1d10+6 le
+    # groupe l'emportait trente et une fois sur quarante.
+    #
+    # Quatre-vingts duels, pas dix-huit : a dix-huit l'ecart-type vaut
+    # deux victoires, a quarante il en vaut trois, et une borne posee a
+    # moins de deux ecarts-types de la moyenne se declenche toute seule
+    # -- c'est arrive, avec les trois quarts pour borne haute alors que
+    # le groupe gagne pres de deux fois sur trois. A quatre-vingts, le
+    # groupe l'emporte 51 fois : les bornes vont du quart aux quatre
+    # cinquiemes, soit trois ecarts-types de marge de chaque cote.
     def duel():
         g.setw("MonKind", boss)
         g.call(g.addr("StartCombat"))
@@ -302,27 +510,33 @@ if __name__ == "__main__":
             n += 1
         return (not g.w("GameOver") and not g.w("InCombat")), n
 
-    N = 18
+    N = 80
     issues = [duel() for _ in range(N)]
     wins = sum(1 for w, _ in issues if w)
     length = sum(n for _, n in issues) / N
     print(f"  {wins}/{N} victoires en {length:.1f} rounds, groupe de "
           f"niveau 7 sans potion ni sort")
-    check(wins >= N // 3, f"le gardien ne perd que {wins} fois sur {N} : "
+    check(wins >= N // 4, f"le gardien ne perd que {wins} fois sur {N} : "
           "l'escalier serait ferme pour de bon", fails)
-    check(wins <= N - 2, f"le gardien perd {wins} fois sur {N} : ce n'est "
-          "plus un gardien", fails)
+    check(wins <= N * 4 // 5, f"le gardien perd {wins} fois sur {N} : ce "
+          "n'est plus un gardien", fails)
     check(length >= 4, f"le combat ne dure que {length:.1f} rounds : "
           "ce n'est pas un affrontement final", fails)
 
     print("--- la courbe des cinq etages ---")
     # Cinq etages ne valent rien s'ils forment un mur, ou s'ils sont
     # tous pareils. On oppose a chaque palier le groupe qu'on y aurait
-    # plausiblement, et on regarde ce qu'un monstre lui coute.
+    # plausiblement, et on regarde ce qu'une rencontre lui coute.
+    #
+    # Une rencontre, pas un monstre : depuis que les creatures faibles
+    # arrivent en bande, la taille de la troupe est tiree au sort, et
+    # trois duels par espece ne mesuraient plus rien -- un etage passait
+    # de 5 % a 1 % d'une execution a l'autre. Huit, et la courbe tient.
     import re
     src = open(os.path.join(ROOT, "src", "tables.i")).read()
     tiers = [[int(v) for v in m.group(1).split(",")] for m in
-             re.finditer(r"Encounter\d+:\n\tdc\.b\t([0-9,]+)", src)]
+             re.finditer(r"Encounter\d+:\n\tdc\.b\t\d+\n\tdc\.b\t([0-9,]+)",
+                         src)]
     levels = equ("LEVELS")
     check(len(tiers) == levels,
           f"{len(tiers)} paliers de rencontres pour {levels} etages", fails)
@@ -331,9 +545,10 @@ if __name__ == "__main__":
     cout = []
     for lv in range(levels):
         plvl, php, weapon = profils[lv]
+        g.setw("Level", lv)               # la bande grossit avec l'etage
         wins = taken = n = 0
         for kind in tiers[lv]:
-            for _ in range(3):
+            for _ in range(8):
                 g.setw("MonKind", kind)
                 g.call(g.addr("StartCombat"))
                 for i in range(4):
@@ -360,12 +575,12 @@ if __name__ == "__main__":
         part = 100.0 * taken / n / (4 * php)
         cout.append(part)
         print(f"  etage {lv + 1} : groupe niveau {plvl}, {100 * wins // n:3d} %"
-              f" de victoires, un monstre coute {part:4.1f} % du groupe")
+              f" de victoires, une rencontre coute {part:4.1f} % du groupe")
         check(100 * wins // n >= 80, f"etage {lv + 1} : le groupe ne gagne "
               f"que {100 * wins // n} % de ses combats", fails)
-        check(part < 40, f"etage {lv + 1} : un seul monstre coute "
+        check(part < 40, f"etage {lv + 1} : une rencontre coute "
               f"{part:.0f} % du groupe, l'usure serait fatale", fails)
-    check(cout[-1] > cout[0] * 1.5,
+    check(cout[-1] > cout[0] * 1.4,
           f"le dernier etage ({cout[-1]:.1f} %) ne coute pas plus cher que "
           f"le premier ({cout[0]:.1f} %) : la courbe est plate", fails)
 

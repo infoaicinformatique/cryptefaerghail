@@ -20,7 +20,7 @@ import test_game as T
 MAPW = MAPH = 24
 T_FLOOR, T_WALL, T_DOOR, T_STAIRS, T_LOCKED, T_NICHE, T_RUNE = range(7)
 T_LEVER, T_GATE = 7, 8
-T_SHOP, T_TRAP = 9, 10
+T_SHOP, T_TRAP, T_STELE = 9, 10, 11
 LEVELS = T.read_equ("LEVELS", 3)
 C_CHEST, C_MONSTER, C_ITEM, C_MASK = 0x10, 0x20, 0x30, 0x30
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]     # meme ordre que DirTable
@@ -171,7 +171,8 @@ def terrain(g):
 
 def passable(cell):
     t = cell & 0x0f
-    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP)
+    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP,
+                     T_STELE)
 
 
 def bfs(grid, start, want):
@@ -236,6 +237,9 @@ def step_to(g, target, log):
         else:
             g.key(T.K_ESC)
         log.append(("enigme", g.w("RiddleIdx")))
+    if g.w("UiMode") == 9:                # une stele : on lit et on referme
+        log.append(("stele", g.w("LorePage")))
+        g.key(T.K_SPACE)
     g.key(T.K_UP)
     return (g.w("PosX"), g.w("PosY")) != before
 
@@ -303,7 +307,7 @@ def check_state(g, fails):
         fails.append(f"or negatif : {g.sw('Gold')}")
     if not 0 <= g.w("Level") < LEVELS:
         fails.append(f"niveau de donjon {g.w('Level')}")
-    if not 0 <= g.w("UiMode") <= 8:
+    if not 0 <= g.w("UiMode") <= 9:
         fails.append(f"UiMode {g.w('UiMode')}")
     base = g.addr("Inventory")
     for i in range(24):
@@ -350,7 +354,7 @@ def fight(g, fails, stats):
     """Frappe -- et lance un sort de temps en temps -- jusqu'a la fin."""
     guard = 0
     while g.w("InCombat") and guard < 60:
-        hp0 = g.sw("MonHp")
+        hp0, left0 = g.sw("MonHp"), g.w("MonCount")
         guard += 1
         if guard % 4 == 2:
             g.key(T.K_1 + random.randrange(4))
@@ -359,7 +363,10 @@ def fight(g, fails, stats):
                 continue
         g.key(T.K_A)
         stats["rounds"] += 1
-        if g.w("InCombat") and g.sw("MonHp") > hp0:
+        # Les PV ne remontent que si une autre creature de la bande
+        # s'avance : elle arrive avec les siens.
+        if (g.w("InCombat") and g.sw("MonHp") > hp0
+                and g.w("MonCount") >= left0):
             fails.append(f"PV du monstre en hausse : {hp0} -> {g.sw('MonHp')}")
         for i in range(4):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
@@ -378,7 +385,8 @@ def main():
     fails, log = [], []
     stats = {"rounds": 0, "fights": 0, "steps": 0, "items": 0,
              "spells": 0, "menus": 0, "heals": 0,
-             "levers": 0, "achats": 0, "ventes": 0, "pieges": 0}
+             "levers": 0, "achats": 0, "ventes": 0, "pieges": 0,
+             "camps": 0}
     g = T.Game()
     T.create_party(g)
     if g.w("Phase") != 1:
@@ -421,6 +429,19 @@ def main():
                 fight(g, fails, stats)
                 if g.w("GameOver"):
                     break
+            # Un joueur ne marche pas a quatre points de vie : il
+            # campe. La halte peut etre troublee, et c'est aussi ce
+            # qu'on veut voir ici.
+            if not g.w("InCombat") and not g.w("GameOver"):
+                vif = sum(g.hero(i, "hr_Hp") for i in range(4))
+                plein = sum(g.hero(i, "hr_HpMax") for i in range(4))
+                if plein and vif * 5 < plein * 2:      # sous deux cinquiemes
+                    g.key(T.K_R)
+                    stats["camps"] += 1
+                    if g.w("InCombat"):
+                        fight(g, fails, stats)
+                        if g.w("GameOver"):
+                            break
         if g.w("GameOver"):
             log.append(("groupe aneanti", g.w("Level")))
             break
@@ -433,7 +454,7 @@ def main():
           f"objets {inv_count(g)}, sorts {stats['spells']}, "
           f"soins {stats['heals']}, leviers {stats['levers']}, "
           f"achats {stats['achats']}, ventes {stats['ventes']}, "
-          f"pieges {stats['pieges']}, "
+          f"pieges {stats['pieges']}, camps {stats['camps']}, "
           f"fin {g.w('GameOver')}")
     for i in range(4):
         print(f"  {g.name(i):8s} PV {g.hero(i,'hr_Hp')}/{g.hero(i,'hr_HpMax')} "

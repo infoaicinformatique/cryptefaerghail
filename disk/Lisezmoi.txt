@@ -39,6 +39,7 @@ COMMANDES
   Fleches gauche/droite tourner
   ESPACE                ouvrir une porte, fouiller une niche,
                         entrer a l'echoppe, desamorcer un piege
+  R                     camper sur place
   C                     fiche d'aventure du heros courant
   I                     sac a dos
   M                     carte du niveau, telle que vous l'avez parcouru
@@ -57,6 +58,23 @@ LE PANNEAU DU GROUPE
   leur jauge -- ou, pour qui ne lance pas de sorts, sa classe d'armure.
   Le nom du heros choisi passe a l'or. Sous la moitie de ses points de
   vie, le compte et la jauge virent au rouge.
+
+L'APPROCHE
+  Une bande ne vous tombe pas dessus d'un coup : le premier round se
+  joue a distance. Seuls l'arc et les sorts portent, la bande ne
+  riposte pas, puis elle comble le couloir. Un arc dans le groupe, et
+  ce n'est plus un guerrier en moins.
+
+  Une salve, pas plus : des qu'une creature tombe, la suivante est
+  deja sur vous. Et le gardien du dernier escalier, lui, ne laisse
+  meme pas ce repit.
+
+LA HALTE
+  R dresse le camp la ou vous etes : chacun retrouve la moitie de ses
+  points de vie, tous ses emplacements de sorts, et le poison se
+  dissipe. Mais une halte sur trois est troublee -- ce qui rode a cet
+  etage vous tombe dessus, et vous n'avez rien recupere. Campez quand
+  vous en avez besoin, pas par habitude.
 
 LEVIERS ET HERSES
   Certains couloirs sont barres par une herse de fer. Le levier qui la
@@ -194,14 +212,38 @@ CLASSES
   ensorceleur.
 
 BESTIAIRE
-  25 creatures du SRD avec leurs statistiques d'origine, du kobold au
-  geant des collines, reparties par niveau de donjon.
+  26 creatures du SRD avec leurs statistiques d'origine, du kobold au
+  geant des collines, reparties par niveau de donjon -- et le gardien
+  qui garde le dernier escalier.
+
+  Chacune se bat a sa maniere : poison qui emporte la force, paralysie
+  qui vous fait perdre un tour, energie drainee qui abaisse les points
+  de vie maximaux, effroi qui empeche de lever l'arme, regeneration,
+  peau epaisse qui retient chaque coup, seconde attaque.
+
+ELLES VIENNENT EN BANDE
+  Un monstre seul, c'est une machine a sous : quatre heros frappent, un
+  monstre riposte, et la meme scene se rejoue trois cents fois. Les
+  creatures faibles arrivent donc en nombre, et c'est leur facteur de
+  puissance qui le dit : un kobold vient a quatre, un troll vient seul.
+  La profondeur plafonne la bande -- deux au premier etage, trois au
+  deuxieme, puis autant que l'espece en compte.
+
+  Le couloir est etroit : le groupe n'a qu'un adversaire devant lui et
+  le frappe de toutes ses armes, mais toute la bande riposte. Celle de
+  devant tombee, la suivante s'avance -- avec ses propres points de vie
+  -- et chacune paie son or et son experience en tombant.
+
+  Le bandeau en haut de la vue porte le nom de la creature, la jauge de
+  ses blessures, et le compte de celles qui restent debout.
 
 LE DONJON
-  Trois niveaux. Coffres, objets au sol, niches creusees dans les murs,
-  portes ordinaires et portes verrouillees qui demandent une cle.
+  Cinq niveaux. Coffres, objets au sol, niches creusees dans les murs,
+  portes ordinaires et portes verrouillees qui demandent une cle,
+  leviers et herses, echoppes, dalles piegees et steles gravees.
   Onze armes, cinq protections, potions, parchemins et tresors.
-  Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
+  Trouvez l'escalier de chaque niveau, abattez le gardien et ressortez
+  vivant du cinquieme.
 
 MUSIQUE ET BRUITAGES
   Deux partitions, deux modules ProTracker quatre voies, tous deux en

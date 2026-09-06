@@ -59,6 +59,7 @@ wav:
 test:
 	python3 tools/test_game.py
 	python3 tools/test_combat.py
+	python3 tools/test_lore.py
 	python3 tools/test_sfx.py
 	python3 tools/test_replay.py
 	python3 tools/test_copper.py

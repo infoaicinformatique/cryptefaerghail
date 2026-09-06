@@ -37,6 +37,7 @@ K_UP, K_DOWN, K_RIGHT, K_LEFT = 0x4c, 0x4d, 0x4e, 0x4f
 K_M_QW, K_M_AZ = 0x37, 0x29
 K_L, K_P = 0x28, 0x19
 K_A, K_S, K_F, K_I, K_C, K_E, K_U, K_D = 0x20, 0x21, 0x23, 0x17, 0x33, 0x12, 0x16, 0x22
+K_R = 0x13                               # camper sur place
 
 hr_SIZEOF = 46 + 8                       # relu ci-dessous depuis le source
 
@@ -57,6 +58,7 @@ HR = {k: read_equ(k, 0) for k in
        "hr_Mp", "hr_MpMax", "hr_Str", "hr_Weapon", "hr_SIZEOF", "hr_Slots")}
 MAPW = 24
 LEVELS = read_equ("LEVELS", 3)
+UI_LORE = read_equ("UI_LORE", 9)
 
 
 def load_symbols(path):
@@ -195,8 +197,16 @@ MAPH = 24
 PANEL_X, PANEL_TOP, PANEL_STEP = 224, 12, 37
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
 T_WALL, T_NICHE, T_LEVER, T_GATE = 1, 5, 7, 8
-T_SHOP, T_TRAP = 9, 10
+T_SHOP, T_TRAP, T_STELE = 9, 10, 11
 C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
+
+# Ce que le groupe ne peut pas traverser : mur, niche, levier, herse,
+# etal du marchand et stele gravee. La stele manquait a cette liste, et
+# le banc envoyait le groupe droit dessus : la page du journal
+# s'ouvrait, tout mouvement se figeait, et l'echoppe, les pieges et les
+# combats devenaient inatteignables sans qu'aucune epreuve ne dise
+# pourquoi.
+SOLID = (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_STELE)
 
 
 def grid_of(g):
@@ -213,6 +223,8 @@ def walk_towards(g, want, budget=60):
     croiser un monstre, et toute la partie combat restait alors sans
     objet. On y va donc en droite ligne."""
     for _ in range(budget):
+        if g.w("UiMode") == UI_LORE:      # une stele lue en chemin
+            g.key(K_SPACE)
         if g.w("InCombat"):
             return True
         grid = grid_of(g)
@@ -232,7 +244,7 @@ def walk_towards(g, want, budget=60):
                 if not (0 <= nxt[0] < MAPW and 0 <= nxt[1] < MAPH):
                     continue
                 t = grid[nxt[1]][nxt[0]] & 0x0f
-                if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP):
+                if nxt in seen or t in SOLID:
                     continue
                 seen[nxt] = cur
                 q.append(nxt)
@@ -260,7 +272,7 @@ def walk_towards(g, want, budget=60):
     return g.w("InCombat") != 0
 
 
-def create_party(g, classes=(0, 6, 1, 5)):
+def create_party(g, classes=(0, 6, 1, 5), keep_lore=False):
     """Choix de classe, acceptation des jets, nom par defaut.
 
     Le jeu s'ouvre sur l'ecran d'accueil : on demande d'abord une
@@ -271,6 +283,9 @@ def create_party(g, classes=(0, 6, 1, 5)):
         g.key(K_1 + c)                   # touche 1 a 8
         g.key(K_RET)                     # garder les caracteristiques
         g.key(K_RET)                     # garder le nom propose
+    if g.w("UiMode") == UI_LORE and not keep_lore:
+        g.key(K_SPACE)                   # le recit s'ouvre sur la premiere
+                                         # page : on la referme pour jouer
     return g.w("Phase")
 
 
@@ -299,8 +314,7 @@ def shop_test(g, fails):
     sx, sy = shops[0]
     spot = [(sx + dx, sy + dy) for dx, dy in DIRS
             if 0 <= sx + dx < MAPW and 0 <= sy + dy < MAPH
-            and grid[sy + dy][sx + dx] & 0x0f not in
-            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP)]
+            and grid[sy + dy][sx + dx] & 0x0f not in SOLID]
     if not check(spot, f"echoppe murée en {sx},{sy}", fails):
         return
     if not walk_to(g, spot[0]):
@@ -372,8 +386,7 @@ def trap_test(g, fails):
             continue
         spot = [(tx + dx, ty + dy) for dx, dy in DIRS
                 if 0 <= tx + dx < MAPW and 0 <= ty + dy < MAPH
-                and grid[ty + dy][tx + dx] & 0x0f not in
-                (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_TRAP)]
+                and grid[ty + dy][tx + dx] & 0x0f not in SOLID + (T_TRAP,)]
         if not spot or not walk_to(g, spot[0]):
             continue
         if not face_cell(g, (tx, ty)):
@@ -422,34 +435,43 @@ def trap_test(g, fails):
     # On pose la dalle nous-memes, a cote du groupe : la phase
     # precedente peut avoir desamorce toutes celles du niveau, et
     # l'epreuve ne doit pas dependre de ce qu'elle a laisse.
-    grid = grid_of(g)
-    here = (g.w("PosX"), g.w("PosY"))
-    rest = [(here[0] + dx, here[1] + dy) for dx, dy in DIRS
-            if 0 <= here[0] + dx < MAPW and 0 <= here[1] + dy < MAPH
-            and grid[here[1] + dy][here[0] + dx] == 0]
-    for tx, ty in rest:
-        g.mem.w8(g.addr("MapTerrain") + ty * MAPW + tx, T_TRAP)
-        g.mem.w8(g.addr("MapParam") + ty * MAPW + tx, 1)   # lame de faux
-        if not face_cell(g, (tx, ty)):
-            continue
-        heal(g)
-        par = g.addr("MapParam") + ty * MAPW + tx
-        g.mem.w8(par, g.mem.r8(par) | 0x80)     # le groupe sait, et y va
-        hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+    # On cherche d'abord une case voisine ou le groupe peut poser le
+    # pied -- du sol nu, sans monstre ni objet -- et vers laquelle il
+    # sait se tourner. Ce n'est qu'ensuite qu'on y scelle la dalle :
+    # la version precedente en semait sur des cases inatteignables et
+    # repartait sans rien avoir eprouve.
+    done = False
+    for _ in range(12):
+        grid = grid_of(g)
+        here = (g.w("PosX"), g.w("PosY"))
+        rest = [(here[0] + dx, here[1] + dy) for dx, dy in DIRS
+                if 0 <= here[0] + dx < MAPW and 0 <= here[1] + dy < MAPH
+                and grid[here[1] + dy][here[0] + dx] & 0x0f == 0]
+        for tx, ty in rest:
+            if not face_cell(g, (tx, ty)):
+                continue
+            g.mem.w8(g.addr("MapTerrain") + ty * MAPW + tx, T_TRAP)
+            g.mem.w8(g.addr("MapParam") + ty * MAPW + tx, 0x81)  # lame, vue
+            heal(g)
+            hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+            g.key(K_UP)
+            now = grid_of(g)[ty][tx] & 0x0f
+            hpb = sum(g.hero(i, "hr_Hp") for i in range(4))
+            check(now != T_TRAP, "on enjambe une dalle reperee et elle reste"
+                  " armee", fails)
+            check((g.w("PosX"), g.w("PosY")) == (tx, ty),
+                  "la dalle se detend mais le groupe reste en arriere", fails)
+            check(hpb <= hpa,
+                  f"le piege rend des points de vie ({hpa} -> {hpb})", fails)
+            print(f"  dalle enjambee sciemment : elle se detend, "
+                  f"PV {hpa} -> {hpb}")
+            done = True
+            break
+        if done:
+            break
+        g.key(K_RIGHT)                    # rien autour : on se degage
         g.key(K_UP)
-        now = grid_of(g)[ty][tx] & 0x0f
-        hpb = sum(g.hero(i, "hr_Hp") for i in range(4))
-        check(now != T_TRAP, "on enjambe une dalle reperee et elle reste"
-              " armee", fails)
-        check((g.w("PosX"), g.w("PosY")) == (tx, ty),
-              "la dalle se detend mais le groupe reste en arriere", fails)
-        check(hpb <= hpa, f"le piege rend des points de vie ({hpa} -> {hpb})",
-              fails)
-        print(f"  dalle enjambee sciemment : elle se detend, "
-              f"PV {hpa} -> {hpb}")
-        break
-    else:
-        check(False, "aucune dalle n'a pu etre enjambee sciemment", fails)
+    check(done, "aucune dalle n'a pu etre enjambee sciemment", fails)
 
 
 def mouse_test(g, fails):
@@ -533,6 +555,8 @@ def inv_used(g):
 def walk_to(g, target, budget=80):
     """Marche jusqu'a une case precise, en reglant les combats croises."""
     for _ in range(budget):
+        if g.w("UiMode") == UI_LORE:      # une stele lue en chemin
+            g.key(K_SPACE)
         here = (g.w("PosX"), g.w("PosY"))
         if here == target:
             return True
@@ -560,8 +584,7 @@ def walk_to(g, target, budget=80):
                 if not (0 <= nxt[0] < MAPW and 0 <= nxt[1] < MAPH):
                     continue
                 t = grid[nxt[1]][nxt[0]] & 0x0f
-                if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE,
-                                        T_SHOP, T_TRAP):
+                if nxt in seen or t in SOLID + (T_TRAP,):
                     continue                 # les pieges se testent a part
                 seen[nxt] = cur
                 q.append(nxt)
@@ -620,6 +643,8 @@ if __name__ == "__main__":
     start = (g.w("PosX"), g.w("PosY"))
     for _ in range(120):
         g.key(random.choice(moves))
+        if g.w("UiMode") == UI_LORE:
+            g.key(K_SPACE)
         x, y = g.w("PosX"), g.w("PosY")
         if not check(0 <= x < MAPW and 0 <= y < MAPW, f"position {x},{y}", fails):
             break
@@ -638,12 +663,18 @@ if __name__ == "__main__":
         if not g.w("InCombat") and not walk_towards(g, monster, 30):
             g.key(random.choice(moves))
             continue
-        hp0 = g.w("MonHp")
+        hp0, left0 = g.w("MonHp"), g.w("MonCount")
         g.key(K_A)
         rounds += 1
         if not g.w("InCombat"):
             fights += 1
-        check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
+        # Les PV ne remontent que si une autre creature de la bande
+        # s'avance -- elle arrive avec les siens, pas avec ceux de la
+        # precedente.
+        check(g.sw("MonHp") <= hp0 or g.w("MonCount") < left0,
+              "les PV du monstre remontent", fails)
+        check(g.w("MonCount") <= left0,
+              "la bande grossit en cours de combat", fails)
         for i in range(4):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
@@ -670,12 +701,12 @@ if __name__ == "__main__":
     print("--- fuzzing clavier ---")
     allkeys = [K_UP, K_DOWN, K_LEFT, K_RIGHT, K_SPACE, K_A, K_S, K_F, K_I,
                K_C, K_E, K_U, K_D, K_TAB, K_RET, K_M_QW, K_M_AZ,
-               K_L, K_P] \
+               K_L, K_P, K_R] \
         + [K_1 + i for i in range(8)]
     for n in range(800):
         g.key(random.choice(allkeys))
         ui, phase = g.w("UiMode"), g.w("Phase")
-        if not check(ui <= 8, f"UiMode={ui}", fails):
+        if not check(ui <= 9, f"UiMode={ui}", fails):
             break
         if not check(phase <= 2, f"Phase={phase}", fails):
             break

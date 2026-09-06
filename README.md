@@ -76,8 +76,8 @@ make preview       # écrit docs/preview.png
 | `dist/Faerghail.adf` | amorçable | le jeu, son `Lisezmoi` et son `Startup-Sequence` |
 | `dist/Source.adf` | | tout le source et les tables générées |
 
-À huit bitplanes et dix-neuf apparences de créatures, le jeu pèse 660 Ko —
-700 Ko une fois sur l'ADF, où un bloc de 512 n'en porte que 488. Le source,
+À huit bitplanes et dix-neuf apparences de créatures, le jeu pèse 682 Ko —
+742 Ko une fois sur l'ADF, où un bloc de 512 n'en porte que 488. Le source,
 150 Ko de plus, ne tient pas avec lui. `dist/Faerghail.lha` porte le dépôt
 entier en une archive, pour un transfert par réseau, CF ou Gotek.
 
@@ -227,7 +227,7 @@ transparents.
 
 ### Les créatures, et ce qui les distingue
 
-Vingt-cinq monstres se battaient tous de la même façon : un jet, des dégâts.
+Vingt-six monstres se battaient tous de la même façon : un jet, des dégâts.
 Une goule et un orc, c'était le même combat à un chiffre près. Chacun porte
 maintenant un champ de capacités, joué sur les sauvegardes du SRD — Vigueur
 contre ce qui attaque le corps, Volonté contre ce qui attaque l'esprit, avec
@@ -246,20 +246,97 @@ un DD de 10 + la moitié des dés de vie.
 **Le gardien.** L'escalier du dernier étage ne menait dehors qu'en y montant.
 Il est désormais gardé : 14 dés de vie, deux attaques par tour, régénération,
 effroi. Ses nombres ne sont pas choisis au jugé — `tools/test_combat.py` fait
-s'affronter un groupe de niveau sept sans potion ni sort et exige qu'il
-l'emporte souvent, sans que ce soit acquis. Avec ses nombres d'origine (CA 22,
-2d8+12, peau épaisse **en plus** de sa régénération) il gagnait dix-sept fois
-sur dix-huit : le donjon était infinissable et rien ne le disait. Il en gagne
-maintenant quatre sur dix-huit, en six rounds et demi.
+s'affronter un groupe de niveau sept sans potion ni sort et **compte les
+issues**. Trois réglages successifs, tous mesurés :
+
+| Nombres | Le groupe l'emporte | Durée |
+|---|---|---|
+| CA 22, 2d8+12, peau épaisse **en plus** de la régénération | 1 fois sur 18 | — |
+| CA 18, 1d10+6, 149 PV | 31 fois sur 40 | 6,3 rounds |
+| **CA 19, 1d10+6, 166 PV** | **51 fois sur 80** | **7,5 rounds** |
+
+Le premier rendait le donjon infinissable sans que rien ne le dise ; le
+deuxième en faisait une formalité. Le troisième laisse le groupe gagner deux
+fois sur trois — et le groupe qui l'affronte pour de vrai a ses potions et ses
+sorts en plus.
+
+Le banc compte désormais **quatre-vingts** duels, pas dix-huit. À dix-huit
+l'écart-type vaut deux victoires, à quarante il en vaut trois, et une borne
+posée à moins de deux écarts-types de la moyenne se déclenche toute seule :
+c'est arrivé, avec « les trois quarts » pour borne haute alors que le groupe
+gagne près de deux fois sur trois — le banc criait au loup sur un boss qui
+n'avait pas changé. À quatre-vingts duels et des bornes du quart aux quatre
+cinquièmes, il reste trois écarts-types de marge de chaque côté.
+
+Le gardien est aussi la seule créature qui ne laisse pas le temps d'une salve :
+il barre l'escalier, on lui marche dessus.
+
+### Elles viennent en bande
+
+Un monstre seul, c'est une machine à sous : quatre héros frappent, un monstre
+riposte, et la même scène se rejoue trois cents fois. Chaque créature porte
+donc un effectif, et c'est son facteur de puissance qui le donne — FP ≤ 1/2 :
+jusqu'à quatre ; FP ≤ 2 : jusqu'à trois ; FP ≤ 4 : jusqu'à deux ; au-delà, elle
+vient seule. Le kobold arrive à quatre, le troll arrive seul.
+
+Le couloir est étroit : le groupe n'a qu'un adversaire devant lui et le frappe
+de toutes ses armes, mais **toute la bande riposte**. Celle de devant tombée,
+la suivante s'avance avec ses propres points de vie, et chacune paie son or et
+son expérience en tombant.
+
+L'effectif est en outre plafonné par la profondeur — deux au premier étage,
+trois au deuxième, puis autant que l'espèce en compte. Sans ce plafond, quatre
+kobolds tombaient d'entrée sur un groupe de niveau un à onze points de vie par
+tête : `tools/test_game.py` finissait sa deuxième rencontre avec le groupe
+anéanti, et tout ce qui suivait — l'échoppe, les pièges, la souris — échouait
+en cascade sans qu'aucune de ces épreuves ne soit en cause.
+
+Ce que cela change, mesuré sur les cinq étages, chacun à sa propre profondeur,
+avec à chaque palier le groupe qu'on y aurait plausiblement :
+
+| Étage | Le groupe gagne | Ce qu'une rencontre lui coûte |
+|---|---|---|
+| 1 | 100 % | 2,0 % du groupe |
+| 2 | 100 % | 1,9 % |
+| 3 | 100 % | 5,9 % |
+| 4 | 98 % | 9,5 % |
+| 5 | 100 % | 13,4 % |
+
+Une courbe qui monte d'un facteur six et demi, et pas un mur : c'est l'usure
+entre deux haltes qui fait le donjon, pas le combat isolé. Huit duels par
+espèce et non trois : depuis que l'effectif est tiré au sort, trois ne
+mesuraient plus rien — un étage passait de 5 % à 1 % d'une exécution à
+l'autre.
+
+**L'approche.** L'arc court existait, et rien ne le distinguait d'une lame : le
+rôdeur était un guerrier en moins. Le premier round d'une rencontre se joue
+maintenant à distance — seuls l'arc et les sorts portent, la bande ne riposte
+pas — puis elle comble le couloir. Une salve d'avance, pas plus : dès qu'une
+créature tombe, la suivante s'avance déjà au contact, sinon quatre archers
+auraient fauché une bande entière sans jamais être touchés.
+
+**La halte.** `R` dresse le camp sur place : la moitié des points de vie, tous
+les emplacements de sorts, le poison dissipé. Une halte sur trois est troublée
+— ce qui rôde à cet étage, tiré dans sa propre table de rencontres, tombe sur
+un groupe qui n'a rien récupéré. Sans elle le donjon ne se traversait plus :
+depuis que les créatures viennent en bande, `tools/play_game.py` voyait le
+groupe tomber au deuxième étage faute d'avoir jamais pu souffler, la halte
+n'existant qu'entre deux étages.
+
+**Le bandeau de combat.** Le joueur frappait à l'aveugle : il voyait la
+créature, jamais ses blessures, et rien ne disait combien elles étaient. Un
+bandeau en haut de la vue porte le nom, la jauge des points de vie et le compte
+de celles qui restent debout.
 
 ### Le bestiaire
 
-25 créatures du SRD, avec leurs statistiques d'origine : kobold, gobelin, rat
+26 créatures du SRD, avec leurs statistiques d'origine : kobold, gobelin, rat
 sanguin, squelette, orc, hobgobelin, zombi, loup, gnoll, goule, bugbear, worg,
 ombre, ogre, homme-lézard, gargouille, oursaloup, harpie, minotaure, troll,
-spectre, momie, hydre, géant des collines… Chaque monstre tire ses points de
-vie à ses dés de vie à l'apparition, et les rencontres sont réparties par
-niveau de donjon selon leur facteur de puissance.
+spectre, momie, hydre, géant des collines… plus le gardien. Chaque créature
+tire ses propres points de vie à ses dés de vie en se présentant — la seconde
+d'une bande n'est pas la copie de la première — et les rencontres sont
+réparties par niveau de donjon selon leur facteur de puissance.
 
 ### Commandes
 
@@ -268,6 +345,7 @@ niveau de donjon selon leur facteur de puissance.
 | Flèches | avancer, reculer, tourner |
 | Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
+| R | camper sur place |
 | 1 à 4 | choisir le héros courant |
 | A / S / F | attaquer, lancer un sort, fuir (en combat) |
 | E / U / D | équiper, utiliser, jeter (dans le sac) |
@@ -278,8 +356,9 @@ niveau de donjon selon leur facteur de puissance.
 
 ### Contenu
 
-Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
-clés, trésors), 4 monstres animés sur deux poses, coffres, objets au sol,
+Cinq niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
+clés, trésors), 19 apparences de créatures animées sur deux poses, coffres,
+objets au sol,
 niches creusées dans les murs, portes ordinaires, portes verrouillées — et
 une **porte à runes** par niveau, qui pose une énigme à trois réponses :
 juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
@@ -456,19 +535,20 @@ Le jeu n'a jamais tourné sur une vraie machine. Il tourne en revanche **pour de
 bon** dans un 68020 émulé : `tools/run68k.py` charge l'exécutable *hunk*, le
 relocalise, remplace `exec` et `graphics` par des souches, et émule le
 balayage vidéo, le blitter, le CIA du clavier, les compteurs de la souris et
-`dos.library`. Huit bancs font avancer **le vrai binaire** et relisent son état
+`dos.library`. Neuf bancs font avancer **le vrai binaire** et relisent son état
 en mémoire :
 
 | Banc | Ce qu'il éprouve |
 |---|---|
 | `test_game.py` | amorçage, création, exploration, combats, échoppe, pièges, souris, 800 touches au hasard |
-| `test_combat.py` | les sept capacités des créatures, l'équilibre du gardien, la courbe des cinq étages |
-| `test_layout.py` | aucun panneau ne déborde du cadre ; une icône par type d'objet |
+| `test_combat.py` | les sept capacités des créatures, les bandes, la halte, l'équilibre du gardien, la courbe des cinq étages |
+| `test_lore.py` | les onze pages du journal, les stèles des cinq étages, l'introduction et les deux fins |
+| `test_layout.py` | aucun panneau ne déborde du cadre ; le bandeau de combat et sa jauge ; une icône par type d'objet |
 | `test_save.py` | sauvegarde → relance → reprise, et refus d'une sauvegarde abîmée |
 | `test_sfx.py` | quinze bruitages aux registres de Paula, et la bonne partition à chaque moment |
 | `test_copper.py` | la copperlist relue instruction par instruction |
 | `test_replay.py` | chaque effet ProTracker jugé au tic près sur `AUDxPER`/`AUDxVOL`/`AUDxLC` |
-| `play_game.py` | un parcours dirigé complet, des monstres à l'escalier |
+| `play_game.py` | un parcours dirigé complet, des monstres à l'escalier, avec haltes |
 
 À la génération, `tools/gen_dungeon.py` vérifie par parcours en largeur que
 l'escalier de chaque étage est atteignable, que chaque levier s'atteint sans
@@ -480,7 +560,8 @@ quand les deux divergent le banc dit laquelle a tort.
 Ces bancs ne sont pas décoratifs. Ils ont trouvé une courbe d'expérience qui
 donnait le niveau 11 après dix combats, des dégâts de monstre jamais
 appliqués, un jeu ingagnable par attrition, six sorts inatteignables, un
-gardien qui gagnait dix-sept fois sur dix-huit, des capacités spéciales
+gardien qui gagnait dix-sept fois sur dix-huit, quatre kobolds qui anéantissaient
+d'entrée un groupe de niveau un, des capacités spéciales
 branchées dans une branche morte, une potion qui montrait un parchemin, du
 texte qui changeait de couleur sur tout fond non noir, une `dbf` qui bouclait
 65 536 fois — et, plus embarrassant, plusieurs bancs qui *mesuraient la
@@ -495,10 +576,8 @@ reste le seul juge de la fluidité.
 ## Pistes pour la suite
 
 - Charger les décors depuis la disquette plutôt que par `incbin` : l'exécutable
-  fait 660 Ko, dont 518 de données. Un chargeur permettrait de répartir le
+  fait 682 Ko, dont 538 de données. Un chargeur permettrait de répartir le
   contenu sur plusieurs disquettes.
 - Interruption niveau 3 (VERTB) plutôt qu'une attente active.
 - Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que
   par le VBlank.
-- Portée et distance en combat : l'arc court existe, mais rien ne distingue
-  encore le corps à corps du tir.

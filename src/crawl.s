@@ -43,6 +43,7 @@ T_LEVER		= 7			; levier scelle dans un mur
 T_GATE		= 8			; herse commandee par un levier
 T_SHOP		= 9			; echoppe scellee dans un mur
 T_TRAP		= 10			; dallage piege, invisible au depart
+T_STELE		= 11			; stele gravee : une page du journal
 
 ; MapParam d'un piege : le quartet bas donne l'espece, le bit 7 dit que
 ; le groupe l'a repere. Un piege desamorce redevient du dallage.
@@ -144,7 +145,8 @@ mt_Xp		= 42
 mt_Gold		= 44
 mt_Art		= 46
 mt_Special	= 48			; champ de bits, cf. gen_tables.py
-mt_SIZEOF	= 50
+mt_Pack		= 50			; combien s'en presentent a la fois
+mt_SIZEOF	= 52
 
 ; Ce qu'une creature sait faire en plus de frapper. Vingt-cinq monstres
 ; qui se battaient tous de la meme facon ne valaient que par leurs
@@ -204,6 +206,17 @@ UI_MAP		= 5
 UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
+UI_LORE		= 9			; une page du journal
+
+; Le journal. Un donjon sans recit n'est qu'un couloir : les steles
+; gravees racontent la crypte a mesure qu'on s'y enfonce, comme les
+; paragraphes numerotes des jeux dont celui-ci descend.
+LORELINES	= 12			; lignes par page
+LORECOLS	= 23		; ce que le panneau tient en largeur
+LORE_INTRO	= 0			; la page qu'on lit avant de partir
+LORE_WIN	= 1			; celle qui ferme le jeu
+LORE_LOST	= 2			; et celle qui le ferme mal
+LORE_FIRST	= 3			; les steles commencent la
 
 ; Les trois partitions. La musique change quand on s'enfonce : sur cinq
 ; etages, deux morceaux tournaient trop.
@@ -378,6 +391,12 @@ MainLoop:
 .playKey:
 	bsr	HandleKey
 .noKey:
+	tst.w	ShowIntro		; le recit s'ouvre sur la premiere
+	beq.s	.noIntro		; image de jeu, une fois les visages
+	clr.w	ShowIntro		; du groupe a l'ecran
+	moveq	#LORE_INTRO,d0
+	bsr	ShowLore
+.noIntro:
 	tst.w	NeedRedraw
 	beq.s	.noDraw
 	clr.w	NeedRedraw
@@ -1636,6 +1655,8 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_SHOP,d2
 	beq.s	.yes
+	cmp.w	#T_STELE,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1723,6 +1744,11 @@ DrawScene:
 	bsr	DrawShop
 	bra	.done
 .notShop:
+	cmp.w	#UI_LORE,d0
+	bne.s	.notLore
+	bsr	DrawLore
+	bra	.done
+.notLore:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1740,6 +1766,7 @@ DrawScene:
 	add.w	#ART_MONSTER,d0
 	moveq	#0,d1
 	bsr	BlitPiece
+	bsr	DrawFoeBanner
 	bra	.done
 
 .dungeon:
@@ -1811,6 +1838,13 @@ DrawScene:
 	bsr	BlitPiece
 	bra.s	.noFront
 .notShopArt:
+	cmp.w	#T_STELE,d4		; la stele gravee
+	bne.s	.notSteleArt
+	moveq	#ART_STELE,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	bra.s	.noFront
+.notSteleArt:
 	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
 	bne.s	.noFront
 	move.w	d7,d2
@@ -2150,6 +2184,58 @@ DrawLog:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+; DrawFoeBanner : en haut de la vue, ce que le groupe a en face.
+;
+; Le joueur frappait a l'aveugle : il voyait la creature, jamais ses
+; blessures, et rien ne disait combien elles etaient. Un bandeau porte
+; son nom, la jauge de ses points de vie, et le compte de celles qui
+; restent debout.
+FOEBAR_X	= 20
+FOEBAR_Y	= 20
+FOEBAR_W	= 184
+
+DrawFoeBanner:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#FOEBAR_X-2,d0
+	move.w	#FOEBAR_Y-2,d1
+	move.w	#FOEBAR_W+4,d2
+	moveq	#20,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+
+	lea	TmpStr,a1		; le nom, et combien elles sont
+	move.l	MonPtr,a0
+	bsr	StrCopy
+	move.w	MonCount,d0
+	cmp.w	#1,d0
+	ble.s	.single
+	lea	TxtTimes,a0
+	bsr	StrCopy
+	move.w	MonCount,d0
+	bsr	StrNum
+.single:
+	tst.w	MonRange
+	beq.s	.near
+	lea	TxtFar,a0
+	bsr	StrCopy
+.near:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	move.w	#FOEBAR_X,d0
+	move.w	#FOEBAR_Y,d1
+	move.w	#C_ALERT,d2
+	bsr	DrawText
+
+	move.w	#FOEBAR_X,d0		; la jauge de ses points de vie
+	move.w	#FOEBAR_Y+10,d1
+	move.w	#FOEBAR_W,d2
+	move.w	MonHp,d3
+	move.w	MonHpMax,d4
+	move.w	#C_BLOOD+4,d5
+	bsr	DrawGauge
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
 DrawStatus:
 	movem.l	d0-d7/a0-a6,-(sp)
 	tst.w	Phase
@@ -2184,49 +2270,54 @@ DrawStatus:
 	bsr	DrawText
 
 	move.w	UiMode,d0
-	beq.s	.helpView
+	beq	.helpView
 	cmp.w	#UI_INV,d0
 	bne.s	.helpSpell
 	lea	TxtHelpInv,a0
-	bra.s	.help
+	bra	.help
 .helpSpell:
 	cmp.w	#UI_SPELL,d0
 	bne.s	.helpRiddle
 	lea	TxtHelpSpell,a0
-	bra.s	.help
+	bra	.help
 .helpRiddle:
 	cmp.w	#UI_RIDDLE,d0
 	bne.s	.helpMap
 	lea	TxtHelpRiddle,a0
-	bra.s	.help
+	bra	.help
 .helpMap:
 	cmp.w	#UI_MAP,d0
 	bne.s	.helpBook
 	lea	TxtHelpMap,a0
-	bra.s	.help
+	bra	.help
 .helpBook:
 	cmp.w	#UI_BOOK,d0
 	bne.s	.helpOpts
 	lea	TxtHelpBook,a0
-	bra.s	.help
+	bra	.help
 .helpOpts:
 	cmp.w	#UI_OPTS,d0
 	bne.s	.helpShop
 	lea	TxtHelpOpts,a0
-	bra.s	.help
+	bra	.help
 .helpShop:
 	cmp.w	#UI_SHOP,d0
-	bne.s	.helpOther
+	bne.s	.helpLore
 	lea	TxtHelpShop,a0
-	bra.s	.help
+	bra	.help
+.helpLore:
+	cmp.w	#UI_LORE,d0
+	bne.s	.helpOther
+	lea	TxtLoreHelp,a0
+	bra	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
-	bra.s	.help
+	bra	.help
 .helpView:
 	tst.w	InCombat
 	beq.s	.helpMove
 	lea	TxtHelpFight,a0
-	bra.s	.help
+	bra	.help
 .helpMove:
 	lea	TxtHelpMove,a0
 .help:
@@ -2738,6 +2829,7 @@ TitleKey:
 	bsr	ClearScreens
 	bsr	LevelMusic		; on descend : la marche du donjon
 	clr.w	Phase
+	move.w	#1,ShowIntro		; le recit s'ouvre apres la creation
 	bra.s	.redraw
 .notNew:
 	cmp.w	#KEY_1+1,d0
@@ -4131,6 +4223,8 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.shop
 	cmp.w	#T_TRAP,d0
 	beq	.trap
+	cmp.w	#T_STELE,d0
+	beq	.stele
 
 	move.w	d4,PosX
 	move.w	d5,PosY
@@ -4176,6 +4270,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bra	.redraw
 .shop:
 	lea	TxtShopSeen,a0
+	bsr	LogAdd
+	bra	.redraw
+.stele:
+	lea	TxtSteleSeen,a0
 	bsr	LogAdd
 	bra	.redraw
 
@@ -4314,6 +4412,8 @@ DoAction:
 	beq	.shopOpen
 	cmp.w	#T_TRAP,d0
 	beq	.trapDisarm
+	cmp.w	#T_STELE,d0
+	beq	.steleRead
 	lea	TxtNothing,a0
 	bsr	LogAdd
 	bra	.done
@@ -4326,6 +4426,15 @@ DoAction:
 	bsr	SfxPlay
 	lea	TxtShopHello,a0
 	bsr	LogAdd
+	bra	.done
+.steleRead:
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam
+	add.w	#LORE_FIRST,d0
+	bsr	ShowLore
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
 	bra	.done
 .trapDisarm:
 	move.w	d4,d0
@@ -5087,6 +5196,83 @@ ShopKey:				; d0 = touche
 
 
 ;----------------------------------------------------------------------
+; Le journal
+;
+; Un donjon sans recit n'est qu'un couloir. Les steles gravees, les
+; registres et les lettres racontent la crypte a mesure qu'on descend ;
+; l'introduction et les deux fins passent par le meme panneau.
+;----------------------------------------------------------------------
+ShowLore:				; d0 = numero de page
+	movem.l	d0-d1,-(sp)
+	cmp.w	#NLORE,d0
+	blt.s	.ok
+	moveq	#0,d0
+.ok:
+	move.w	d0,LorePage
+	move.w	#UI_LORE,UiMode
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d1
+	rts
+
+LorePtr:				; d0 = page -> a0 = son titre
+	movem.l	d1/a1,-(sp)
+	move.w	d0,d1
+	add.w	d1,d1
+	add.w	d1,d1
+	lea	LoreTable,a1
+	move.l	(a1,d1.w),a0
+	movem.l	(sp)+,d1/a1
+	rts
+
+DrawLore:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+
+	move.w	LorePage,d0
+	bsr	LorePtr
+	move.l	a0,a2			; le titre, puis les lignes a la suite
+	moveq	#3,d0
+	moveq	#18,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	bsr	StrSkip			; a2 avance sur la premiere ligne
+
+	moveq	#0,d7
+.lineLoop:
+	move.l	a2,a0
+	tst.b	(a0)
+	beq.s	.blank
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#10,d1
+	add.w	#32,d1
+	move.w	#C_PARCH,d2
+	bsr	DrawText
+.blank:
+	move.l	a2,a0
+	bsr	StrSkip
+	move.l	a0,a2
+	addq.w	#1,d7
+	cmp.w	#LORELINES,d7
+	blt.s	.lineLoop
+
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; StrSkip : a0 (et a2 pour l'appelant) passe a la chaine suivante
+StrSkip:
+	tst.b	(a0)+
+	bne.s	StrSkip
+	move.l	a0,a2
+	rts
+
+
+;----------------------------------------------------------------------
 ; Les pieges
 ;
 ; Un dallage piege ne se voit pas. En marchant dessus, le groupe a
@@ -5371,6 +5557,8 @@ Descend:
 	bsr	SfxPlay
 	lea	TxtWin,a0
 	bsr	LogAdd
+	moveq	#LORE_WIN,d0		; et la derniere page du recit
+	bsr	ShowLore
 	bra.s	.done
 .next:
 	move.w	d0,Level
@@ -5474,7 +5662,124 @@ StartCombat:
 	lea	MonTypes,a2
 	add.l	d0,a2
 	move.l	a2,MonPtr
-	move.w	mt_Hd(a2),d0		; les PV se tirent aux des de vie
+	bsr	FoeRollHp
+	move.w	mt_Art(a2),MonArt
+	clr.w	PartyBless
+
+	move.w	mt_Pack(a2),d1		; combien s'en presentent
+	cmp.w	#1,d1
+	ble.s	.alone
+	bsr	RndMod			; 0..pack-1
+	addq.w	#1,d0			; 1..pack
+	; Les premieres salles ne jettent pas quatre kobolds sur un
+	; groupe de niveau un : quatre heros de onze points de vie n'y
+	; survivent pas, et le banc l'a montre avant que le joueur ne
+	; l'apprenne a ses depens. La bande grossit avec la profondeur --
+	; deux au premier etage, trois au deuxieme, quatre ensuite.
+	move.w	Level,d1
+	addq.w	#2,d1
+	cmp.w	d1,d0
+	ble.s	.haveCount
+	move.w	d1,d0
+	bra.s	.haveCount
+.alone:
+	moveq	#1,d0
+.haveCount:
+	move.w	d0,MonCount
+	move.w	d0,MonPack
+	move.w	#1,MonRange		; elle est encore au bout du couloir
+	cmp.w	#MON_BOSS,MonKind	; le gardien, lui, barre l'escalier :
+	bne.s	.notBoss		; on lui marche dessus
+	clr.w	MonRange
+.notBoss:
+
+	moveq	#SFX_GROWL,d0
+	bsr	SfxPlay
+	lea	TmpStr,a1
+	lea	TxtAppears,a0
+	bsr	StrCopy
+	move.l	a2,a0
+	bsr	StrCopy
+	move.w	MonPack,d0		; "ORC, ET TROIS AUTRES !"
+	subq.w	#1,d0
+	beq.s	.justOne
+	lea	TxtAndMore,a0
+	bsr	StrCopy
+	move.w	MonPack,d0
+	subq.w	#1,d0
+	bsr	StrNum
+	lea	TxtOthers,a0
+	bsr	StrCopy
+	bra.s	.said
+.justOne:
+	lea	TxtBang,a0
+	bsr	StrCopy
+.said:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; CampRest : le groupe fait halte la ou il se trouve.
+;
+; La halte entre deux etages ne suffisait pas : les creatures arrivent
+; en bande depuis peu, et le banc de jeu voyait le groupe tomber au
+; deuxieme etage faute d'avoir jamais pu souffler. Camper rend la
+; moitie des points de vie et tous les emplacements de sorts -- mais
+; une halte sur trois est troublee, et ce qui rode a cet etage tombe
+; alors sur un groupe qui n'a rien recupere.
+CampRest:
+	movem.l	d0-d7/a0-a6,-(sp)
+	tst.w	InCombat
+	bne.s	.leave
+	tst.w	GameOver
+	bne.s	.leave
+	moveq	#3,d1
+	bsr	RndMod
+	tst.w	d0
+	bne.s	.quiet
+	lea	TxtCampBad,a0
+	bsr	LogAdd
+	bsr	WanderingFoe
+	bra.s	.leave
+.quiet:
+	lea	TxtCamp,a0
+	bsr	LogAdd
+	bsr	PartyRest
+.leave:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; WanderingFoe : une creature de cet etage, tiree dans sa table de
+; rencontres.
+WanderingFoe:
+	movem.l	d0-d2/a0-a1,-(sp)
+	lea	EncounterTab,a0
+	move.w	Level,d0
+	cmp.w	#NTIERS,d0
+	blt.s	.lvOk
+	moveq	#NTIERS-1,d0
+.lvOk:
+	lsl.w	#2,d0
+	move.l	(a0,d0.w),a1
+	moveq	#0,d1
+	move.b	(a1)+,d1		; combien d'especes a cet etage
+	bsr	RndMod
+	moveq	#0,d1
+	move.b	(a1,d0.w),d1
+	move.w	d1,MonKind
+	bsr	StartCombat
+	movem.l	(sp)+,d0-d2/a0-a1
+	rts
+
+; FoeRollHp : a2 = type de creature -> MonHp et MonHpMax pour celle qui
+; se presente. Chaque creature de la bande tire ses propres points de
+; vie : la seconde n'est pas la copie de la premiere.
+FoeRollHp:
+	movem.l	d0-d1,-(sp)
+	move.w	mt_Hd(a2),d0
 	move.w	mt_HdF(a2),d1
 	bsr	RollDice
 	add.w	mt_HpB(a2),d0
@@ -5484,21 +5789,7 @@ StartCombat:
 .hpOk:
 	move.w	d0,MonHp
 	move.w	d0,MonHpMax
-	move.w	mt_Art(a2),MonArt
-	clr.w	PartyBless
-	moveq	#SFX_GROWL,d0
-	bsr	SfxPlay
-	lea	TmpStr,a1
-	lea	TxtAppears,a0
-	bsr	StrCopy
-	move.l	a2,a0
-	bsr	StrCopy
-	lea	TxtBang,a0
-	bsr	StrCopy
-	clr.b	(a1)
-	lea	TmpStr,a0
-	bsr	LogAdd
-	movem.l	(sp)+,d0-d7/a0-a6
+	movem.l	(sp)+,d0-d1
 	rts
 
 ; HeroAttack : a6 = heros, a2 = monstre -> d0 = degats (0 si rate)
@@ -5624,7 +5915,16 @@ CombatRound:
 	moveq	#NHEROES-1,d6
 .heroLoop:
 	tst.w	hr_Hp(a6)
-	beq.s	.heroNext
+	beq	.heroNext
+	tst.w	MonRange		; tant que la distance n'est pas
+	beq.s	.inReach		; comblee, seul l'arc porte
+	move.w	hr_Weapon(a6),d0
+	beq	.heroNext		; a mains nues, on attend
+	bsr	ItemPtr
+	move.w	it_Sfx(a0),d0
+	cmp.w	#SFX_BOW,d0
+	bne	.heroNext
+.inReach:
 	tst.w	d3
 	bne.s	.haveSfx
 	moveq	#1,d3
@@ -5699,19 +5999,43 @@ MonsterTurn:
 	lea	TmpStr,a0
 	bsr	LogAdd
 .noRegen:
-	tst.w	MonStun
-	beq.s	.attack
+	; Le premier round se joue a distance : les archers et les
+	; lanceurs de sorts ont une salve d'avance, ceux qui n'ont
+	; qu'une lame attendent. Puis la bande comble le couloir. Un
+	; rodeur dans le groupe cesse ainsi d'etre un guerrier en moins.
+	tst.w	MonRange
+	beq.s	.closed
+	clr.w	MonRange
+	lea	TxtCharge,a0
+	bsr	LogAdd
+	bra	.done
+.closed:
+	; Toute la bande riposte, pas seulement celle de devant : le
+	; groupe ne frappe qu'un adversaire a la fois -- c'est un
+	; couloir, pas une plaine -- mais il les a tous sur le dos.
+	move.w	MonCount,d1
+	subq.w	#1,d1
+	bmi.s	.done
+	tst.w	MonStun			; l'effroi ne saisit que celle de
+	beq.s	.packLoop		; devant : les autres avancent
 	clr.w	MonStun
 	lea	TxtMonStunned,a0
 	bsr	LogAdd
+	dbf	d1,.packLoop
 	bra.s	.done
-.attack:
+.packLoop:
+	tst.w	GameOver
+	bne.s	.done
+	tst.w	InCombat
+	beq.s	.done
 	bsr	MonsterAttack
 	btst	#6,mt_Special+1(a2)	; SP_MULTI : elle frappe deux fois
-	beq.s	.done
+	beq.s	.packNext
 	tst.w	GameOver
 	bne.s	.done
 	bsr	MonsterAttack
+.packNext:
+	dbf	d1,.packLoop
 .done:
 	movem.l	(sp)+,d0-d1/a0-a2
 	rts
@@ -5952,18 +6276,48 @@ CheckWipe:
 	rts
 
 PartyWiped:
+	movem.l	d0,-(sp)
 	move.w	#1,GameOver
 	clr.w	InCombat
 	lea	TxtWiped,a0
 	bsr	LogAdd
+	moveq	#LORE_LOST,d0		; la crypte a le dernier mot
+	bsr	ShowLore
+	movem.l	(sp)+,d0
 	rts
 
+; MonsterDies : celle de devant tombe. S'il en reste, une autre
+; s'avance et le combat continue ; sinon il s'acheve.
 MonsterDies:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
-	clr.w	InCombat
 	moveq	#SFX_DEATH,d0
 	bsr	SfxPlay
+	bsr	FoeReward		; or et experience, creature par
+					; creature
+	subq.w	#1,MonCount
+	tst.w	MonCount
+	ble.s	.lastOne
+	bsr	FoeRollHp		; la suivante s'avance
+	clr.w	MonRange		; et elle, elle est deja sur vous
+	clr.w	MonStun
+	clr.w	AnimFrame
+	lea	TmpStr,a1
+	lea	TxtAnother,a0
+	bsr	StrCopy
+	move.l	a2,a0
+	bsr	StrCopy
+	lea	TxtSteps,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	moveq	#SFX_GROWL,d0
+	bsr	SfxPlay
+	bra	.leave
+.lastOne:
+	clr.w	InCombat
+	clr.w	MonCount
 	cmp.w	#MON_BOSS,MonKind	; le gardien ne tombe qu'une fois
 	bne.s	.ordinary
 	move.w	#1,BossDead
@@ -5972,6 +6326,28 @@ MonsterDies:
 	lea	TxtGuardDown,a0
 	bsr	LogAdd
 .ordinary:
+	move.w	PosX,d0			; la case est nettoyee
+	move.w	PosY,d1
+	bsr	MapCell
+	move.w	d0,d2
+	and.w	#$000f,d2
+	move.w	PosX,d0
+	move.w	PosY,d1
+	bsr	MapSet
+	lea	Heroes,a6		; bonus de fin de combat
+	moveq	#NHEROES-1,d6
+.blessLoop:
+	clr.w	hr_AcTemp(a6)
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.blessLoop
+.leave:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; FoeReward : a2 = type -> or, journal de combat et experience pour une
+; creature abattue.
+FoeReward:
+	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	mt_Gold(a2),d0
 	add.w	d0,Gold
 	lea	TmpStr,a1
@@ -5991,21 +6367,11 @@ MonsterDies:
 	lea	TmpStr,a0
 	bsr	LogAdd
 
-	move.w	PosX,d0			; la case est nettoyee
-	move.w	PosY,d1
-	bsr	MapCell
-	move.w	d0,d2
-	and.w	#$000f,d2
-	move.w	PosX,d0
-	move.w	PosY,d1
-	bsr	MapSet
-
-	lea	Heroes,a6		; experience et bonus de fin de combat
+	lea	Heroes,a6		; l'experience va aux survivants
 	moveq	#NHEROES-1,d6
 .xpLoop:
 	tst.w	hr_Hp(a6)
 	beq.s	.xpNext
-	clr.w	hr_AcTemp(a6)
 	move.w	mt_Xp(a2),d0
 	add.w	d0,hr_Xp(a6)
 	bsr	CheckLevel
@@ -6691,6 +7057,13 @@ HandleKey:
 	bra	.redraw
 .notOptsKey:
 	move.w	UiMode,d1		; ces ecrans ont leurs propres fleches
+	cmp.w	#UI_LORE,d1
+	bne.s	.notInLore
+	cmp.w	#KEY_SPACE,d0		; une page se referme d'un espace
+	bne	.done
+	clr.w	UiMode
+	bra	.redraw
+.notInLore:
 	cmp.w	#UI_SHOP,d1
 	bne.s	.notInShop
 	bsr	ShopKey
@@ -6762,6 +7135,11 @@ HandleKey:
 	move.w	#UI_SPELL,UiMode
 	bra	.redraw
 .notCast:
+	cmp.w	#KEY_R,d0		; camper sur place
+	bne.s	.notCamp
+	bsr	CampRest
+	bra	.done
+.notCamp:
 	cmp.w	#KEY_SPACE,d0
 	bne	.done
 	bsr	DoAction
@@ -6892,6 +7270,191 @@ ShopTable:
 	dc.b	18,18,15,9,10,11,24,23	; harnois et lames enchantees
 	even
 
+
+; Le journal. Un donjon sans recit n'est qu'un couloir : ces
+; pages racontent la crypte a mesure qu'on descend, comme les
+; paragraphes numerotes des jeux dont celui-ci descend. Le
+; decoupage est fait a la generation, jamais compte a la main :
+; le panneau ne tient que 23 colonnes, pas les 36 du journal.
+LoreTable:
+	dc.l	Lore0
+	dc.l	Lore1
+	dc.l	Lore2
+	dc.l	Lore3
+	dc.l	Lore4
+	dc.l	Lore5
+	dc.l	Lore6
+	dc.l	Lore7
+	dc.l	Lore8
+	dc.l	Lore9
+	dc.l	Lore10
+NLORE		= 11
+
+Lore0:
+	dc.b	"LA CRYPTE",0
+	dc.b	"Il y a trois cents ans,",0
+	dc.b	"la maison de Faerghail",0
+	dc.b	"scella sous sa chapelle",0
+	dc.b	"ce qu'elle n'osait pas",0
+	dc.b	"detruire.",0
+	dc.b	"",0
+	dc.b	"Depuis un an, les betes",0
+	dc.b	"remontent. Le village a",0
+	dc.b	"paye quatre epees.",0
+	dc.b	"Vous.",0
+	dc.b	"",0
+	dc.b	"Cinq etages. Descendez.",0
+	even
+Lore1:
+	dc.b	"VOUS REVOYEZ LE JOUR",0
+	dc.b	"Le gardien tombe, et le",0
+	dc.b	"silence qui suit est le",0
+	dc.b	"premier depuis trois",0
+	dc.b	"cents ans.",0
+	dc.b	"",0
+	dc.b	"Vous remontez sans",0
+	dc.b	"croiser une ombre. La",0
+	dc.b	"crypte se tait enfin.",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore2:
+	dc.b	"LA CRYPTE VOUS GARDE",0
+	dc.b	"Le dernier d'entre vous",0
+	dc.b	"tombe la ou les autres",0
+	dc.b	"sont deja couches.",0
+	dc.b	"",0
+	dc.b	"La crypte ne rend rien.",0
+	dc.b	"Dans un an, le village",0
+	dc.b	"paiera quatre autres",0
+	dc.b	"epees.",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore3:
+	dc.b	"PREMIERE STELE",0
+	dc.b	"Ici commence la",0
+	dc.b	"descente.",0
+	dc.b	"",0
+	dc.b	"Nous avons mure la",0
+	dc.b	"chapelle et brise",0
+	dc.b	"l'escalier.",0
+	dc.b	"",0
+	dc.b	"Ordre de Faerghail, an",0
+	dc.b	"212",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore4:
+	dc.b	"PLAINTE D'UN TAILLEUR",0
+	dc.b	"Trente hommes ont",0
+	dc.b	"creuse. Dix-sept sont",0
+	dc.b	"remontes.",0
+	dc.b	"",0
+	dc.b	"Le maitre dit que le",0
+	dc.b	"fond n'est pas de la",0
+	dc.b	"roche.",0
+	dc.b	"",0
+	dc.b	"Je ne descendrai plus.",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore5:
+	dc.b	"DEUXIEME STELE",0
+	dc.b	"Les leviers commandent",0
+	dc.b	"les herses. Ceux qui",0
+	dc.b	"les ont scelles",0
+	dc.b	"voulaient qu'on ferme",0
+	dc.b	"derriere soi.",0
+	dc.b	"",0
+	dc.b	"Contre quoi, nul ne l'a",0
+	dc.b	"dit.",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore6:
+	dc.b	"REGISTRE DES OFFRANDES",0
+	dc.b	"Aux niches : du pain,",0
+	dc.b	"du sel, une piece. On",0
+	dc.b	"les trouvait vides au",0
+	dc.b	"matin.",0
+	dc.b	"",0
+	dc.b	"Le chapelain disait que",0
+	dc.b	"c'etaient les rats. Il",0
+	dc.b	"n'est plus la pour le",0
+	dc.b	"dire.",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore7:
+	dc.b	"TROISIEME STELE",0
+	dc.b	"Ne lisez pas les runes",0
+	dc.b	"a voix haute.",0
+	dc.b	"",0
+	dc.b	"Elles posent une",0
+	dc.b	"question et attendent.",0
+	dc.b	"Repondez juste, la",0
+	dc.b	"porte s'ouvre.",0
+	dc.b	"",0
+	dc.b	"Repondez faux, elle",0
+	dc.b	"vous repond.",0
+	dc.b	0
+	dc.b	0
+	even
+Lore8:
+	dc.b	"LETTRE, NON ENVOYEE",0
+	dc.b	"Mere, il y a un",0
+	dc.b	"marchand ici. Sous",0
+	dc.b	"terre. Il tient",0
+	dc.b	"boutique et prend notre",0
+	dc.b	"or.",0
+	dc.b	"",0
+	dc.b	"Nul ne demande d'ou il",0
+	dc.b	"vient : on a trop",0
+	dc.b	"besoin de ses potions.",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore9:
+	dc.b	"QUATRIEME STELE",0
+	dc.b	"Au-dela, la pierre est",0
+	dc.b	"chaude.",0
+	dc.b	"",0
+	dc.b	"Nous avons cesse de",0
+	dc.b	"tailler. Ce qui reste a",0
+	dc.b	"creuser, quelque chose",0
+	dc.b	"l'a deja creuse.",0
+	dc.b	"",0
+	dc.b	"An 219",0
+	dc.b	0
+	dc.b	0
+	dc.b	0
+	even
+Lore10:
+	dc.b	"DERNIERE PAGE",0
+	dc.b	"Il ne dort pas. Il",0
+	dc.b	"attend.",0
+	dc.b	"",0
+	dc.b	"Nous lui avons donne",0
+	dc.b	"l'escalier pour qu'il",0
+	dc.b	"ait quelque chose a",0
+	dc.b	"garder.",0
+	dc.b	"",0
+	dc.b	"Si vous lisez ceci,",0
+	dc.b	"Faerghail a echoue. A",0
+	dc.b	"vous.",0
+	dc.b	0
+	even
 
 ; Les panneaux en liste, pour la souris : ecran, premiere ligne, pas,
 ; nombre de lignes visibles, curseur, premiere ligne affichee, et la
@@ -7032,6 +7595,13 @@ TxtDescend:	dc.b	"UN ESCALIER. VOUS DESCENDEZ.",0
 TxtWin:		dc.b	"LA SORTIE ! VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
+TxtAndMore:	dc.b	" SURGIT, ET ",0
+TxtOthers:	dc.b	" AUTRES !",0
+TxtAnother:	dc.b	"UN AUTRE ",0
+TxtTimes:	dc.b	" X",0
+TxtSteps:	dc.b	" S'AVANCE !",0
+TxtCharge:	dc.b	"ILS COMBLENT LA DISTANCE.",0
+TxtFar:		dc.b	" AU LOIN",0
 TxtYouHit:	dc.b	"LE GROUPE INFLIGE ",0
 TxtDamage:	dc.b	" DEGATS.",0
 TxtAllMiss:	dc.b	"TOUS LES COUPS SE PERDENT.",0
@@ -7060,6 +7630,8 @@ TxtGuardian:	dc.b	"UNE PRESENCE BARRE LA SORTIE.",0
 TxtGuardDown:	dc.b	"LE GARDIEN TOMBE. LA VOIE EST LIBRE.",0
 TxtCured:	dc.b	"LE REPOS CHASSE LE POISON.",0
 TxtShopSeen:	dc.b	"UNE ECHOPPE ! ESPACE POUR ENTRER.",0
+TxtSteleSeen:	dc.b	"UNE STELE GRAVEE. ESPACE POUR LIRE.",0
+TxtLoreHelp:	dc.b	"ESPACE OU ESC POUR REFERMER",0
 TxtShopHello:	dc.b	"BIENVENUE, DIT LE MARCHAND.",0
 TxtShopTitle:	dc.b	"ECHOPPE",0
 TxtShopBuy:	dc.b	"ACHAT",0
@@ -7148,9 +7720,11 @@ TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
 TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR REPONDRE  ESC",0
 TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTREE OK  ESC",0
-TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P REGLAGES",0
+TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE R CAMP P REGL",0
 TxtRaised:	dc.b	" SE RELEVE.",0
 TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
+TxtCamp:	dc.b	"VOUS DRESSEZ LE CAMP.",0
+TxtCampBad:	dc.b	"UN BRUIT DANS LE NOIR : PAS DE REPOS !",0
 TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
 TxtMenuNew:	dc.b	"1   COMMENCER UNE NOUVELLE PARTIE",0
 TxtMenuLoad:	dc.b	"2   REPRENDRE LA PARTIE SAUVEE",0
@@ -7262,6 +7836,11 @@ MonHp:		ds.w	1
 MonHpMax:	ds.w	1
 BossDead:	ds.w	1
 MonStun:	ds.w	1
+MonCount:	ds.w	1		; creatures encore debout, celle de
+					; devant comprise
+MonPack:	ds.w	1		; combien s'en presentaient au depart
+MonRange:	ds.w	1		; 1 tant que la bande n'a pas comble
+					; la distance
 AtkMax:		ds.w	1
 QuitArm:	ds.w	1
 HasSave:	ds.w	1
@@ -7273,6 +7852,8 @@ OptSfx:	ds.w	1
 CurMusic:	ds.w	1
 CopSurf:	ds.l	1
 SurfPhase:	ds.w	1
+LorePage:	ds.w	1
+ShowIntro:	ds.w	1
 MouseX:	ds.w	1
 MouseY:	ds.w	1
 MouseRawX:	ds.w	1

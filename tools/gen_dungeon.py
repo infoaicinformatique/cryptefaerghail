@@ -623,6 +623,42 @@ def make_niche():
     return p
 
 
+def make_stele():
+    """Une stele gravee dans le mur d'en face : une dalle dressee, son
+    encadrement, et des lignes d'ecriture qu'on ne lit pas d'ici."""
+    x0, x1 = snap(CX - 30, CX + 30)
+    y0, y1 = CY - 34, CY + 30
+    p = Piece(x0, y0, x1 - x0, y1 - y0)
+    for y in range(CY - 30, CY + 26):                # la dalle
+        for x in range(CX - 22, CX + 23):
+            e = max(abs(x - CX) / 22.0, abs(y - (CY - 2)) / 28.0)
+            if e > 1.0:
+                continue
+            if e > 0.90:                             # chanfrein taille
+                p.set(x, y, pal.lit("STONE", 0.30 + 0.28 * e))
+            else:
+                p.set(x, y, pal.lit("STONE", 0.46 + 0.10 * e))
+    for y in range(CY - 32, CY - 27):                # fronton
+        for x in range(CX - 26, CX + 27):
+            if abs(x - CX) < 26 - (CY - 27 - y) * 3:
+                p.set(x, y, pal.lit("STONE", 0.26))
+    for i in range(9):                               # les lignes gravees
+        y = CY - 22 + i * 5
+        w = 16 - (i % 3) * 3
+        for x in range(CX - w, CX + w):
+            p.set(x, y, pal.lit("STONE", 0.88))
+            p.set(x, y + 1, pal.lit("STONE", 0.62))
+    for s in (-1, 1):                                # deux torches eteintes
+        tx = CX + s * 26
+        for y in range(CY - 14, CY + 2):
+            p.set(tx, y, pal.lit("IRON", 0.40))
+        for y in range(CY - 20, CY - 13):
+            for x in range(tx - 3, tx + 4):
+                if abs(x - tx) < 4 - abs(y - (CY - 17)):
+                    p.set(x, y, pal.lit("ROT", 0.30))
+    return p
+
+
 def make_shop():
     """L'echoppe : un auvent de toile, un comptoir de bois, et de quoi
     marchander pose dessus. Elle occupe un mur, comme la niche, mais
@@ -1545,6 +1581,8 @@ def build_art():
     pieces += [make_shop()]
     ART_INDEX["ART_TRAP"] = len(pieces)
     pieces += [make_trap()]
+    ART_INDEX["ART_STELE"] = len(pieces)
+    pieces += [make_stele()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
     # Le portrait est dessine sur un carre de trente-deux, puis rogne :
     # le nom du heros prend toute la largeur du panneau au-dessus de
@@ -1637,7 +1675,11 @@ def write_pointer(path):
 MAPW = MAPH = 24
 FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
 LEVER, GATE = 7, 8                       # herse et son levier
-SHOP, TRAP = 9, 10                       # echoppe et dallage piege
+SHOP, TRAP, STELE = 9, 10, 11            # echoppe, dallage piege, stele
+# Huit pages de stele, reparties du premier etage au dernier. La
+# somme doit valoir exactement NLORE - LORE_FIRST dans crawl.s :
+# une stele de plus lirait une page qui n'existe pas.
+STELES_PER_LEVEL = [2, 2, 2, 1, 1]
 NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
@@ -1858,6 +1900,33 @@ def build_level(level, seed):
         free.remove((x, y))
         traps += 1
 
+    # Les steles : le recit de la crypte, une ou deux par etage, dans un
+    # mur que longe un couloir. Le parametre porte le numero de page ;
+    # elles se suivent d'un etage a l'autre.
+    # Il y a huit pages de stele en tout : on les repartit sur les cinq
+    # etages, sans en inventer une neuvieme qui pointerait hors table.
+    steles = 0
+    want = STELES_PER_LEVEL[level]
+    first = sum(STELES_PER_LEVEL[:level])
+    for y in range(1, MAPH - 1):
+        for x in range(1, MAPW - 1):
+            if steles >= want:
+                break
+            if grid[y][x] != WALL or par[y][x]:
+                continue
+            if sum(1 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))
+                   if grid[y + dy][x + dx] == FLOOR) != 1:
+                continue
+            if reach.get(next((x + dx, y + dy) for dx, dy in
+                              ((1, 0), (-1, 0), (0, 1), (0, -1))
+                              if grid[y + dy][x + dx] == FLOOR), 99) > 14:
+                continue                          # pas au bout du monde
+            grid[y][x] = STELE
+            par[y][x] = first + steles
+            steles += 1
+        if steles >= want:
+            break
+
     # niches : un mur borde par un couloir, avec une offrande dedans
     niches = 0
     for y in range(1, MAPH - 1):
@@ -1905,7 +1974,7 @@ def distances(grid, start, blocked=()):
                 continue
             if (nx, ny) in blocked:
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE, SHOP):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE, SHOP, STELE):
                 continue
             dist[(nx, ny)] = dist[(x, y)] + 1
             q.append((nx, ny))
@@ -1929,7 +1998,7 @@ def check_solvable(grid, par, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER, SHOP):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER, SHOP, STELE):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
@@ -1953,7 +2022,7 @@ def check_solvable(grid, par, start):
                 # Une serrure ne coupe pas la route : le groupe a des
                 # cles. Seule la herse compte, c'est tout l'objet du
                 # controle.
-                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP):
+                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP, STELE):
                     continue
                 reach.add((nx, ny))
                 q.append((nx, ny))
@@ -1989,7 +2058,7 @@ def check_reachable(grid, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP, STELE):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))

@@ -1,0 +1,25 @@
+DEMOS AGA POUR AMIGA 1200
+=========================
+
+Deux programmes, a lancer depuis le Shell (pas depuis le Workbench :
+ils ne gerent pas le message WBStartup). Bouton gauche de la souris
+pour quitter.
+
+  AGAScroll  playfield 8 bitplanes (256 couleurs 24 bits) de 640x384
+             pixels en scrolling materiel, sprite, scroller de texte
+             sinusoidal au blitter sur barres copper, musique
+             ProTracker sur Paula.
+
+  AGADemo    degrade plein ecran genere ligne par ligne par le copper
+             en 24 bits, sprite materiel, meme musique.
+
+Configuration : Amiga 1200 ou 4000 (chipset AGA), 68020 minimum,
+Kickstart 3.0 / 3.1 ou superieur, environ 1 Mo de Chip RAM libre pour
+AGAScroll (le bitmap fait 240 Ko).
+
+Le tiroir Src contient tout le source assembleur, l'include du
+replayer ProTracker et le module. Le tout s'assemble avec vasm et se
+lie avec vlink (Frank Wille), depuis un Amiga comme depuis un PC.
+
+Musique et graphismes sont generes par programme : rien n'est emprunte
+a une production existante.

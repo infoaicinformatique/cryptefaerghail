@@ -59,6 +59,23 @@ make check         # rejoue en Python les calculs du code 68k
 make preview       # écrit docs/preview.png
 ```
 
+## Disquette prête à l'emploi
+
+`dist/AGADemos.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
+de Kickstart 1.3 à 3.x) contenant les deux exécutables, le source complet, le
+module, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui lance `AGAScroll` au
+démarrage. `dist/AGADemos.lha` contient la même chose en archive LhA, pour un
+transfert par réseau, CF ou Gotek plutôt que par disquette.
+
+```sh
+make disk          # refabrique les deux -- nécessite pip install amitools
+```
+
+- **Émulateur** : montez l'ADF dans DF0: et démarrez dessus.
+- **Machine réelle** : écrivez l'ADF sur une disquette (ADF Blitzer,
+  X-Copy + Amiga Explorer, Greaseweazle…), ou copiez le `.lha` sur le disque
+  dur et faites `lha x AGADemos.lha`.
+
 ## Exécution
 
 - **FS-UAE / WinUAE** : configurez une A1200 (Kickstart 3.1, AGA, 68020, 2 Mo
@@ -83,6 +100,9 @@ tools/gen_data.py    générateur des quatre .i de données
 tools/gen_module.py  générateur du module ProTracker
 tools/render_mod.py  rejoue le module en Python et écrit un WAV
 tools/preview.py     modèle Python du pipeline de scroll.s : contrôles + aperçu
+tools/make_lha.py    écrit l'archive LhA (et se relit pour se vérifier)
+disk/                fichiers écrits à la main pour la disquette
+scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
 ```
 
@@ -177,6 +197,12 @@ le glyphe au fond. Le tout tient largement dans le VBlank, ce qui compte :
 pendant l'affichage, 8 bitplanes en lores ne laissent quasiment aucun créneau
 DMA au blitter.
 
+**Les barres copper** derrière le texte sont trois dégradés (rouge, vert,
+bleu) dont le centre suit un sinus à sa propre vitesse. `COLOR00` change à
+chaque ligne de la bande — 64 blocs `WAIT` + deux écritures pour les 24 bits —
+et les trois barres sont additionnées puis saturées, d'où le blanc à leurs
+croisements. Le texte reste en couleur 1, donc lisible par-dessus.
+
 **La police** est une 5×7 doublée en 16×16, générée par `tools/gen_data.py`
 avec sa table ASCII → glyphe. Le texte lui-même est en clair dans `scroll.s`,
 donc modifiable sans rien régénérer.
@@ -238,7 +264,6 @@ chipset ni celui de Paula.
 
 - Scrolling infini : bitmap de la largeur de l'écran + 16 pixels, avec une
   colonne redessinée au blitter à chaque franchissement de mot.
-- Étoiles ou barres copper dans la bande du scroller, derrière le texte.
 - Blitter : effacement, dessin de bobs avec masque (cookie-cut), lignes.
 - Interruption niveau 3 (VERTB / COPER) plutôt qu'une attente active.
 - Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que

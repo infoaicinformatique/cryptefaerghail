@@ -8,6 +8,8 @@
 #   make wav         rend la musique en WAV pour l'ecouter sans Amiga
 #   make check       verifie l'arithmetique du scroll et de la copperlist
 #   make preview     rend une image de AGAScroll dans docs/preview.png
+#   make disk        fabrique dist/AGADemos.adf (disquette amorcable) et
+#                    dist/AGADemos.lha -- necessite pip install amitools
 #   make clean       nettoie build/ et bin/
 #-----------------------------------------------------------------------
 
@@ -20,7 +22,7 @@ INCS    := src/hardware.i src/sine.i src/sprite.i src/palette.i \
            src/ptreplay.i data/music.mod
 TARGETS := bin/AGADemo bin/AGAScroll
 
-.PHONY: all clean data music wav check preview toolchain
+.PHONY: all clean data music wav check preview disk toolchain
 
 all: $(TARGETS)
 
@@ -51,6 +53,9 @@ check:
 
 preview:
 	python3 tools/preview.py 40 docs/preview.png
+
+disk:
+	sh scripts/make-disk.sh
 
 toolchain:
 	sh scripts/get-toolchain.sh

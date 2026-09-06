@@ -5,6 +5,7 @@
     src/sprite.i   boule 16x16, 2 plans
     src/palette.i  palette AGA de 256 couleurs 24 bits
     src/font.i     police 16x16 pour le scrolltext (5x7 double)
+    src/bars.i     degrades des barres copper de la bande de texte
 
 Les fichiers generes sont commites : la compilation ne depend donc pas de
 Python. Relancer uniquement pour changer les donnees :
@@ -182,9 +183,38 @@ def write_font(path):
     return len(order)
 
 
+# Barres copper : couleur de coeur et demi-hauteur, en lignes.
+BARS = [((255, 55, 40), 14), ((60, 255, 110), 14), ((90, 90, 255), 14)]
+BARSTEPS = 32                   # entrees par degrade (distance au centre)
+
+
+def write_bars(path):
+    """Un degrade par barre : BARSTEPS entrees de 4 octets (0, R, V, B).
+
+    Le replay additionne les trois barres ligne par ligne, d'ou des
+    couleurs qui saturent vers le blanc la ou elles se croisent."""
+    with open(path, "w") as f:
+        f.write(HEADER.format(name=os.path.basename(path)))
+        f.write("; Indexe par la distance au centre de la barre, en lignes.\n")
+        for n, ((r, g, b), half) in enumerate(BARS):
+            f.write(f"BarGrad{n}:\n")
+            for d in range(BARSTEPS):
+                if d >= half:
+                    inten, shine = 0.0, 0.0
+                else:
+                    inten = (1.0 - (d / half) ** 1.6)
+                    shine = 0.45 * max(0.0, 1.0 - d / 3.0)   # reflet au coeur
+                vals = [min(255, int(round(c * inten + 255 * shine)))
+                        for c in (r, g, b)]
+                f.write(f"\tdc.b\t$00,${vals[0]:02x},${vals[1]:02x},${vals[2]:02x}\n")
+            f.write("\n")
+
+
 here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 write_sine(os.path.join(here, "src", "sine.i"))
 write_sprite(os.path.join(here, "src", "sprite.i"))
 write_palette(os.path.join(here, "src", "palette.i"))
 n = write_font(os.path.join(here, "src", "font.i"))
-print(f"src/sine.i, src/sprite.i, src/palette.i et src/font.i ({n} glyphes) generes")
+write_bars(os.path.join(here, "src", "bars.i"))
+print(f"src/sine.i, src/sprite.i, src/palette.i, src/font.i ({n} glyphes) "
+      f"et src/bars.i ({len(BARS)} barres) generes")

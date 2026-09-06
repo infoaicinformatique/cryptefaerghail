@@ -62,17 +62,24 @@ SCROLL_SPEED	= 2			; pixels par image
 SCROLL_BASEY	= 24			; ligne centrale de l'onde
 CHARW		= 16
 
+; --- barres copper derriere le texte ---
+NBARS		= 3
+BARSTEPS	= 32			; entrees d'un degrade
+BAR_CENTER	= 32			; milieu de la bande
+BAR_AMP		= 26			; amplitude du va-et-vient, en lignes
+
 ; --- palette ---
 PALROT		= 240			; couleurs 0..239 en rotation
 PALBANKSZ	= 264			; taille d'une banque dans la copperlist
-COPMAXSIZE	= 4096
+COPMAXSIZE	= 4608
 
 ; --- structure decrivant une copperlist ---
 li_Cop		= 0			; adresse de la liste
 li_Pal		= 4			; premier mot BPLCON3 du bloc palette
 li_Ptrs		= 8			; premier MOVE de BPL1PTH
 li_Con1		= 12			; mot de valeur de BPLCON1
-li_SIZEOF	= 16
+li_BarTab	= 16			; table des 64 mots de couleur des barres
+li_SIZEOF	= 20
 
 ;======================================================================
 	SECTION	scroll,CODE
@@ -152,6 +159,8 @@ MainLoop:
 	bsr	UpdateBitplanes		; pointeurs + scroll fin
 	move.l	BackRec,a0
 	bsr	UpdatePalette
+	move.l	BackRec,a0
+	bsr	UpdateBars
 	bsr	MoveSprite
 	bsr	ScrollUpdate
 
@@ -206,8 +215,12 @@ RestoreSystem:
 InitDemo:
 	lea	Rec1,a0
 	move.l	a0,FrontRec
+	lea	BarTab1,a1
+	move.l	a1,li_BarTab(a0)
 	lea	Rec2,a0
 	move.l	a0,BackRec
+	lea	BarTab2,a1
+	move.l	a1,li_BarTab(a0)
 
 	lea	Rec1,a0
 	lea	CopList1,a1
@@ -226,6 +239,10 @@ InitDemo:
 	bsr	UpdateBitplanes
 	lea	Rec2,a0
 	bsr	UpdatePalette
+	lea	Rec1,a0
+	bsr	UpdateBars
+	lea	Rec2,a0
+	bsr	UpdateBars
 	bsr	MoveSprite
 	bsr	ScrollInit
 
@@ -240,7 +257,7 @@ InitDemo:
 ;   a0 = structure a remplir, a1 = buffer de copperlist (Chip RAM)
 ;----------------------------------------------------------------------
 BuildCopperList:
-	movem.l	d0-d4/a0-a2,-(sp)
+	movem.l	d0-d4/a0-a3,-(sp)
 	move.l	a1,li_Cop(a0)
 	move.l	a1,a2			; a2 = curseur d'ecriture
 
@@ -353,21 +370,48 @@ BuildCopperList:
 	move.w	d1,(a2)+
 	move.w	#BPLCON3,(a2)+
 	move.w	#$0000,(a2)+
-	move.w	#COLOR00,(a2)+
-	move.w	#$0001,(a2)+		; fond : bleu tres sombre
 	move.w	#COLOR01,(a2)+
 	move.w	#$0fff,(a2)+		; texte : blanc
 	move.w	#BPLCON3,(a2)+
 	move.w	#$0200,(a2)+
-	move.w	#COLOR00,(a2)+
-	move.w	#$0024,(a2)+
 	move.w	#COLOR01,(a2)+
 	move.w	#$0fff,(a2)+
 	move.w	#BPLCON3,(a2)+
 	move.w	#$0000,(a2)+
 
+	; --- barres copper : COLOR00 change a chaque ligne de la bande ---
+	move.l	li_BarTab(a0),a3
+	move.w	#SPLITLINE,d3
+	moveq	#0,d4
+.barBlock:
+	cmp.w	#256,d3
+	bne.s	.barNoWrap
+	move.w	#$ffdf,(a2)+		; franchissement de la ligne 255
+	move.w	#$fffe,(a2)+
+.barNoWrap:
+	move.w	d3,d1
+	lsl.w	#8,d1
+	or.w	#$0007,d1
+	move.w	d1,(a2)+
+	move.w	#$fffe,(a2)+
+	move.w	#BPLCON3,(a2)+
+	move.w	#$0000,(a2)+
+	move.w	#COLOR00,(a2)+
+	move.l	a2,(a3)+		; memorise pour UpdateBars
+	clr.w	(a2)+
+	move.w	#BPLCON3,(a2)+
+	move.w	#$0200,(a2)+
+	move.w	#COLOR00,(a2)+
+	clr.w	(a2)+
+	addq.w	#1,d3
+	addq.w	#1,d4
+	cmp.w	#SCRTEXTH,d4
+	blt.s	.barBlock
+	move.w	#BPLCON3,(a2)+
+	move.w	#$0000,(a2)+
+
 	move.l	#$fffffffe,(a2)+	; fin de copperlist
-	movem.l	(sp)+,d0-d4/a0-a2
+	movem.l	(sp)+,d0-d4/a0-a3
 	rts
 
 ;----------------------------------------------------------------------
@@ -672,6 +716,110 @@ MoveSprite:
 	rts
 
 ;----------------------------------------------------------------------
+; UpdateBars : trois barres qui se croisent derriere le texte
+;   a0 = structure de la liste a mettre a jour
+;
+; Chaque barre a son degrade (distance au centre -> couleur) ; les trois
+; sont additionnees ligne par ligne et saturees, d'ou le blanc a leurs
+; croisements. Le resultat est ecrit dans les MOVE de COLOR00 de la
+; bande, en 24 bits comme le reste (deux ecritures, LOCT a 0 puis a 1).
+;----------------------------------------------------------------------
+UpdateBars:
+	movem.l	d0-d7/a0-a4,-(sp)
+	move.l	li_BarTab(a0),a4
+
+	lea	BarDefs,a2		; centre courant de chaque barre
+	lea	BarCenters,a3
+	lea	SinTab,a1
+	moveq	#NBARS-1,d7
+.centerLoop:
+	move.w	(a2),d0			; vitesse
+	mulu.w	FrameCnt,d0
+	add.w	2(a2),d0		; dephasage
+	and.w	#255,d0
+	moveq	#0,d1
+	move.b	(a1,d0.w),d1
+	sub.w	#128,d1
+	muls.w	#BAR_AMP,d1
+	asr.w	#7,d1
+	add.w	#BAR_CENTER,d1
+	move.w	d1,(a3)+
+	lea	8(a2),a2
+	dbf	d7,.centerLoop
+
+	moveq	#0,d6			; ligne dans la bande
+.lineLoop:
+	moveq	#0,d2			; rouge
+	moveq	#0,d3			; vert
+	moveq	#0,d4			; bleu
+	lea	BarDefs,a2
+	lea	BarCenters,a3
+	moveq	#NBARS-1,d7
+.barLoop:
+	move.w	(a3)+,d0
+	sub.w	d6,d0			; distance de la ligne au centre
+	bpl.s	.posDist
+	neg.w	d0
+.posDist:
+	cmp.w	#BARSTEPS,d0
+	bge.s	.barNext
+	lsl.w	#2,d0			; 4 octets par entree
+	move.l	4(a2),a1
+	add.w	d0,a1
+	moveq	#0,d1
+	move.b	1(a1),d1
+	add.w	d1,d2
+	move.b	2(a1),d1
+	add.w	d1,d3
+	move.b	3(a1),d1
+	add.w	d1,d4
+.barNext:
+	lea	8(a2),a2
+	dbf	d7,.barLoop
+
+	cmp.w	#255,d2			; saturation des trois composantes
+	ble.s	.rOk
+	move.w	#255,d2
+.rOk:
+	cmp.w	#255,d3
+	ble.s	.gOk
+	move.w	#255,d3
+.gOk:
+	cmp.w	#255,d4
+	ble.s	.bOk
+	move.w	#255,d4
+.bOk:
+	move.w	d2,d0			; quartets hauts
+	lsr.w	#4,d0
+	lsl.w	#8,d0
+	move.w	d3,d1
+	lsr.w	#4,d1
+	lsl.w	#4,d1
+	or.w	d1,d0
+	move.w	d4,d1
+	lsr.w	#4,d1
+	or.w	d1,d0
+	move.w	d2,d1			; quartets bas
+	and.w	#15,d1
+	lsl.w	#8,d1
+	move.w	d3,d5
+	and.w	#15,d5
+	lsl.w	#4,d5
+	or.w	d5,d1
+	move.w	d4,d5
+	and.w	#15,d5
+	or.w	d5,d1
+
+	move.l	(a4)+,a1
+	move.w	d0,(a1)			; COLOR00 poids forts
+	move.w	d1,8(a1)		; COLOR00 poids faibles
+	addq.w	#1,d6
+	cmp.w	#SCRTEXTH,d6
+	blt	.lineLoop
+	movem.l	(sp)+,d0-d7/a0-a4
+	rts
+
+;----------------------------------------------------------------------
 ; ScrollInit : longueur du texte et position de depart
 ;----------------------------------------------------------------------
 ScrollInit:
@@ -849,6 +997,16 @@ GfxName:	dc.b	"graphics.library",0
 
 	include	"sine.i"
 	include	"palette.i"
+	include	"bars.i"
+
+; Une barre : vitesse, dephasage, adresse de son degrade.
+BarDefs:
+	dc.w	2,0
+	dc.l	BarGrad0
+	dc.w	3,85
+	dc.l	BarGrad1
+	dc.w	5,170
+	dc.l	BarGrad2
 
 ScrollText:
 	dc.b	"   BIENVENUE SUR AMIGA 1200 !   "
@@ -888,6 +1046,9 @@ OldIntena:	ds.w	1
 OldDmacon:	ds.w	1
 FrameCnt:	ds.w	1
 PalRot:		ds.w	1
+BarCenters:	ds.w	NBARS
+BarTab1:	ds.l	SCRTEXTH
+BarTab2:	ds.l	SCRTEXTH
 ScrollLen:	ds.w	1
 ScrollChar:	ds.w	1
 ScrollFine:	ds.w	1

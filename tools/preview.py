@@ -31,6 +31,8 @@ SCRBPL, SCRTEXTH = 48, 64                # bande de scrolltext
 SCROLL_XOFF, SCROLL_SPEED = 16, 2
 SCROLL_CHARS, CHARW, SCROLL_BASEY = 22, 16, 24
 SPLITLINE = 236
+NBARS, BARSTEPS, BAR_CENTER, BAR_AMP = 3, 32, 32, 26
+BARDEFS = ((2, 0), (3, 85), (5, 170))    # vitesse, dephasage
 FETCHWORDS = 21                      # DDFSTRT recule de 8 => un mot de plus
 PALROT = 240
 PALBANKSZ = 264
@@ -65,6 +67,9 @@ PAL = parse_words(os.path.join(ROOT, "src", "palette.i"))       # hi, lo, hi, lo
 SPR = parse_words(os.path.join(ROOT, "src", "sprite.i"))
 FONT = parse_words(os.path.join(ROOT, "src", "font.i"))         # 2 mots par ligne
 FONTMAP = parse_bytes(os.path.join(ROOT, "src", "font.i"))
+_bars = parse_bytes(os.path.join(ROOT, "src", "bars.i"))
+BARGRAD = [_bars[b * BARSTEPS * 4:(b + 1) * BARSTEPS * 4] for b in range(NBARS)]
+assert len(_bars) == NBARS * BARSTEPS * 4
 assert len(SIN) == 256 and len(PAL) == 512 and len(FONTMAP) == 96
 
 
@@ -121,19 +126,31 @@ def build_copper():
     move(BPL1PTH, 0)
     move(BPL1PTH + 2, 0)
     move(BPLCON3, 0)
-    move(COLOR00, 0x0001)
     move(COLOR00 + 2, 0x0fff)
     move(BPLCON3, 0x0200)
-    move(COLOR00, 0x0024)
     move(COLOR00 + 2, 0x0fff)
     move(BPLCON3, 0)
 
+    li_bars = []
+    for line in range(SPLITLINE, SPLITLINE + SCRTEXTH):
+        if line == 256:
+            w += [0xffdf, 0xfffe]
+        w += [((line & 255) << 8) | 0x07, 0xfffe]
+        move(BPLCON3, 0)
+        w.append(COLOR00)
+        li_bars.append(len(w) * 2)
+        w.append(0)
+        move(BPLCON3, 0x0200)
+        w.append(COLOR00)
+        w.append(0)
+    move(BPLCON3, 0)
+
     w += [0xffff, 0xfffe]
-    return w, li_pal, li_ptrs, li_con1
+    return w, li_pal, li_ptrs, li_con1, li_bars
 
 
 def check_layout():
-    w, li_pal, li_ptrs, li_con1 = build_copper()
+    w, li_pal, li_ptrs, li_con1, li_bars = build_copper()
 
     # UpdatePalette : hi en +6+4i, lo en +138+4i, banque tous les 264 octets
     for index in range(256):
@@ -153,9 +170,16 @@ def check_layout():
         assert w[(base + 2) // 2 - 1] == BPL1PTH + p * 4
         assert w[(base + 6) // 2 - 1] == BPL1PTH + p * 4 + 2
     assert w[li_con1 // 2 - 1] == BPLCON1
-    assert len(w) * 2 <= 4096, "COPMAXSIZE depasse"
+
+    # UpdateBars : chaque adresse memorisee suit bien un MOVE de COLOR00,
+    # et le mot des quartets bas est huit octets plus loin
+    assert len(li_bars) == SCRTEXTH
+    for off in li_bars:
+        assert w[off // 2 - 1] == COLOR00
+        assert w[(off + 8) // 2 - 1] == COLOR00
+    assert len(w) * 2 <= 4608, "COPMAXSIZE depasse"
     print(f"copperlist : {len(w) * 2} octets, li_Pal={li_pal} li_Ptrs={li_ptrs} "
-          f"li_Con1={li_con1} - disposition OK")
+          f"li_Con1={li_con1}, {len(li_bars)} lignes de barres - disposition OK")
 
 
 def check_camera():
@@ -209,6 +233,22 @@ def camera(frame):
     return x, y
 
 
+def bar_colours(frame):
+    """Rejoue UpdateBars : une couleur de fond par ligne de la bande."""
+    centres = [BAR_CENTER + (((SIN[(sp * frame + ph) & 255] - 128) * BAR_AMP) >> 7)
+               for sp, ph in BARDEFS]
+    out = []
+    for line in range(SCRTEXTH):
+        rgb = [0, 0, 0]
+        for b, centre in enumerate(centres):
+            d = abs(centre - line)
+            if d < BARSTEPS:
+                for c in range(3):
+                    rgb[c] += BARGRAD[b][d * 4 + 1 + c]
+        out.append(tuple(min(255, v) for v in rgb))
+    return out
+
+
 def scroll_band(frame):
     """Rejoue ScrollUpdate : bitmap 1 plan de 384x64 pixels."""
     total = frame * SCROLL_SPEED
@@ -259,9 +299,11 @@ def render(planes, frame):
 
     # bande de scrolltext : 1 plan, couleurs propres, sous le playfield
     band = scroll_band(frame)
+    bars = bar_colours(frame)
     for l in range(SCRTEXTH):
         for sx in range(SCRW):
-            screen[MAINH + l][sx] = -1 - band[l][sx + SCROLL_XOFF]
+            screen[MAINH + l][sx] = -2 if band[l][sx + SCROLL_XOFF] else -1
+    globals()["BAND_BG"] = bars
 
     # sprite (couleurs 241..243, banque $F via BPLCON4)
     sx = 152 + (((SIN[(frame * 2) & 255] - 128) * 7) >> 3)
@@ -281,12 +323,14 @@ def plasma_pixel(x, y):
 
 
 # --- 4. sortie PNG -----------------------------------------------------
-BAND_COLOURS = {-1: (0x00, 0x02, 0x14), -2: (0xff, 0xff, 0xff)}
+BAND_BG = []
 
 
-def colour(index, rot):
-    if index < 0:                        # bande : COLOR00 / COLOR01 du split
-        return BAND_COLOURS[index]
+def colour(index, rot, line=0):
+    if index == -2:                      # texte : COLOR01 du split
+        return (0xff, 0xff, 0xff)
+    if index == -1:                      # fond : COLOR00, une barre par ligne
+        return BAND_BG[line - MAINH]
     src = index if index >= PALROT else (index + rot) % PALROT
     hi, lo = PAL[src * 2], PAL[src * 2 + 1]
     return tuple(((hi >> s) & 15) << 4 | ((lo >> s) & 15) for s in (8, 4, 0))
@@ -294,10 +338,10 @@ def colour(index, rot):
 
 def write_png(path, screen, rot):
     raw = bytearray()
-    for line in screen:
+    for y, line in enumerate(screen):
         raw.append(0)
         for idx in line:
-            raw += bytes(colour(idx, rot))
+            raw += bytes(colour(idx, rot, y))
 
     def chunk(tag, data):
         c = struct.pack(">I", len(data)) + tag + data

@@ -390,6 +390,8 @@ class Harness:
         jusqu'a la fin de la tranche."""
         done = 0
         while done < cycles:
+            if self.cpu.r_pc() == self.EXIT:
+                break                    # le programme a rendu la main
             self.vbi()
             run = self.machine.execute(min(self.VBI_PERIOD, cycles - done))
             done += max(getattr(run, "cycles", 0) or 0, 1)
@@ -494,10 +496,18 @@ class Harness:
         self.cpu.w_reg(15, STACK)                    # a7
         self.cpu.w_sr(0x2000)                        # mode superviseur : voir
         self.cpu.w_pc(self.segs[0][0])               # setup_supervisor()
-        self.mem.w32(STACK, 0xdeadbeef)              # adresse de retour
+        self.mem.w16(self.EXIT, 0x60fe)              # bra.s * : il s'arrete la
+        self.mem.w32(STACK, self.EXIT)               # adresse de retour
 
     # --- appel direct d'une routine du jeu -------------------------
     RETURN = 0x0000e000                  # sous la pile, en RAM valide
+    # Ou le programme retombe quand il rend la main. C'etait $deadbeef,
+    # une adresse hors de la RAM : le processeur y allait chercher ses
+    # instructions et machine68k criait a chaque octet lu, des millions
+    # de fois par tranche -- vingt-quatre millions de lignes dans le
+    # journal des bancs. On l'envoie maintenant sur un bra.s vers
+    # lui-meme, en RAM : il tourne en rond sans rien dire.
+    EXIT = 0x0000e100
 
     REGS = "d0 d1 d2 d3 d4 d5 d6 d7 a0 a1 a2 a3 a4 a5 a6 a7".split()
 
@@ -569,7 +579,7 @@ class Harness:
                 self.execute(cycles)
             except Exception as e:
                 return f"exception CPU : {e} (pc={self.cpu.r_pc():#x})"
-            if self.cpu.r_pc() == 0xdeadbeef:
+            if self.cpu.r_pc() == self.EXIT:
                 self.finished = True
                 return "programme termine"
             if not self.keys and self.icr == 0:

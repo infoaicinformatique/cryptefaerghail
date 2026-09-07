@@ -26,7 +26,8 @@ BPL1PTH, SPR0PTH = 0x0e0, 0x120
 
 
 def read_equ(name, default=None, src="crawl.s"):
-    for line in open(os.path.join(ROOT, "src", src)):
+    for line in open(os.path.join(ROOT, "src", src),
+                     encoding="latin-1"):
         if line.split("\t")[0].strip() == name:
             body = line.split("=", 1)[1].split(";")[0].strip()
             try:

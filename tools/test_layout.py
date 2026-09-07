@@ -97,14 +97,9 @@ def prolog_pages(g, fails):
     gx0, gy0, gx1, gy1 = PROLOG_GAP
 
     def out(x, y):
-        """Hors du cadre. Les deux lignes de l'ombre portee (y=7 et 248)
-        ne comptent que par leurs bords : HLine travaille a l'octet et
-        arrondit le x-1 de l'ombre a l'octet du dessous, ce qui allume
-        huit pixels tout a gauche -- un travers de DrawFrame, partout
-        dans le jeu, et cache ailleurs par un fond de panneau."""
-        if y < oy0 or y >= oy1:
-            return True
-        return y > oy0 and y < oy1 - 1 and (x < ox0 or x >= ox1)
+        """Hors du cadre, bordure comprise : depuis que HLine trace au
+        pixel pres, l'ombre portee du cadre ne deborde plus a gauche."""
+        return x < ox0 or x >= ox1 or y < oy0 or y >= oy1
 
     for page in range(T.read_equ("PROLOGPAGES", 4)):
         px = S.grab(g, "ShowBuf")

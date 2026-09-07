@@ -70,12 +70,13 @@ FONTMAP = parse_bytes(os.path.join(ROOT, "src", "font.i"))
 _bars = parse_bytes(os.path.join(ROOT, "src", "bars.i"))
 BARGRAD = [_bars[b * BARSTEPS * 4:(b + 1) * BARSTEPS * 4] for b in range(NBARS)]
 assert len(_bars) == NBARS * BARSTEPS * 4
-assert len(SIN) == 256 and len(PAL) == 512 and len(FONTMAP) == 96
+assert len(SIN) == 256 and len(PAL) == 512 and len(FONTMAP) == 224
 
 
 def scroll_text():
     """Recupere le message directement dans src/scroll.s."""
-    src = open(os.path.join(ROOT, "src", "scroll.s")).read()
+    src = open(os.path.join(ROOT, "src", "scroll.s"),
+               encoding="latin-1").read()
     block = src.split("ScrollText:", 1)[1].split(",0", 1)[0]
     return "".join(re.findall(r'"([^"]*)"', block))
 
@@ -258,7 +259,7 @@ def scroll_band(frame):
     x = SCROLL_XOFF - fine
     for i in range(SCROLL_CHARS):
         code = ord(TEXT[(char0 + i) % len(TEXT)])
-        glyph = FONTMAP[code - 32] if 32 <= code < 128 else 0xff
+        glyph = FONTMAP[code - 32] if 32 <= code < 256 else 0xff
         y = SCROLL_BASEY + (((SIN[(2 * x + phase) & 255] - 128) * 3) >> 4)
         assert 0 <= y <= SCRTEXTH - 16, f"glyphe hors bande : y={y}"
         assert 0 <= x and (x >> 4) * 2 + 4 <= SCRBPL, f"glyphe hors bitmap : x={x}"

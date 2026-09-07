@@ -98,7 +98,14 @@ def cell(grid, x, y):
 
 
 def solid(c):
-    return (c & 0x0f) in (G.WALL, G.DOOR)
+    """Ce qui bouche la vue -- la meme liste que IsWall dans crawl.s.
+
+    Elle ne comptait que le mur et la porte : une niche, un levier, une
+    herse, l'echoppe et le grand registre etaient traverses comme du
+    vide, et les captures de ce fichier montraient donc des couloirs qui
+    n'existent pas dans le jeu."""
+    return (c & 0x0f) in (G.WALL, G.DOOR, G.LOCKED, G.NICHE, G.RUNE,
+                          G.LEVER, G.GATE, G.SHOP, G.LEDGER)
 
 
 def cell_at(grid, px, py, dirn, depth, offset):

@@ -150,6 +150,51 @@ GLYPHS = {
     "=": ("     ", "     ", "#####", "     ", "#####", "     ", "     "),
 }
 
+# --- capitales accentuees ---------------------------------------------
+#
+# Le jeu est en francais et s'ecrit tout en capitales : sans accents, il
+# criait ETAGE, PIEGE et RAYEE. Il n'y a qu'une ligne de libre au-dessus
+# d'une lettre dans une cellule de huit, on redessine donc la lettre sur
+# six lignes et on pose l'accent sur la premiere -- la ligne de base ne
+# bouge pas, un E accentue reste aligne sur le E d'a cote. La cedille,
+# elle, descend sous la ligne de base, ou la huitieme ligne l'attendait.
+ACUTE, GRAVE, HAT, TREMA = "...#.", ".#...", "..#..", ".#.#."
+
+_A6 = (".###.", "#...#", "#...#", "#####", "#...#", "#...#")
+_E6 = ("#####", "#....", "###..", "#....", "#....", "#####")
+_I6 = ("#####", "..#..", "..#..", "..#..", "..#..", "#####")
+_O6 = (".###.", "#...#", "#...#", "#...#", "#...#", ".###.")
+_U6 = ("#...#", "#...#", "#...#", "#...#", "#...#", ".###.")
+
+GLYPHS.update({
+    "\u00c0": (GRAVE,) + _A6,
+    "\u00c2": (HAT,) + _A6,
+    "\u00c9": (ACUTE,) + _E6,
+    "\u00c8": (GRAVE,) + _E6,
+    "\u00ca": (HAT,) + _E6,
+    "\u00cb": (TREMA,) + _E6,
+    "\u00ce": (HAT,) + _I6,
+    "\u00cf": (TREMA,) + _I6,
+    "\u00d4": (HAT,) + _O6,
+    "\u00d9": (GRAVE,) + _U6,
+    "\u00db": (HAT,) + _U6,
+    "\u00c7": GLYPHS["C"] + ("..#..",),          # la cedille, sous la ligne
+})
+
+
+FIRSTCHAR, LASTCHAR = 32, 255            # etendue de la table de glyphes
+
+
+def charmap(order):
+    """Code Latin-1 -> numero de glyphe, $ff pour ce qu'on ne sait pas
+    dessiner. La minuscule prend le glyphe de sa capitale : la police
+    n'a que des capitales, et un texte en minuscules reste lisible."""
+    table = []
+    for code in range(FIRSTCHAR, LASTCHAR + 1):
+        ch = bytes([code]).decode("latin-1").upper()
+        table.append(order.index(ch) if ch in GLYPHS else 0xff)
+    return table
+
 
 def write_font(path):
     """Chaque glyphe : 16 lignes de deux mots (donnees + mot nul).
@@ -170,14 +215,16 @@ def write_font(path):
                     if c == "#":
                         bits |= 0b11 << (14 - 2 * (x + 1))   # x2, decale d'une colonne
                 f.write(f"\tdc.w\t${bits:04x},$0000\n" * 2)   # x2 en vertical
-            f.write("\tdc.w\t$0000,$0000\n" * 2)             # 16e et 15e ligne
-        f.write("\n; ASCII 32..127 -> numero de glyphe, $ff = caractere inconnu\n")
+            # jusqu'a seize lignes : les glyphes n'ont pas tous la meme
+            # hauteur depuis que les capitales accentuees existent, et le
+            # pas de la table, lui, ne change pas
+            f.write("\tdc.w\t$0000,$0000\n" * 2 * (8 - len(GLYPHS[ch])))
+        f.write("\n; Latin-1 32..255 -> numero de glyphe, $ff = inconnu\n")
+        f.write(f"FONTCHARS\t= {FIRSTCHAR}\t\t; premier code de la table\n")
+        f.write(f"FONTLAST\t= {LASTCHAR}\n")
         f.write("FontMap:\n")
-        table = []
-        for code in range(32, 128):
-            ch = chr(code).upper()
-            table.append(order.index(ch) if ch in GLYPHS else 0xff)
-        for i in range(0, 96, 16):
+        table = charmap(order)
+        for i in range(0, len(table), 16):
             row = ",".join(f"${v:02x}" for v in table[i:i + 16])
             f.write(f"\tdc.b\t{row}\n")
     return len(order)

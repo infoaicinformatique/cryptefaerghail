@@ -35,7 +35,8 @@ hr_SIZEOF = 46 + 8                       # relu ci-dessous depuis le source
 
 
 def read_equ(name, default):
-    src = open(os.path.join(ROOT, "src", "crawl.s")).read()
+    src = open(os.path.join(ROOT, "src", "crawl.s"),
+               encoding="latin-1").read()
     for line in src.splitlines():
         if line.startswith(name):
             try:

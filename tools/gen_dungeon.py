@@ -1930,14 +1930,16 @@ def write_font8(path):
                     if c == "#":
                         bits |= 0x80 >> (x + 1)
                 vals.append(bits)
-            vals.append(0)
+            while len(vals) < 8:             # jusqu'a huit lignes : les
+                vals.append(0)                   # capitales accentuees en
             f.write("\tdc.b\t" + ",".join(f"${v:02x}" for v in vals)
-                    + f"\t; '{ch}'\n")
-        f.write("\n; ASCII 32..127 -> numero de glyphe, $ff si absent\n")
+                    + f"\t; '{ch}'\n")          # ont une de plus
+        f.write("\n; Latin-1 32..255 -> numero de glyphe, $ff si absent\n")
+        f.write(f"FONT8FIRST\t= {gen_data.FIRSTCHAR}\n")
+        f.write(f"FONT8LAST\t= {gen_data.LASTCHAR}\n")
         f.write("Font8Map:\n")
-        table = [order.index(chr(c).upper()) if chr(c).upper() in gen_data.GLYPHS
-                 else 0xff for c in range(32, 128)]
-        for i in range(0, 96, 16):
+        table = gen_data.charmap(order)
+        for i in range(0, len(table), 16):
             f.write("\tdc.b\t" + ",".join(f"${v:02x}" for v in table[i:i + 16]) + "\n")
         return len(order)
 

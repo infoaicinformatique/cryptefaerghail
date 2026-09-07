@@ -883,9 +883,9 @@ ScrollUpdate:
 	move.w	d6,d0
 	moveq	#0,d1
 	move.b	(a0,d0.w),d1
-	sub.w	#32,d1			; hors table : rien a dessiner
+	sub.w	#FONTCHARS,d1		; hors table : rien a dessiner
 	bmi.s	.skip
-	cmp.w	#96,d1
+	cmp.w	#FONTLAST-FONTCHARS+1,d1
 	bge.s	.skip
 	lea	FontMap,a1
 	moveq	#0,d2
@@ -1026,7 +1026,7 @@ BarDefs:
 ScrollText:
 	dc.b	"   BIENVENUE SUR AMIGA 1200 !   "
 	dc.b	"8 BITPLANES AGA, 256 COULEURS EN 24 BITS VRAIES, "
-	dc.b	"SCROLLING 100 POUR 100 MATERIEL, "
+	dc.b	"SCROLLING 100 POUR 100 MATÉRIEL, "
 	dc.b	"UN SPRITE, UN PLASMA ET PROTRACKER SUR PAULA...   "
 	dc.b	"LE COPPER FAIT LE RESTE.   "
 	dc.b	"BOUTON GAUCHE POUR SORTIR.        ",0

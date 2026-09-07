@@ -36,7 +36,9 @@ def party(g):
         vues=sum(g.mem.r8(seen + i) for i in range(576)),
         carte=[g.mem.r8(g.addr("MapTerrain") + i) for i in range(576)],
         param=[g.mem.r8(g.addr("MapParam") + i) for i in range(576)],
-        etal=[g.mem.r8(g.addr("ShopStock") + i) for i in range(8)])
+        etal=[g.mem.r8(g.addr("ShopStock") + i) for i in range(8)],
+        quittance=g.w("Acquitted"),
+        reglages=(g.w("OptMusic"), g.w("OptSfx"), g.w("KbLayout")))
 
 
 if __name__ == "__main__":
@@ -75,6 +77,9 @@ if __name__ == "__main__":
     stock = g.addr("ShopStock")           # une piece vendue doit le rester
     g.mem.w8(stock + 0, 0)
     g.mem.w8(stock + 3, 0)
+    g.setw("OptMusic", 0)                 # les reglages aussi se sauvent :
+    g.setw("KbLayout", 1)                 # on coupe la musique et on passe
+    g.setw("Acquitted", 1)                # en QWERTY, et on raye la ligne
     g.key(T.K_ESC)                        # deux ESC : on abandonne
     g.key(T.K_ESC)
     avant = party(g)
@@ -95,11 +100,13 @@ if __name__ == "__main__":
     else:
         apres = party(h)
         for cle in ("heros", "sac", "pos", "niveau", "or_", "cles",
-                    "vues", "carte", "param", "etal"):
+                    "vues", "carte", "param", "etal", "quittance",
+                    "reglages"):
             if apres[cle] != avant[cle]:
                 fails.append(f"{cle} n'est pas restaure")
         print(f"  reprise : {apres['pos']}, or {apres['or_']}, "
-              f"{apres['vues']} cases relevees")
+              f"{apres['vues']} cases relevees, "
+              f"quittance {apres['quittance']}, reglages {apres['reglages']}")
         for i in range(4):
             print(f"  {apres['heros'][i][0]:8s} PV {apres['heros'][i][2]}"
                   f"/{apres['heros'][i][3]} PX {apres['heros'][i][4]}")

@@ -21,7 +21,8 @@ import test_game as T
 def read_equ(name, default):
     """Une constante lue dans le source : le banc doit suivre le jeu
     quand il passe de quatre a huit bitplanes."""
-    for line in open(os.path.join(ROOT, "src", "crawl.s")):
+    for line in open(os.path.join(ROOT, "src", "crawl.s"),
+                     encoding="latin-1"):
         m = re.match(r"%s\s*=\s*(\d+)" % name, line)
         if m:
             return int(m.group(1))

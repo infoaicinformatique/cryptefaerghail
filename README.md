@@ -332,6 +332,36 @@ serrures loin du départ et les clés près, puis contrôle par parcours en
 largeur qu'on atteint l'escalier ou au moins une clé sans forcer une serrure.
 Ce contrôle a déjà attrapé un niveau coupé en deux dès la deuxième case.
 
+### Les accents
+
+Le jeu est en français et s'écrit tout en capitales. Il criait donc `ETAGE`,
+`PIEGE`, `CLE` et `RAYEE` : la police n'avait que `A-Z`, les chiffres et une
+poignée de signes — 49 glyphes.
+
+Une cellule de 8×8 ne laisse **pas** de place au-dessus d'une capitale de sept
+lignes. Les capitales accentuées sont donc redessinées sur six lignes, l'accent
+occupant la première : **la ligne de base ne bouge pas**, un `É` reste aligné
+sur le `E` d'à côté. La cédille, elle, descend sous la ligne de base, où la
+huitième ligne l'attendait déjà.
+
+```
+E : #####  É : ...#.    l'accent, une ligne
+    #....      #####    puis la lettre sur six
+    #....      #....
+    ###..      ###..
+    #....      #....
+    #....      #####
+    #####
+```
+
+Douze capitales accentuées — `À Â Ç È É Ê Ë Î Ï Ô Ù Û` — et une table de
+glyphes qui couvre Latin-1 de 32 à 255 au lieu de l'ASCII 32 à 127, dans les
+deux polices. Les minuscules d'un texte y prennent le glyphe de leur capitale.
+
+Les sources qui portent du texte — `src/crawl.s`, `src/scroll.s`,
+`src/tables.i` — sont donc **en Latin-1**, un octet par signe, comme la police
+les attend ; les outils Python qui les relisent le savent.
+
 ### La souris
 
 Le pointeur est un **sprite matériel** — sprite 0, seize pixels de côté, quatre
@@ -535,7 +565,7 @@ et les trois barres sont additionnées puis saturées, d'où le blanc à leurs
 croisements. Le texte reste en couleur 1, donc lisible par-dessus.
 
 **La police** est une 5×7 doublée en 16×16, générée par `tools/gen_data.py`
-avec sa table ASCII → glyphe. Le texte lui-même est en clair dans `scroll.s`,
+avec sa table Latin-1 → glyphe. Le texte lui-même est en clair dans `scroll.s`,
 donc modifiable sans rien régénérer.
 
 ## Points techniques — le retour trame (`src/vblank.i`)

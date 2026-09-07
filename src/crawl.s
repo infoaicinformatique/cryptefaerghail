@@ -181,10 +181,11 @@ PHASE_PROLOG	= 3			; le prologue, depuis l'accueil
 PROLOGPAGES	= 4			; pages du prologue
 PROLOGROWS	= 16			; lignes qu'une page peut tenir
 TITLEH		= 176			; hauteur de l'illustration
-; "FAE2" : la quittance s'est ajoutee a l'entete de la partie sauvee,
-; et une sauvegarde d'avant le grand registre n'a plus le bon compte.
-SAVEMAGIC	= $46414532		; "FAE2"
-SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP
+; "FAE3" : la quittance, puis les trois reglages, se sont ajoutes a la
+; partie sauvee. Une sauvegarde plus ancienne n'a plus le bon compte, et
+; le nombre magique la fait refuser plutot que relire de travers.
+SAVEMAGIC	= $46414533		; "FAE3"
+SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP+6
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -1132,39 +1133,95 @@ FillRect:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-; HLine : d0 = x (mult. de 8), d1 = y, d2 = longueur, d3 = couleur
+; HLine : d0 = x, d1 = y, d2 = longueur, d3 = couleur -- au pixel pres
+;
+; Elle travaillait a l'octet : le x etait arrondi a l'octet du dessous
+; et la longueur tronquee a l'octet. DrawFrame lui passe x-1 pour son
+; ombre portee, et huit pixels s'allumaient donc tout a gauche de
+; l'ecran, sur la ligne du haut du cadre comme sur celle du bas --
+; caches partout ailleurs par un fond de panneau, bien visibles sur le
+; prologue, qui est sur fond noir. Un trait de moins de huit pixels,
+; lui, ne se dessinait pas du tout.
+;
+; On pose donc un masque a chaque bord : $ff decale a droite du reste
+; du premier pixel, $ff decale a gauche du complement du dernier, et
+; les octets pleins entre les deux.
 HLine:
 	movem.l	d0-d7/a0-a2,-(sp)
 	bsr	WaitBlit
+	tst.w	d2
+	ble	.done			; longueur nulle : rien a tracer
 	move.l	DrawBuf,a2
 	move.w	d1,d4
 	mulu.w	#SCRBPL,d4
 	move.w	d0,d5
-	lsr.w	#3,d5
+	lsr.w	#3,d5			; octet du premier pixel
 	add.w	d5,d4
 	add.l	d4,a2
-	lsr.w	#3,d2			; largeur en octets
-	beq	.tooThin		; moins d'un octet : rien a tracer
-	moveq	#0,d5
+
+	move.w	d0,d6			; masque de gauche : $ff >> (x et 7)
+	and.w	#7,d6
+	move.w	#$00ff,d4
+	lsr.b	d6,d4
+
+	move.w	d0,d1			; le dernier pixel du trait
+	add.w	d2,d1
+	subq.w	#1,d1
+	move.w	d1,d5
+	lsr.w	#3,d5
+	move.w	d0,d6
+	lsr.w	#3,d6
+	sub.w	d6,d5			; d5 = nombre d'octets, moins un
+
+	move.w	d1,d6			; masque de droite : $ff << 7-(fin et 7)
+	not.w	d6
+	and.w	#7,d6
+	move.w	#$00ff,d7
+	lsl.b	d6,d7
+
+	tst.w	d5
+	bne.s	.wide
+	and.b	d7,d4			; tout tient dans un seul octet
+.wide:
+	moveq	#0,d6			; plan courant
 .planeLoop:
 	move.l	a2,a0
-	move.w	d2,d6
-	subq.w	#1,d6
-	btst	d5,d3
-	beq.s	.clear
-.setLoop:
-	move.b	#$ff,(a0)+
-	dbf	d6,.setLoop
-	bra.s	.next
-.clear:
-	clr.b	(a0)+
-	dbf	d6,.clear
+	moveq	#0,d2			; $ff si ce plan porte la couleur
+	btst	d6,d3
+	beq.s	.zero
+	moveq	#-1,d2
+.zero:
+	move.b	(a0),d0			; le premier octet, sous son masque
+	move.b	d4,d1
+	not.b	d1
+	and.b	d1,d0
+	move.b	d4,d1
+	and.b	d2,d1
+	or.b	d1,d0
+	move.b	d0,(a0)+
+	tst.w	d5
+	beq.s	.next			; il n'y en avait qu'un
+	move.w	d5,d1
+	subq.w	#2,d1			; les octets pleins du milieu
+	bmi.s	.last
+.mid:
+	move.b	d2,(a0)+
+	dbf	d1,.mid
+.last:
+	move.b	(a0),d0			; le dernier octet, sous son masque
+	move.b	d7,d1
+	not.b	d1
+	and.b	d1,d0
+	move.b	d7,d1
+	and.b	d2,d1
+	or.b	d1,d0
+	move.b	d0,(a0)
 .next:
 	lea	PLANESIZE(a2),a2
-	addq.w	#1,d5
-	cmp.w	#DEPTH,d5
+	addq.w	#1,d6
+	cmp.w	#DEPTH,d6
 	blt.s	.planeLoop
-.tooThin:
+.done:
 	movem.l	(sp)+,d0-d7/a0-a2
 	rts
 
@@ -1347,9 +1404,9 @@ DrawText:
 	moveq	#0,d4
 	move.b	(a0)+,d4
 	beq	.done
-	sub.w	#32,d4
+	sub.w	#FONT8FIRST,d4
 	bmi.s	.next
-	cmp.w	#96,d4
+	cmp.w	#FONT8LAST-FONT8FIRST+1,d4
 	bge.s	.next
 	lea	Font8Map,a1
 	move.b	(a1,d4.w),d4
@@ -2529,6 +2586,21 @@ OptValue:				; d0 = ligne -> d0 = texte, 0 si aucun
 	movem.l	(sp)+,d1
 	rts
 
+; SilenceAudio : les quatre volumes a zero. Le replayer garde son etat,
+; il ne l'entend plus -- c'est ce que veut dire "musique : non", et
+; c'est aussi ce qu'il faut faire en reprenant une partie sauvee sur ce
+; reglage, sinon PT_Init rend la voix a un module qu'on avait tu.
+SilenceAudio:
+	movem.l	d1/a0,-(sp)
+	lea	CUSTOM+AUD0LCH,a0
+	moveq	#3,d1
+.chan:
+	clr.w	AUDx_VOL(a0)
+	lea	16(a0),a0
+	dbf	d1,.chan
+	movem.l	(sp)+,d1/a0
+	rts
+
 OptToggle:				; agit sur la ligne visee
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	OptCursor,d0
@@ -2537,12 +2609,7 @@ OptToggle:				; agit sur la ligne visee
 	eor.w	#1,OptMusic
 	tst.w	OptMusic
 	bne.s	.redraw
-	lea	CUSTOM+AUD0LCH,a0	; on coupe le son tout de suite
-	moveq	#3,d1
-.silence:
-	clr.w	AUDx_VOL(a0)
-	lea	16(a0),a0
-	dbf	d1,.silence
+	bsr	SilenceAudio		; on coupe le son tout de suite
 	bra.s	.redraw
 .notMusic:
 	cmp.w	#1,d0
@@ -2844,6 +2911,10 @@ TitleKey:
 	bsr	ClearScreens
 	moveq	#1,d0
 	bsr	PlayMusic
+	tst.w	OptMusic		; la partie reprend comme on l'a laissee
+	bne.s	.music
+	bsr	SilenceAudio
+.music:
 	move.w	#PHASE_PLAY,Phase
 	lea	TxtResumed,a0
 	bsr	LogAdd
@@ -7024,6 +7095,7 @@ SaveList:
 	dc.l	MapParam,MAPBYTES
 	dc.l	MapSeen,MAPBYTES
 	dc.l	ShopStock,NSHOP
+	dc.l	OptMusic,6		; musique, bruitages, disposition
 	dc.l	0,0
 
 	include	"surfgrad.i"
@@ -7141,47 +7213,47 @@ TxtPr0L02:	dc.b	"LE GAGE -- CE QU'ON LAISSE POUR",0
 TxtPr0L03:	dc.b	"GARANTIR CE QU'ON PROMET -- ET GAIL,",0
 TxtPr0L04:	dc.b	"LE SEUIL. LE SEUIL DU GAGE.",0
 TxtPr0L05:	dc.b	"",0
-TxtPr0L06:	dc.b	"IL Y A QUATRE SIECLES, LA VALLEE",0
+TxtPr0L06:	dc.b	"IL Y A QUATRE SIÈCLES, LA VALLÉE",0
 TxtPr0L07:	dc.b	"N'AVAIT NI PRINCE NI JUGE. UNE",0
 TxtPr0L08:	dc.b	"PAROLE VALAIT CE QUE VALAIT CELUI",0
-TxtPr0L09:	dc.b	"QUI L'ENTENDAIT ; A SA MORT, ELLE",0
+TxtPr0L09:	dc.b	"QUI L'ENTENDAIT ; À SA MORT, ELLE",0
 TxtPr0L10:	dc.b	"NE VALAIT PLUS RIEN.",0
 TxtPr0L11:	dc.b	"",0
-TxtPr0L12:	dc.b	"ON A DONC BATI UNE MAISON QUI NE",0
+TxtPr0L12:	dc.b	"ON A DONC BÂTI UNE MAISON QUI NE",0
 TxtPr0L13:	dc.b	"MEURT PAS.",0
-TxtPr1L00:	dc.b	"CE QUI EST PROMIS EST DEPOSE : UN",0
+TxtPr1L00:	dc.b	"CE QUI EST PROMIS EST DÉPOSÉ : UN",0
 TxtPr1L01:	dc.b	"OBJET LAISSE EN GAGE, UN GREFFIER",0
 TxtPr1L02:	dc.b	"QUI L'INSCRIT AU REGISTRE, ET LA",0
-TxtPr1L03:	dc.b	"LIGNE RAYEE QUAND ON REVIENT LE",0
+TxtPr1L03:	dc.b	"LIGNE RAYÉE QUAND ON REVIENT LE",0
 TxtPr1L04:	dc.b	"CHERCHER. SINON, LE GAGE RESTE,",0
 TxtPr1L05:	dc.b	"ET LA LIGNE AUSSI.",0
 TxtPr1L06:	dc.b	"",0
-TxtPr1L07:	dc.b	"LA MAISON N'A PAS ETE CONSTRUITE :",0
-TxtPr1L08:	dc.b	"ELLE A ETE REPRISE. SOUS LA COLLINE",0
-TxtPr1L09:	dc.b	"COURAIT UNE CARRIERE DE SCHISTE,",0
-TxtPr1L10:	dc.b	"TROIS NIVEAUX DE GALERIES. UN ETAGE",0
-TxtPr1L11:	dc.b	"PAR GENERATION DE GREFFIERS : PLUS",0
+TxtPr1L07:	dc.b	"LA MAISON N'A PAS ÉTÉ CONSTRUITE :",0
+TxtPr1L08:	dc.b	"ELLE A ÉTÉ REPRISE. SOUS LA COLLINE",0
+TxtPr1L09:	dc.b	"COURAIT UNE CARRIÈRE DE SCHISTE,",0
+TxtPr1L10:	dc.b	"TROIS NIVEAUX DE GALERIES. UN ÉTAGE",0
+TxtPr1L11:	dc.b	"PAR GÉNÉRATION DE GREFFIERS : PLUS",0
 TxtPr1L12:	dc.b	"ON DESCEND, PLUS LES DETTES SONT",0
 TxtPr1L13:	dc.b	"VIEILLES.",0
 TxtPr2L00:	dc.b	"LE DERNIER GREFFIER N'AVAIT PAS",0
-TxtPr2L01:	dc.b	"D'HERITIER. LA COUTUME PREVOYAIT LE",0
-TxtPr2L02:	dc.b	"CAS, ET ELLE PREVOYAIT MAL :",0
+TxtPr2L01:	dc.b	"D'HÉRITIER. LA COUTUME PRÉVOYAIT LE",0
+TxtPr2L02:	dc.b	"CAS, ET ELLE PRÉVOYAIT MAL :",0
 TxtPr2L03:	dc.b	"L'EMMUREMENT DE GARDE. ON L'A",0
-TxtPr2L04:	dc.b	"ENFERME VIVANT DERRIERE SON",0
+TxtPr2L04:	dc.b	"ENFERMÉ VIVANT DERRIÈRE SON",0
 TxtPr2L05:	dc.b	"COMPTOIR, AVEC LE REGISTRE ET DE",0
-TxtPr2L06:	dc.b	"QUOI ECRIRE.",0
+TxtPr2L06:	dc.b	"QUOI ÉCRIRE.",0
 TxtPr2L07:	dc.b	"",0
-TxtPr2L08:	dc.b	"IL A CESSE D'ETRE UN HOMME POUR",0
+TxtPr2L08:	dc.b	"IL A CESSÉ D'ÊTRE UN HOMME POUR",0
 TxtPr2L09:	dc.b	"DEVENIR UNE CLAUSE DE LA MAISON.",0
 TxtPr2L10:	dc.b	"C'EST LA VOIX QUE VOUS ENTENDREZ",0
-TxtPr2L11:	dc.b	"DERRIERE LE MUR, A CHAQUE ETAGE.",0
-TxtPr3L00:	dc.b	"DEPUIS UN SIECLE, PLUS PERSONNE NE",0
+TxtPr2L11:	dc.b	"DERRIÈRE LE MUR, À CHAQUE ÉTAGE.",0
+TxtPr3L00:	dc.b	"DEPUIS UN SIÈCLE, PLUS PERSONNE NE",0
 TxtPr3L01:	dc.b	"DESCEND PAYER. LA MAISON RECOUVRE",0
-TxtPr3L02:	dc.b	"CE QU'ON LUI DOIT LA OU ELLE LE",0
-TxtPr3L03:	dc.b	"TROUVE : SUR LES HERITIERS.",0
+TxtPr3L02:	dc.b	"CE QU'ON LUI DOIT LÀ OÙ ELLE LE",0
+TxtPr3L03:	dc.b	"TROUVE : SUR LES HÉRITIERS.",0
 TxtPr3L04:	dc.b	"",0
-TxtPr3L05:	dc.b	"L'HIVER DERNIER, A AMBELUNE, DES",0
-TxtPr3L06:	dc.b	"NOMS DE VIVANTS SONT APPARUS A LA",0
+TxtPr3L05:	dc.b	"L'HIVER DERNIER, À AMBELUNE, DES",0
+TxtPr3L06:	dc.b	"NOMS DE VIVANTS SONT APPARUS À LA",0
 TxtPr3L07:	dc.b	"CRAIE SUR LES PORTES DE GRANGES.",0
 TxtPr3L08:	dc.b	"LES GENS DONT ON LISAIT LE NOM SE",0
 TxtPr3L09:	dc.b	"SONT MIS A MANQUER.",0
@@ -7190,7 +7262,7 @@ TxtPr3L11:	dc.b	"QUATRE PERSONNES DESCENDENT : LE",0
 TxtPr3L12:	dc.b	"REGISTRE A QUATRE COLONNES DE",0
 TxtPr3L13:	dc.b	"SIGNATURE AU BAS D'UNE QUITTANCE.",0
 TxtPr3L14:	dc.b	"",0
-TxtPr3L15:	dc.b	"*ON NE SORT DE FAERGHAIL QU'ACQUITTE.",0
+TxtPr3L15:	dc.b	"*ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
 	even
 
 FloorLore:				; l'inscription de chaque etage
@@ -7209,13 +7281,13 @@ StatOffsets:
 	dc.w	hr_Str,hr_Dex,hr_Con,hr_Int,hr_Wis,hr_Cha
 
 TxtCls0:	dc.b	"SOLIDE, FRAPPE FORT",0
-TxtCls1:	dc.b	"TRES ROBUSTE, BRUTAL",0
+TxtCls1:	dc.b	"TRÈS ROBUSTE, BRUTAL",0
 TxtCls2:	dc.b	"AGILE, FUIT PLUS VITE",0
 TxtCls3:	dc.b	"ARC ET SORTS DES BOIS",0
 TxtCls4:	dc.b	"LA LAME ET LA FOI",0
 TxtCls5:	dc.b	"SOINS ET SORTS DIVINS",0
 TxtCls6:	dc.b	"FRAGILE, MAGIE VASTE",0
-TxtCls7:	dc.b	"MAGIE INNEE ET CHARME",0
+TxtCls7:	dc.b	"MAGIE INNÉE ET CHARME",0
 TxtFor:		dc.b	"FOR ",0
 TxtDex:		dc.b	"DEX ",0
 TxtCon:		dc.b	"CON ",0
@@ -7223,31 +7295,31 @@ TxtInt:		dc.b	"INT ",0
 TxtSag:		dc.b	"SAG ",0
 TxtCha:		dc.b	"CHA ",0
 
-TxtIntro:	dc.b	"ON NE SORT DE FAERGHAIL QU'ACQUITTE.",0
-TxtFloor0:	dc.b	"LE GREFFE. LES GAGES SONT RECENTS.",0
-TxtFloor1:	dc.b	"PLUS BAS : LES VIEILLES ECHEANCES.",0
-TxtFloor2:	dc.b	"LE FOND. PLUS PERSONNE N'A PAYE.",0
-TxtCreate1:	dc.b	"CREEZ VOS QUATRE AVENTURIERS.",0
+TxtIntro:	dc.b	"ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
+TxtFloor0:	dc.b	"LE GREFFE. LES GAGES SONT RÉCENTS.",0
+TxtFloor1:	dc.b	"PLUS BAS : LES VIEILLES ÉCHÉANCES.",0
+TxtFloor2:	dc.b	"LE FOND. PLUS PERSONNE N'A PAYÉ.",0
+TxtCreate1:	dc.b	"CRÉEZ VOS QUATRE AVENTURIERS.",0
 TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
-TxtCreateTitle:	dc.b	"CREATION DU GROUPE",0
+TxtCreateTitle:	dc.b	"CRÉATION DU GROUPE",0
 TxtEmptySlot:	dc.b	"-----",0
-TxtHero:	dc.b	"HEROS ",0
+TxtHero:	dc.b	"HÉROS ",0
 TxtOn4:		dc.b	" SUR 4",0
 TxtDash:	dc.b	" - ",0
 TxtHyphen:	dc.b	"-",0
 TxtNivShort:	dc.b	"N",0
-TxtPickClass:	dc.b	"FLECHES, ENTREE OU 1-8",0
-TxtRoll:	dc.b	"R RELANCER  ENTREE OK",0
+TxtPickClass:	dc.b	"FLÈCHES, ENTRÉE OU 1-8",0
+TxtRoll:	dc.b	"R RELANCER  ENTRÉE OK",0
 TxtName:	dc.b	"NOM : ",0
-TxtNameHelp:	dc.b	"TAPEZ OU FLECHES",0
+TxtNameHelp:	dc.b	"TAPEZ OU FLÈCHES",0
 TxtAzerty:	dc.b	"TAB : AZERTY",0
 TxtQwerty:	dc.b	"TAB : QWERTY",0
 TxtWall:	dc.b	"UN MUR BLOQUE LE PASSAGE.",0
-TxtDoorShut:	dc.b	"PORTE FERMEE. ESPACE POUR OUVRIR.",0
-TxtDoorOpen:	dc.b	"LA PORTE S'OUVRE EN GRINCANT.",0
-TxtLocked:	dc.b	"CETTE PORTE EST VERROUILLEE.",0
-TxtNeedKey:	dc.b	"IL VOUS FAUT UNE CLE.",0
-TxtUnlock:	dc.b	"LA CLE TOURNE. LA PORTE CEDE.",0
+TxtDoorShut:	dc.b	"PORTE FERMÉE. ESPACE POUR OUVRIR.",0
+TxtDoorOpen:	dc.b	"LA PORTE S'OUVRE EN GRINÇANT.",0
+TxtLocked:	dc.b	"CETTE PORTE EST VERROUILLÉE.",0
+TxtNeedKey:	dc.b	"IL VOUS FAUT UNE CLÉ.",0
+TxtUnlock:	dc.b	"LA CLÉ TOURNE. LA PORTE CÈDE.",0
 TxtNothing:	dc.b	"RIEN A FAIRE ICI.",0
 TxtNiche:	dc.b	"DANS LA NICHE : ",0
 TxtNicheEmpty:	dc.b	"LA NICHE EST VIDE.",0
@@ -7257,11 +7329,11 @@ TxtFound:	dc.b	"VOUS TROUVEZ ",0
 TxtDrops:	dc.b	"VOUS JETEZ ",0
 TxtBagFull:	dc.b	"LE SAC EST PLEIN.",0
 TxtDescend:	dc.b	"UN ESCALIER. VOUS DESCENDEZ.",0
-TxtWin:		dc.b	"ACQUITTES. VOUS REVOYEZ LE JOUR.",0
+TxtWin:		dc.b	"ACQUITTÉS. VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
 TxtYouHit:	dc.b	"LE GROUPE INFLIGE ",0
-TxtDamage:	dc.b	" DEGATS.",0
+TxtDamage:	dc.b	" DÉGÂTS.",0
 TxtAllMiss:	dc.b	"TOUS LES COUPS SE PERDENT.",0
 TxtHits:	dc.b	" TOUCHE ",0
 TxtFor2:	dc.b	" : ",0
@@ -7271,68 +7343,68 @@ TxtDies:	dc.b	" TOMBE ! +",0
 TxtXpGold:	dc.b	" PX, ",0
 TxtLevelUp:	dc.b	" PASSE UN NIVEAU !",0
 TxtFlee:	dc.b	"VOUS PRENEZ LA FUITE.",0
-TxtFleeFail:	dc.b	"LA FUITE ECHOUE !",0
-TxtWiped:	dc.b	"LE GROUPE EST ANEANTI.",0
-TxtMonStunned:	dc.b	"LE MONSTRE RECULE, TERRIFIE.",0
+TxtFleeFail:	dc.b	"LA FUITE ÉCHOUE !",0
+TxtWiped:	dc.b	"LE GROUPE EST ANÉANTI.",0
+TxtMonStunned:	dc.b	"LE MONSTRE RECULE, TERRIFIÉ.",0
 TxtCasts:	dc.b	" LANCE ",0
 TxtSpellHit:	dc.b	"LE SORT INFLIGE ",0
-TxtHealed:	dc.b	" RECUPERE ",0
+TxtHealed:	dc.b	" RÉCUPÈRE ",0
 TxtPvSuffix:	dc.b	" PV.",0
 TxtLedgerSeen:	dc.b	"UN PUPITRE. UN LIVRE ENCHAINE.",0
 TxtLedgerOpen:	dc.b	"LE GRAND REGISTRE DE FAERGHAIL.",0
 TxtLedgerTitle:	dc.b	"LE GRAND REGISTRE",0
 TxtLedgerHouse:	dc.b	"MAISON DE GARDE",0
 TxtLedgerFloor:	dc.b	"GREFFE DU FOND",0
-TxtLedgerHead:	dc.b	"LIGNE NON RAYEE :",0
-TxtLedgerHeadOk: dc.b	"LIGNE RAYEE :",0
+TxtLedgerHead:	dc.b	"LIGNE NON RAYÉE :",0
+TxtLedgerHeadOk: dc.b	"LIGNE RAYÉE :",0
 TxtLedgerDot:	dc.b	". ",0
-TxtLedgerQuill:	dc.b	"LA PLUME EST A PORTEE.",0
-TxtLedgerAsk:	dc.b	"ENTREE : RAYER LA LIGNE",0
-TxtLedgerDone:	dc.b	"LA LIGNE EST RAYEE.",0
-TxtLedgerFree:	dc.b	"VOUS ETES ACQUITTES.",0
+TxtLedgerQuill:	dc.b	"LA PLUME EST À PORTÉE.",0
+TxtLedgerAsk:	dc.b	"ENTRÉE : RAYER LA LIGNE",0
+TxtLedgerDone:	dc.b	"LA LIGNE EST RAYÉE.",0
+TxtLedgerFree:	dc.b	"VOUS ÊTES ACQUITTÉS.",0
 TxtLedgerStruck: dc.b	"LA PLUME RAYE LA LIGNE.",0
 TxtLedgerOut:	dc.b	"LA MAISON NE VOUS DOIT PLUS RIEN.",0
 TxtDoorHeld:	dc.b	"L'ESCALIER DESCEND SUR UNE PORTE.",0
-TxtDoorHeld2:	dc.b	"ELLE NE CEDE PAS : RIEN N'EST RAYE.",0
-TxtHelpLedger:	dc.b	"ENTREE RAYE LA LIGNE   ESC REFERME",0
-TxtShopSeen:	dc.b	"UNE ECHOPPE ! ESPACE POUR ENTRER.",0
-TxtShopHello:	dc.b	"UNE VOIX DERRIERE LE MUR : BIENVENUE",0
-TxtShopTitle:	dc.b	"ECHOPPE",0
+TxtDoorHeld2:	dc.b	"ELLE NE CÈDE PAS : RIEN N'EST RAYÉ.",0
+TxtHelpLedger:	dc.b	"ENTRÉE RAYE LA LIGNE   ESC REFERME",0
+TxtShopSeen:	dc.b	"UNE ÉCHOPPE ! ESPACE POUR ENTRER.",0
+TxtShopHello:	dc.b	"UNE VOIX DERRIÈRE LE MUR : BIENVENUE",0
+TxtShopTitle:	dc.b	"ÉCHOPPE",0
 TxtShopBuy:	dc.b	"ACHAT",0
 TxtShopSell:	dc.b	"VENTE",0
-TxtShopHelp:	dc.b	"TAB CHANGE DE COTE",0
-TxtShopHelp2:	dc.b	"ENTREE CONCLUT ESC SORT",0
+TxtShopHelp:	dc.b	"TAB CHANGE DE CÔTÉ",0
+TxtShopHelp2:	dc.b	"ENTRÉE CONCLUT ESC SORT",0
 TxtShopGold:	dc.b	"OR ",0
-TxtShopEmpty:	dc.b	"L'ETAL EST VIDE.",0
+TxtShopEmpty:	dc.b	"L'ÉTAL EST VIDE.",0
 TxtShopNoSell:	dc.b	"VOTRE SAC EST VIDE.",0
 TxtShopPoor:	dc.b	"PAS ASSEZ D'OR.",0
 TxtShopFull:	dc.b	"LE SAC EST PLEIN.",0
-TxtShopBought:	dc.b	"ACHETE : ",0
+TxtShopBought:	dc.b	"ACHETÉ : ",0
 TxtShopSold:	dc.b	"VENDU : ",0
 TxtShopFor:	dc.b	", ",0
 TxtShopOr:	dc.b	" OR.",0
-TxtTrapSpot:	dc.b	"PIEGE REPERE : ",0
-TxtTrapFires:	dc.b	" SE DECLENCHE !",0
+TxtTrapSpot:	dc.b	"PIÈGE REPÉRÉ : ",0
+TxtTrapFires:	dc.b	" SE DÉCLENCHE !",0
 TxtTrapHurt:	dc.b	"LE GROUPE PERD ",0
 TxtTrapMiss:	dc.b	"LE GROUPE S'EN TIRE INDEMNE.",0
-TxtTrapOff:	dc.b	" DESAMORCE LE PIEGE.",0
+TxtTrapOff:	dc.b	" DÉSAMORCE LE PIÈGE.",0
 TxtTrapSlip:	dc.b	"LA MAIN TREMBLE. RIEN N'EST FAIT.",0
-TxtTrapDown:	dc.b	"CE HEROS N'EST PLUS EN ETAT.",0
-TxtShieldUp:	dc.b	"UNE AURA PROTEGE LE GROUPE.",0
-TxtFear:	dc.b	"LE MONSTRE EST TERRIFIE !",0
+TxtTrapDown:	dc.b	"CE HÉROS N'EST PLUS EN ÉTAT.",0
+TxtShieldUp:	dc.b	"UNE AURA PROTÈGE LE GROUPE.",0
+TxtFear:	dc.b	"LE MONSTRE EST TERRIFIÉ !",0
 TxtUnknownSpell: dc.b	"CE SORT VOUS EST INCONNU.",0
 TxtNoSlot:	dc.b	"PLUS D'EMPLACEMENT A CE NIVEAU.",0
 TxtHalfSave:	dc.b	"IL ESQUIVE EN PARTIE !",0
-TxtResisted:	dc.b	"LE MONSTRE RESISTE AU SORT.",0
-TxtBlessed:	dc.b	"UNE BENEDICTION GUIDE VOS COUPS.",0
-TxtHeroDown:	dc.b	"CE HEROS EST HORS DE COMBAT.",0
-TxtEquips:	dc.b	" EQUIPE ",0
-TxtCannotEquip:	dc.b	"CELA NE S'EQUIPE PAS.",0
+TxtResisted:	dc.b	"LE MONSTRE RÉSISTE AU SORT.",0
+TxtBlessed:	dc.b	"UNE BÉNÉDICTION GUIDE VOS COUPS.",0
+TxtHeroDown:	dc.b	"CE HÉROS EST HORS DE COMBAT.",0
+TxtEquips:	dc.b	" ÉQUIPE ",0
+TxtCannotEquip:	dc.b	"CELA NE S'ÉQUIPE PAS.",0
 TxtCannotUse:	dc.b	"CELA NE S'UTILISE PAS.",0
 TxtLearns:	dc.b	" APPREND ",0
-TxtAlreadyKnown: dc.b	"CE SORT EST DEJA CONNU.",0
-TxtNoMagic:	dc.b	"CE HEROS N'EST PAS MAGICIEN.",0
-TxtNoHero:	dc.b	"AUCUN HEROS ICI.",0
+TxtAlreadyKnown: dc.b	"CE SORT EST DÉJÀ CONNU.",0
+TxtNoMagic:	dc.b	"CE HÉROS N'EST PAS MAGICIEN.",0
+TxtNoHero:	dc.b	"AUCUN HÉROS ICI.",0
 TxtBag:		dc.b	"SAC A DOS",0
 TxtChooseSpell:	dc.b	"QUEL SORT ?",0
 TxtPmSuffix:	dc.b	"PM",0
@@ -7353,53 +7425,53 @@ TxtSpells:	dc.b	"SORTS : ",0
 TxtSavesLbl:	dc.b	"VIG/REF/VOL ",0
 TxtNiveau:	dc.b	"NIVEAU ",0
 TxtOr:		dc.b	"   OR ",0
-TxtKeys:	dc.b	"   CLES ",0
+TxtKeys:	dc.b	"   CLÉS ",0
 TxtRuneDoor:	dc.b	"UNE PORTE COUVERTE DE RUNES.",0
-TxtLeverSeen:	dc.b	"UN LEVIER SCELLE DANS LE MUR.",0
+TxtLeverSeen:	dc.b	"UN LEVIER SCELLÉ DANS LE MUR.",0
 TxtGateShut:	dc.b	"UNE HERSE DE FER BARRE LE PASSAGE.",0
-TxtLeverDown:	dc.b	"LE LEVIER CEDE. UNE HERSE SE LEVE.",0
+TxtLeverDown:	dc.b	"LE LEVIER CÈDE. UNE HERSE SE LÈVE.",0
 TxtLeverUp:	dc.b	"LE LEVIER REMONTE. LA HERSE RETOMBE.",0
-TxtRuneTitle:	dc.b	"LA PORTE VERIFIE VOTRE DROIT",0
-TxtRuneAsk:	dc.b	"REPONDEZ : 1, 2 OU 3",0
+TxtRuneTitle:	dc.b	"LA PORTE VÉRIFIE VOTRE DROIT",0
+TxtRuneAsk:	dc.b	"RÉPONDEZ : 1, 2 OU 3",0
 TxtRuneOk:	dc.b	"LES RUNES S'EFFACENT. PASSAGE !",0
-TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLERE.",0
-TxtRuneBurn:	dc.b	" EST BRULE, ",0
+TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLÈRE.",0
+TxtRuneBurn:	dc.b	" EST BRÛLÉ, ",0
 TxtR0Q1:	dc.b	"JE PARLE SANS BOUCHE",0
 TxtR0Q2:	dc.b	"ET J'ENTENDS SANS",0
 TxtR0Q3:	dc.b	"OREILLE. QUI SUIS-JE ?",0
-TxtR0A1:	dc.b	"L'ECHO",0
+TxtR0A1:	dc.b	"L'ÉCHO",0
 TxtR0A2:	dc.b	"LE VENT",0
 TxtR0A3:	dc.b	"LA PIERRE",0
 TxtR1Q1:	dc.b	"PLUS ON EN PREND,",0
 TxtR1Q2:	dc.b	"PLUS ON EN LAISSE",0
-TxtR1Q3:	dc.b	"DERRIERE SOI. QUOI ?",0
-TxtR1A1:	dc.b	"DES PIECES D'OR",0
+TxtR1Q3:	dc.b	"DERRIÈRE SOI. QUOI ?",0
+TxtR1A1:	dc.b	"DES PIÈCES D'OR",0
 TxtR1A2:	dc.b	"DES PAS",0
-TxtR1A3:	dc.b	"DES ANNEES",0
+TxtR1A3:	dc.b	"DES ANNÉES",0
 TxtR2Q1:	dc.b	"J'AI UN OEIL",0
 TxtR2Q2:	dc.b	"MAIS JE NE VOIS RIEN.",0
 TxtR2Q3:	dc.b	"QUI SUIS-JE ?",0
 TxtR2A1:	dc.b	"LE BORGNE",0
 TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
-TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR REPONDRE  ESC",0
-TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTREE OK  ESC",0
-TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P REGLAGES",0
-TxtRaised:	dc.b	" SE RELEVE.",0
-TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
+TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR RÉPONDRE  ESC",0
+TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTRÉE OK  ESC",0
+TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P RÉGLAGES",0
+TxtRaised:	dc.b	" SE RELÈVE.",0
+TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RÉCUPÈRE.",0
 TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
 TxtMenuNew:	dc.b	"1   COMMENCER UNE NOUVELLE PARTIE",0
-TxtMenuLoad:	dc.b	"2   REPRENDRE LA PARTIE SAUVEE",0
-TxtMenuStory:	dc.b	"3   CE QU'ETAIT CETTE CRYPTE",0
+TxtMenuLoad:	dc.b	"2   REPRENDRE LA PARTIE SAUVÉE",0
+TxtMenuStory:	dc.b	"3   CE QU'ÉTAIT CETTE CRYPTE",0
 TxtMenuQuit:	dc.b	"ESC QUITTER",0
 TxtPrologTitle:	dc.b	"LE SEUIL DU GAGE",0
 TxtPrologPage:	dc.b	"PAGE ",0
 TxtPrologOf:	dc.b	" SUR ",0
 TxtPrologHelp:	dc.b	"UNE TOUCHE TOURNE LA PAGE   ESC SORT",0
-TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ETAGE",0
+TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ÉTAGE",0
 TxtResumed:	dc.b	"VOUS REPRENEZ VOTRE DESCENTE.",0
-TxtSaved:	dc.b	"LA PARTIE EST SAUVEE.",0
-TxtOptTitle:	dc.b	"REGLAGES",0
+TxtSaved:	dc.b	"LA PARTIE EST SAUVÉE.",0
+TxtOptTitle:	dc.b	"RÉGLAGES",0
 TxtOptMusic:	dc.b	"MUSIQUE       ",0
 TxtOptSfx:	dc.b	"BRUITAGES     ",0
 TxtOptKb:	dc.b	"CLAVIER       ",0
@@ -7409,28 +7481,28 @@ TxtOptOn:	dc.b	"OUI",0
 TxtOptOff:	dc.b	"NON",0
 TxtOptAzerty:	dc.b	"AZERTY",0
 TxtOptQwerty:	dc.b	"QWERTY",0
-TxtHelpOpts:	dc.b	"FLECHES  ENTREE CHANGE  P OU ESC",0
+TxtHelpOpts:	dc.b	"FLÈCHES  ENTRÉE CHANGE  P OU ESC",0
 TxtBookTitle:	dc.b	"GRIMOIRE DE ",0
 TxtBookMark:	dc.b	">",0
 TxtBookLevel:	dc.b	"NIV ",0
 TxtBookSchool:	dc.b	" ",0
 TxtBookPerLvl:	dc.b	" PAR NIV. ",0
 TxtBookSave:	dc.b	"JET ",0
-TxtBookHalf:	dc.b	", MOITIE",0
+TxtBookHalf:	dc.b	", MOITIÉ",0
 TxtBookNoSave:	dc.b	"SANS JET",0
 TxtBookSlots:	dc.b	"  RESTE ",0
 TxtSchoolArc:	dc.b	"PROFANE",0
 TxtSchoolDiv:	dc.b	"DIVIN",0
 TxtSchoolBoth:	dc.b	"MIXTE",0
-TxtKindDmg:	dc.b	"DEGATS ",0
+TxtKindDmg:	dc.b	"DÉGÂTS ",0
 TxtKindHeal:	dc.b	"SOINS ",0
 TxtKindWard:	dc.b	"PROTECTION +",0
 TxtKindFear:	dc.b	"TERREUR ",0
-TxtKindBless:	dc.b	"BENEDICTION +",0
+TxtKindBless:	dc.b	"BÉNÉDICTION +",0
 TxtSaveFort:	dc.b	"VIGUEUR",0
-TxtSaveRef:	dc.b	"REFLEXES",0
-TxtSaveWill:	dc.b	"VOLONTE",0
-TxtHelpBook:	dc.b	"FLECHES  1-4 HEROS  L OU ESC FERMER",0
+TxtSaveRef:	dc.b	"RÉFLEXES",0
+TxtSaveWill:	dc.b	"VOLONTÉ",0
+TxtHelpBook:	dc.b	"FLÈCHES  1-4 HÉROS  L OU ESC FERMER",0
 TxtMapTitle:	dc.b	"CARTE NIVEAU ",0
 TxtDash2:	dc.b	" - ",0
 TxtNord:	dc.b	"NORD",0
@@ -7439,7 +7511,7 @@ TxtSud:		dc.b	"SUD",0
 TxtOuest:	dc.b	"OUEST",0
 TxtLegDoor:	dc.b	"PORTE",0
 TxtLegRune:	dc.b	"RUNE",0
-TxtLegShut:	dc.b	"FERMEE",0
+TxtLegShut:	dc.b	"FERMÉE",0
 TxtLegYou:	dc.b	"VOUS",0
 TxtLegStairs:	dc.b	"ESCALIER",0
 TxtLegMonster:	dc.b	"MONSTRE",0
@@ -7448,10 +7520,10 @@ TxtHelpMap:	dc.b	"M OU ESC POUR REFERMER LA CARTE",0
 TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
 TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
-TxtHelpInv:	dc.b	"E EQUIPER U UTILISER D JETER 1-4",0
+TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-4",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
-TxtHelpSheet:	dc.b	"1-4 HEROS  I SAC  L LIVRE  P REGLAGES",0
-TxtHelpShop:	dc.b	"FLECHES  TAB COTE  ENTREE  ESC SORT",0
+TxtHelpSheet:	dc.b	"1-4 HÉROS  I SAC  L LIVRE  P RÉGLAGES",0
+TxtHelpShop:	dc.b	"FLÈCHES  TAB COTE  ENTRÉE  ESC SORT",0
 	even
 
 ;======================================================================
@@ -7513,8 +7585,9 @@ HasSave:	ds.w	1
 BookCursor:	ds.w	1
 BookTop:	ds.w	1
 OptCursor:	ds.w	1
-OptMusic:	ds.w	1
-OptSfx:	ds.w	1
+OptMusic:	ds.w	1		; les trois reglages se suivent : ils
+OptSfx:	ds.w	1		; partent ensemble dans la sauvegarde
+KbLayout:	ds.w	1
 CurMusic:	ds.w	1
 CopSurf:	ds.l	1
 SurfPhase:	ds.w	1
@@ -7552,7 +7625,6 @@ CreHp:		ds.w	1
 CreMp:		ds.w	1
 CreNameLen:	ds.w	1
 CreNameIdx:	ds.w	1
-KbLayout:	ds.w	1
 CreStr:		ds.w	1		; les six caracteristiques tirees
 CreDex:		ds.w	1
 CreCon:		ds.w	1

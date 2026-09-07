@@ -302,6 +302,7 @@ Start:
 	moveq	#0,d0
 	bsr	PlayMusic
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO|DMAF_SPRITE,DMACON(a5)
+	bsr	VBI_Install		; a partir d'ici, la trame nous appelle
 
 	bsr	Redraw
 	bsr	SwapBuffers
@@ -310,22 +311,19 @@ Start:
 ;----------------------------------------------------------------------
 ; Boucle principale
 ;
-; MusicPoll est appele aussi pendant les longs redessins : sans cela le
-; module perd des tics des qu'on se deplace, puisqu'un redessin complet
-; depasse la duree d'une image.
+; La musique et l'echange de tampons ne sont plus de son ressort : ils
+; se font dans l'interruption de retour trame (VBI_Frame, plus bas).
+; C'est ce qui permet a un redessin de durer deux trames sans que le
+; module perde un seul tic -- le defaut que l'on entendait en se
+; deplacant, et que des appels au replayer semes dans le redessin ne
+; rattrapaient qu'a moitie.
 ;----------------------------------------------------------------------
 MainLoop:
-	bsr	WaitVBlank
+	bsr	VBI_Wait
 	bsr	SurfFlicker		; la torche respire, sans un blit
 	move.w	VHPOSR+CUSTOM,d0	; le balayage brasse le hasard : sans
 	eor.w	d0,RngSeed+2		; cela, chaque partie serait identique
-	bsr	MusicPoll
 
-	tst.w	DrawReady
-	beq.s	.noSwap
-	clr.w	DrawReady
-	bsr	SwapBuffers
-.noSwap:
 	tst.w	InCombat		; les monstres respirent
 	beq.s	.noAnim
 	addq.w	#1,AnimCount
@@ -364,6 +362,7 @@ MainLoop:
 	tst.w	Quit
 	beq	MainLoop
 
+	bsr	VBI_Remove
 	bsr	PT_Stop
 	bsr	RestoreSystem
 	move.l	4.w,a6
@@ -401,33 +400,24 @@ RestoreSystem:
 	rts
 
 ;----------------------------------------------------------------------
-; MusicPoll : un tic de module par trame, cadence sur le balayage ;
-; a semer dans les traitements longs pour que le son ne decroche pas
-;----------------------------------------------------------------------
-; MusicPoll : un tic de replay par trame, ou que l'on en soit.
+; VBI_Frame : le travail cadence, appele depuis l'interruption de
+; retour trame. a5 = CUSTOM, tous les registres sont libres.
 ;
-; L'ancienne version n'acceptait de rattraper un tic que si le balayage
-; se trouvait dans le retour trame : treize lignes sur trois cent
-; treize. Pendant un redessin qui dure deux trames, presque tous les
-; appels tombaient a cote et la musique hoquetait -- c'est le defaut
-; entendu en se deplacant. On regarde maintenant si le balayage a
-; reboucle depuis le dernier appel : cela marche a n'importe quel
-; moment de la trame.
-MusicPoll:
+; Deux choses seulement, mais qui ne souffrent pas d'attendre que la
+; boucle principale ait fini son redessin :
+;   - l'echange des tampons, qui tombe ainsi dans le retour trame et
+;     non au milieu de l'image (plus de dechirure) ;
+;   - le tic du module, a 50 Hz quoi qu'il arrive.
+;----------------------------------------------------------------------
+VBI_Frame:
+	tst.w	DrawReady		; une image finie attend d'etre montree
+	beq.s	.noSwap
+	clr.w	DrawReady
+	bsr	SwapBuffers
+.noSwap:
 	tst.w	OptMusic		; coupee dans les reglages
 	beq.s	.muted
-	movem.l	d0-d1/a5,-(sp)
-	lea	CUSTOM,a5
-	move.l	VPOSR(a5),d0
-	and.l	#$0001ff00,d0
-	lsr.l	#8,d0			; ligne courante
-	move.w	MusicLine,d1
-	move.w	d0,MusicLine
-	cmp.w	d1,d0
-	bge.s	.done			; toujours dans la meme trame
-	bsr	PT_Tick			; le balayage a reboucle
-.done:
-	movem.l	(sp)+,d0-d1/a5
+	bsr	PT_Tick
 .muted:
 	rts
 
@@ -455,6 +445,7 @@ SfxPlay:
 	add.l	a0,d2			; adresse de l'echantillon
 	lea	CUSTOM,a6
 	lea	CUSTOM+$d0,a2		; canal 3
+	bsr	VBI_Disable		; le replayer ne doit pas passer ici
 	move.w	#$0008,DMACON(a6)	; DMA coupe
 	move.l	d2,(a2)
 	move.w	4(a1),4(a2)		; longueur
@@ -465,6 +456,7 @@ SfxPlay:
 	move.l	#SfxSilence,(a2)	; puis boucle sur du silence
 	move.w	#1,4(a2)
 	move.w	10(a1),PT_SfxLock
+	bsr	VBI_Enable
 .skip:
 	movem.l	(sp)+,d0-d3/a0-a2/a6
 .off:
@@ -998,17 +990,6 @@ SwapBuffers:
 	move.l	d1,ShowBuf
 	move.l	d0,DrawBuf
 	bsr	SetBplPtrs
-	rts
-
-WaitVBlank:
-	movem.l	d0/a5,-(sp)
-	lea	CUSTOM,a5
-.wait:
-	move.l	VPOSR(a5),d0
-	and.l	#$0001ff00,d0
-	cmp.l	#300<<8,d0
-	bne.s	.wait
-	movem.l	(sp)+,d0/a5
 	rts
 
 WaitBlit:
@@ -1707,7 +1688,6 @@ DrawScene:
 	moveq	#ART_BG,d0
 	moveq	#1,d1
 	bsr	BlitPiece
-	bsr	MusicPoll
 
 	tst.w	InCombat
 	beq.s	.dungeon
@@ -1819,7 +1799,6 @@ DrawScene:
 	moveq	#0,d1
 	bsr	BlitPiece
 .noTrapArt:
-	bsr	MusicPoll
 	move.w	d7,d6
 	subq.w	#1,d6
 	tst.w	d7
@@ -1900,7 +1879,6 @@ DrawScene:
 	moveq	#1,d5
 	bra	.sideEach
 .sideDone:
-	bsr	MusicPoll
 	dbf	d6,.sideLoop
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -1934,7 +1912,6 @@ Redraw:
 	bsr	FillRect
 
 	bsr	DrawScene
-	bsr	MusicPoll
 
 	moveq	#8,d0
 	moveq	#8,d1
@@ -1953,7 +1930,6 @@ Redraw:
 	bsr	DrawFrame
 
 	bsr	DrawParty
-	bsr	MusicPoll
 	bsr	DrawLog
 	bsr	DrawStatus
 .drawn:
@@ -2654,6 +2630,7 @@ PlayMusic:
 	cmp.w	CurMusic,d0
 	beq.s	.done
 	move.w	d0,CurMusic
+	bsr	VBI_Disable		; PT_Init refait les quatre canaux
 	bsr	PT_Stop
 	lea	PT_TitleModule,a0
 	tst.w	d0
@@ -2663,6 +2640,7 @@ PlayMusic:
 	bsr	PT_Init
 	lea	CUSTOM,a5
 	move.w	#DMAF_SETCLR|DMAF_AUDIO,DMACON(a5)
+	bsr	VBI_Enable
 .done:
 	movem.l	(sp)+,d0-d1/a0-a1/a5
 	rts
@@ -6600,7 +6578,8 @@ HandleKey:
 	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
-; --- replayer ProTracker, dans la meme section de code ---
+; --- retour trame et replayer ProTracker, dans la meme section ---
+	include	"vblank.i"
 PT_SCORE	= 1			; musique heroique du donjon
 	include	"ptreplay.i"
 
@@ -6997,6 +6976,10 @@ MonPtr:		ds.l	1
 RngSeed:	ds.l	1
 OldIntena:	ds.w	1
 OldDmacon:	ds.w	1
+VBI_Vbr:	ds.l	1
+VBI_OldLvl3:	ds.l	1
+VBI_Count:	ds.w	1
+VBI_Flag:	ds.w	1
 PosX:		ds.w	1
 PosY:		ds.w	1
 Dir:		ds.w	1
@@ -7037,7 +7020,6 @@ GameOver:	ds.w	1
 Quit:		ds.w	1
 NeedRedraw:	ds.w	1
 DrawReady:	ds.w	1
-MusicLine:	ds.w	1
 Phase:		ds.w	1
 UiMode:		ds.w	1
 SelHero:	ds.w	1

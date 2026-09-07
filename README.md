@@ -122,6 +122,7 @@ src/font8.i      police 8x8 de l'interface                   (généré)
 data/dgnart.bin  décors en perspective et monstres           (généré)
 data/dgnmap.bin  les trois niveaux                           (généré)
 src/ptreplay.i   replayer ProTracker 4 voies pour Paula
+src/vblank.i     interruption de retour trame (niveau 3, VERTB)
 data/music.mod   module ProTracker, samples et partition     (généré)
 tools/gen_data.py    générateur des quatre .i de données
 tools/gen_module.py  générateur du module ProTracker
@@ -462,6 +463,61 @@ croisements. Le texte reste en couleur 1, donc lisible par-dessus.
 avec sa table ASCII → glyphe. Le texte lui-même est en clair dans `scroll.s`,
 donc modifiable sans rien régénérer.
 
+## Points techniques — le retour trame (`src/vblank.i`)
+
+Les trois programmes attendaient la trame en surveillant `VPOSR` dans une
+boucle, et faisaient tout le reste à la file : échange de copperlist, tic de
+musique, rendu. Cela marche tant que la boucle tient dans une image. Le jeu ne
+tenait pas : un redessin à huit bitplanes dépasse la trame, et le module
+perdait des tics dès qu'on se déplaçait — le hoquet qu'on entendait en
+marchant. On avait colmaté en semant des appels au replayer au milieu du
+redessin ; ce n'était qu'un rattrapage.
+
+Le travail cadencé se fait maintenant dans une **interruption de niveau 3**,
+armée sur `VERTB` :
+
+```
+INTENA = INTF_SETCLR | INTF_INTEN | INTF_VERTB
+```
+
+**Le VBR.** Sur 68000 la table des vecteurs est en `$000000` ; dès le 68010
+elle se déplace, et le Kickstart d'un 1200 la recopie en Fast RAM. On demande
+donc son adresse au processeur — `movec vbr,d0`, instruction privilégiée,
+d'où le détour par `exec/Supervisor()` — après avoir vérifié le bit `68010`
+d'`AttnFlags`. L'ancien vecteur est rendu au système en quittant.
+
+**Le gestionnaire** vérifie d'abord que la cause est bien le retour trame : le
+niveau 3 est partagé (VERTB, COPER, BLIT), et une interruption d'un autre
+appareil serait comptée comme une image. L'acquittement s'écrit **deux fois** —
+le custom chip met un cycle à voir la valeur, et sans la seconde écriture le
+processeur peut sortir avant que `INTREQ` ne soit retombé, et rentrer aussitôt
+dans la même interruption.
+
+**Le jeton d'échange.** L'interruption ne met une copperlist (ou un tampon) à
+l'affiche que si la boucle principale a signalé l'avoir finie, sinon une trame
+en avance montrerait un dégradé à moitié écrit. La boucle pose `SwapReq` /
+`DrawReady`, l'interruption le consomme.
+
+**L'attente** n'est plus une surveillance du balayage mais la consommation
+d'un drapeau posé par l'interruption : si une trame est passée pendant que la
+boucle travaillait, l'attente est nulle. Et comme le drapeau ne compte pas,
+trois trames perdues n'en rendent qu'une — la boucle reprend au présent au
+lieu de rattraper dans le vide.
+
+**Les sections critiques.** Lancer un bruitage emprunte un canal de Paula au
+replayer ; coupé en deux par une interruption, il laisserait un canal à moitié
+armé. `VBI_Disable` / `VBI_Enable` encadrent ces passages — le lancement d'un
+effet, et le changement de module entre l'accueil et le donjon.
+
+**Le banc en tient compte** : `machine68k` n'a pas de ligne d'IRQ, donc
+`tools/run68k.py` empile lui-même le cadre d'exception (format 0 du 68020 :
+SR, PC, mot de format) et détourne le processeur vers le vecteur, comme le
+ferait Paula. `INTENA` et `INTREQ` y sont modélisés comme les registres à
+bascule qu'ils sont — bit 15 pose, sinon efface. Les appels directs de
+routines depuis le banc, eux, restent à l'abri de l'interruption : c'est le
+test qui tient l'horloge, et un tic de musique par-dessus le bruitage que l'on
+mesure fausserait la mesure.
+
 ## Points techniques — musique (`src/ptreplay.i`)
 
 **Cadence.** `PT_Tick` est appelé une fois par image depuis la boucle
@@ -517,16 +573,25 @@ sémantique que le replayer 68k (mêmes effets, même cadence 50 Hz, mêmes règ
 de boucle) et produit un WAV : c'est ce qui vérifie le module et la logique de
 rejeu.
 
-En revanche **rien n'a encore tourné sur Amiga réel ni sous émulateur** : les
-modèles valident l'arithmétique et la logique du code, pas le comportement du
-chipset ni celui de Paula.
+Le jeu, lui, **tourne pour de bon** : `tools/run68k.py` charge l'exécutable
+hunk, le relocalise, remplace `exec.library` et `graphics.library` par des
+souches, et exécute le vrai code dans un 68020 émulé — chipset simulé au
+strict nécessaire (balayage, blitter rectangulaire, souris et clavier au CIA,
+retour trame au niveau 3). Six bancs s'appuient dessus : invariants du jeu,
+bruitages relus aux registres de Paula, replayer, copperlist, sauvegarde,
+largeur des panneaux, plus un parcours dirigé de 428 pas.
+
+En revanche **rien n'a encore tourné sur Amiga réel**, et les deux démos
+n'ont jamais été exécutées, même émulées : les modèles valident
+l'arithmétique et la logique du code, pas le comportement du chipset ni celui
+de Paula.
 
 ## Pistes pour la suite
 
 - Scrolling infini : bitmap de la largeur de l'écran + 16 pixels, avec une
   colonne redessinée au blitter à chaque franchissement de mot.
-- Blitter : effacement, dessin de bobs avec masque (cookie-cut), lignes.
-- Interruption niveau 3 (VERTB / COPER) plutôt qu'une attente active.
 - Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que
-  par le VBlank.
-- Scroller sinusoïdal avec police 8×8 et copper text.
+  par le retour trame.
+- Interruption COPER : découper l'image en bandes et changer de palette à
+  mi-écran depuis le processeur plutôt que depuis la copperlist.
+- Faire tourner les deux démos dans le banc 68020, comme le jeu.

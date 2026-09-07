@@ -66,35 +66,32 @@ Start:
 	bsr	PT_Init
 
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
+	bsr	VBI_Install		; a partir d'ici, la trame nous appelle
 
 ;----------------------------------------------------------------------
-; Boucle principale : une image = un echange de copperlist + un rendu
+; Boucle principale : une image = un rendu, puis on offre la liste.
+;
+; L'echange de copperlist et le tic de musique se font dans
+; l'interruption de retour trame (VBI_Frame, plus bas) : ils tombent
+; ainsi au debut du retour trame, et non a l'instant ou la boucle
+; principale se trouve en avoir fini.
 ;----------------------------------------------------------------------
 MainLoop:
-	bsr	WaitVBlank
-
-	move.l	BackCop,d0		; la liste construite devient visible
-	move.l	d0,COP1LCH(a5)
-	move.w	d0,COPJMP1(a5)		; strobe : le copper repart en haut
-
-	move.l	FrontCop,d1		; echange front / back
-	move.l	d0,FrontCop
-	move.l	d1,BackCop
-	move.l	FrontPtrTab,d0
-	move.l	BackPtrTab,d1
-	move.l	d1,FrontPtrTab
-	move.l	d0,BackPtrTab
-
-	bsr	PT_Tick			; un tick de musique par image
-
 	addq.w	#2,FrameCnt
 	move.l	BackPtrTab,a0
 	bsr	BuildGradient		; on remplit la liste cachee
 	bsr	MoveSprite
+	move.w	#1,SwapReq		; la liste est prete a etre montree
+
+.wait:
+	bsr	VBI_Wait		; une trame passe
+	tst.w	SwapReq			; l'a-t-elle prise ?
+	bne.s	.wait
 
 	btst	#6,CIAAPRA		; bouton gauche souris ?
 	bne	MainLoop
 
+	bsr	VBI_Remove
 	bsr	PT_Stop
 	bsr	RestoreSystem
 	move.l	4.w,a6
@@ -343,19 +340,34 @@ MoveSprite:
 	rts
 
 ;----------------------------------------------------------------------
-; WaitVBlank (a5 = CUSTOM) - lecture longue de VPOSR/VHPOSR
+; VBI_Frame : le travail cadence, appele depuis l'interruption de
+; retour trame. a5 = CUSTOM, tous les registres sont libres.
+;
+; L'echange n'a lieu que si la boucle principale a fini de batir la
+; liste cachee (SwapReq) : sans ce jeton, une trame en avance montrerait
+; un degrade a moitie ecrit.
 ;----------------------------------------------------------------------
-WaitVBlank:
-	move.l	d0,-(sp)
-.wait:
-	move.l	VPOSR(a5),d0
-	and.l	#$0001ff00,d0
-	cmp.l	#300<<8,d0
-	bne.s	.wait
-	move.l	(sp)+,d0
+VBI_Frame:
+	tst.w	SwapReq
+	beq.s	.noSwap
+	clr.w	SwapReq
+	move.l	BackCop,d0		; la liste construite devient visible
+	move.l	d0,COP1LCH(a5)
+	move.w	d0,COPJMP1(a5)		; strobe : le copper repart en haut
+
+	move.l	FrontCop,d1		; echange front / back
+	move.l	d0,FrontCop
+	move.l	d1,BackCop
+	move.l	FrontPtrTab,d0
+	move.l	BackPtrTab,d1
+	move.l	d1,FrontPtrTab
+	move.l	d0,BackPtrTab
+.noSwap:
+	bsr	PT_Tick			; un tick de musique par image
 	rts
 
-; --- replayer ProTracker : son code reste dans cette section ---
+; --- retour trame et replayer ProTracker : dans cette meme section ---
+	include	"vblank.i"
 	include	"ptreplay.i"
 
 ;======================================================================
@@ -426,6 +438,11 @@ BackPtrTab:	ds.l	1
 OldIntena:	ds.w	1
 OldDmacon:	ds.w	1
 FrameCnt:	ds.w	1
+SwapReq:	ds.w	1
+VBI_Vbr:	ds.l	1
+VBI_OldLvl3:	ds.l	1
+VBI_Count:	ds.w	1
+VBI_Flag:	ds.w	1
 PtrTab1:	ds.l	NUMLINES
 PtrTab2:	ds.l	NUMLINES
 

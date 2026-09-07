@@ -132,3 +132,18 @@ _LVODisownBlitter = -462
 ; --- offsets GfxBase ---
 gb_ActiView     = 34
 gb_copinit      = 38
+
+; --- bits INTENA / INTREQ ---
+INTF_SETCLR     = $8000
+INTF_INTEN      = $4000         ; interrupteur general (maitre)
+INTF_COPER      = $0010         ; copper (COPPER MOVE vers INTREQ)
+INTF_VERTB      = $0020         ; debut du retour trame -- niveau 3
+INTB_VERTB      = 5
+
+; --- vecteur d'exception du niveau 3 (autovecteur), depuis le VBR ---
+LVL3_VECTOR     = $6c
+
+; --- exec.library : passage en mode superviseur, drapeaux processeur ---
+_LVOSupervisor  = -30
+AttnFlags       = 296           ; word : bit 0 = 68010 ou mieux (donc VBR)
+AFB_68010       = 0

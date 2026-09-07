@@ -55,11 +55,11 @@ xdftool "$ADF" create + format "AGADemos" \
 # quatre-vingt.
 #
 # On y met donc les trois programmes, et le source du jeu : crawl.s
-# avec les deux fichiers ecrits a la main dont il depend. Le reste --
+# avec les trois fichiers ecrits a la main dont il depend. Le reste --
 # le source des deux demos, leurs tables, et toutes les tables
 # generees, dont surfgrad.i qui pese a lui seul quatre-vingt mille
 # octets -- vit dans l'archive LhA, qui porte tout.
-for f in crawl.s hardware.i ptreplay.i; do
+for f in crawl.s hardware.i ptreplay.i vblank.i; do
 	xdftool "$ADF" write "$STAGE/Src/$f" "Src/$f"
 done
 xdftool "$ADF" boot install			# bootblock DOS0 : la disquette demarre

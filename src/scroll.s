@@ -131,20 +131,14 @@ Start:
 	bsr	PT_Init
 
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
+	bsr	VBI_Install		; a partir d'ici, la trame nous appelle
 
+;----------------------------------------------------------------------
+; Boucle principale : on batit la liste cachee, puis on l'offre a
+; l'interruption de retour trame, qui seule la met a l'affiche et
+; avance la musique (VBI_Frame, plus bas).
+;----------------------------------------------------------------------
 MainLoop:
-	bsr	WaitVBlank
-
-	move.l	BackRec,a0		; la liste preparee devient visible
-	move.l	li_Cop(a0),d0
-	move.l	d0,COP1LCH(a5)
-	move.w	d0,COPJMP1(a5)
-
-	move.l	FrontRec,d0		; echange front / back
-	move.l	BackRec,d1
-	move.l	d1,FrontRec
-	move.l	d0,BackRec
-
 	addq.w	#1,FrameCnt
 	move.w	PalRot,d0		; rotation de la palette
 	addq.w	#1,d0
@@ -154,8 +148,6 @@ MainLoop:
 .rotOk:
 	move.w	d0,PalRot
 
-	bsr	PT_Tick			; un tick de musique par image
-
 	move.l	BackRec,a0
 	bsr	UpdateBitplanes		; pointeurs + scroll fin
 	move.l	BackRec,a0
@@ -164,10 +156,17 @@ MainLoop:
 	bsr	UpdateBars
 	bsr	MoveSprite
 	bsr	ScrollUpdate
+	move.w	#1,SwapReq		; la liste est prete a etre montree
+
+.wait:
+	bsr	VBI_Wait		; une trame passe
+	tst.w	SwapReq			; l'a-t-elle prise ?
+	bne.s	.wait
 
 	btst	#6,CIAAPRA
 	bne	MainLoop
 
+	bsr	VBI_Remove
 	bsr	PT_Stop
 	bsr	RestoreSystem
 	move.l	4.w,a6
@@ -976,17 +975,32 @@ WaitBlit:
 	rts
 
 ;----------------------------------------------------------------------
-WaitVBlank:
-	move.l	d0,-(sp)
-.wait:
-	move.l	VPOSR(a5),d0
-	and.l	#$0001ff00,d0
-	cmp.l	#300<<8,d0
-	bne.s	.wait
-	move.l	(sp)+,d0
+; VBI_Frame : le travail cadence, appele depuis l'interruption de
+; retour trame. a5 = CUSTOM, tous les registres sont libres.
+;
+; L'echange n'a lieu que si la boucle principale a fini sa liste
+; (SwapReq) : une trame en avance montrerait sinon des barres a moitie
+; posees et un scroll a cheval sur deux images.
+;----------------------------------------------------------------------
+VBI_Frame:
+	tst.w	SwapReq
+	beq.s	.noSwap
+	clr.w	SwapReq
+	move.l	BackRec,a0		; la liste preparee devient visible
+	move.l	li_Cop(a0),d0
+	move.l	d0,COP1LCH(a5)
+	move.w	d0,COPJMP1(a5)
+
+	move.l	FrontRec,d0		; echange front / back
+	move.l	BackRec,d1
+	move.l	d1,FrontRec
+	move.l	d0,BackRec
+.noSwap:
+	bsr	PT_Tick			; un tick de musique par image
 	rts
 
-; --- replayer ProTracker : son code reste dans cette section ---
+; --- retour trame et replayer ProTracker : dans cette meme section ---
+	include	"vblank.i"
 	include	"ptreplay.i"
 
 ;======================================================================
@@ -1046,6 +1060,11 @@ Rec2:		ds.b	li_SIZEOF
 OldIntena:	ds.w	1
 OldDmacon:	ds.w	1
 FrameCnt:	ds.w	1
+SwapReq:	ds.w	1
+VBI_Vbr:	ds.l	1
+VBI_OldLvl3:	ds.l	1
+VBI_Count:	ds.w	1
+VBI_Flag:	ds.w	1
 PalRot:		ds.w	1
 BarCenters:	ds.w	NBARS
 BarTab1:	ds.l	SCRTEXTH

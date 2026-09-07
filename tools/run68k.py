@@ -130,6 +130,9 @@ class Harness:
         self.pending = None
         self.icr = 0
         self.custom = {}
+        self.intena = 0                  # INTENA/INTREQ sont des registres
+        self.intreq = 0                  # a bascule : bit 15 = pose/efface
+        self.irq3 = 0                    # niveau 3 pris depuis le depart
         self.bad_blits = []
         self.dos_dir = os.environ.get("AGA_SAVEDIR", "/tmp")
         self.audio = []
@@ -156,6 +159,10 @@ class Harness:
                 return raster(off)
             if off == 0x02:                          # DMACONR
                 return 0                             # blitter au repos
+            if off == 0x1c:                          # INTENAR
+                return self.intena
+            if off == 0x1e:                          # INTREQR
+                return self.intreq
             if off == 0x0a:                          # JOY0DAT : les deux
                 return ((self.mouse_ry & 0xff) << 8) | (self.mouse_rx & 0xff)
             if off == 0x16:                          # POTGOR : bouton droit
@@ -175,8 +182,16 @@ class Harness:
 
         AUDIO = set(range(0xa0, 0xe0)) | {0x96}       # Paula et DMACON
 
+        def setclr(cur, val):
+            """INTENA, INTREQ : bit 15 arme, sinon efface les bits poses."""
+            return (cur | (val & 0x7fff)) if val & 0x8000 else (cur & ~val)
+
         def w_custom(addr, val, *a):
             off = addr - CUSTOM
+            if off == 0x9a:                          # INTENA
+                self.intena = setclr(self.intena, val) & 0x7fff
+            elif off == 0x9c:                        # INTREQ
+                self.intreq = setclr(self.intreq, val) & 0x7fff
             self.custom[off] = val
             if off in AUDIO:                         # journal pour les tests
                 self.audio.append((off, val))
@@ -302,6 +317,8 @@ class Harness:
         m = self.mem
         m.w32(4, EXECBASE)
         stub_library(m, EXECBASE)
+        m.w16(EXECBASE + 296, 0x0001)                # AttnFlags : 68010+,
+        self.setup_supervisor()                      # donc un VBR a demander
         stub_library(m, GFXBASE)
         stub_library(m, DOSBASE)
         self.setup_dos()
@@ -313,6 +330,70 @@ class Harness:
         m.w16(thunk + 6, 0x2039)                     # move.l $00f1000c,d0
         m.w32(thunk + 8, DOSPORT + 12)
         m.w16(thunk + 12, 0x4e75)
+
+    # --- exec/Supervisor() ------------------------------------------
+    def setup_supervisor(self):
+        """Le jeu demande le VBR au processeur, et movec est privilegie :
+        il passe donc par exec/Supervisor(), qui appelle (a5) en mode
+        superviseur et dont la routine se termine par rte. La souche pose
+        le cadre d'exception que ce rte attend -- format 0 du 68020 : SR,
+        PC, puis le mot de format.
+
+        Le banc fait tourner tout le programme en mode superviseur, la ou
+        l'Amiga n'y passe que le temps de la routine : ce n'est pas une
+        licence, c'est la seule difference que le code puisse voir, et
+        elle ne change rien a ce qu'il execute."""
+        m = self.mem
+        thunk = EXECBASE + 0x480
+        m.w16(EXECBASE - 30, 0x4ef9)                 # jmp (thunk).L
+        m.w32(EXECBASE - 30 + 2, thunk)
+        for word in (0x221f,                         # move.l (sp)+,d1
+                     0x4267,                         # clr.w -(sp)  (format 0)
+                     0x2f01,                         # move.l d1,-(sp)
+                     0x40e7,                         # move.w sr,-(sp)
+                     0x4ed5):                        # jmp (a5)
+            m.w16(thunk, word)
+            thunk += 2
+
+    # --- interruption de retour trame (niveau 3) ---------------------
+    VBI_PERIOD = 6000                    # cycles entre deux trames
+
+    def vbi(self):
+        """Pose VERTB et detourne le processeur vers le vecteur de niveau
+        3, comme le ferait Paula. machine68k n'a pas de ligne d'IRQ : on
+        empile donc le cadre d'exception a la main (format 0 : SR, PC,
+        mot de format = numero de vecteur x 4)."""
+        self.intreq |= 0x0020                        # INTF_VERTB
+        if not (self.intena & 0x4000 and self.intena & 0x0020):
+            return                                   # maitre ou VERTB coupe
+        sr = self.cpu.r_sr()
+        if ((sr >> 8) & 7) >= 3:                     # deja au moins au 3
+            return
+        vector = self.mem.r32(0x6c)                  # VBR nul dans ce banc
+        if not vector:
+            return
+        sp = self.cpu.r_reg(15)
+        sp -= 2
+        self.mem.w16(sp, 0x006c)                     # format 0, vecteur 27
+        sp -= 4
+        self.mem.w32(sp, self.cpu.r_pc())
+        sp -= 2
+        self.mem.w16(sp, sr)
+        self.cpu.w_reg(15, sp)
+        self.cpu.w_sr((sr & ~0x8700) | 0x2300)       # superviseur, masque 3
+        self.cpu.w_pc(vector)
+        self.irq3 += 1
+
+    def execute(self, cycles):
+        """Comme machine.execute, mais le retour trame tombe en cours de
+        route : sans cela une boucle qui attend l'interruption tournerait
+        jusqu'a la fin de la tranche."""
+        done = 0
+        while done < cycles:
+            self.vbi()
+            run = self.machine.execute(min(self.VBI_PERIOD, cycles - done))
+            done += max(getattr(run, "cycles", 0) or 0, 1)
+        return done
 
     # --- dos.library ------------------------------------------------
     def setup_dos(self):
@@ -411,7 +492,8 @@ class Harness:
 
     def start(self):
         self.cpu.w_reg(15, STACK)                    # a7
-        self.cpu.w_pc(self.segs[0][0])
+        self.cpu.w_sr(0x2000)                        # mode superviseur : voir
+        self.cpu.w_pc(self.segs[0][0])               # setup_supervisor()
         self.mem.w32(STACK, 0xdeadbeef)              # adresse de retour
 
     # --- appel direct d'une routine du jeu -------------------------
@@ -425,6 +507,12 @@ class Harness:
         Le contexte est remis en place ensuite : sans cela chaque appel
         laisserait la pile du jeu soixante octets plus bas et la boucle
         principale finirait par travailler sur un cadre errant.
+
+        Le retour trame est tenu a l'ecart pendant l'appel : c'est le
+        banc qui tient l'horloge ici, et une interruption qui tomberait
+        au milieu melerait son travail a celui de la routine examinee --
+        un tic de musique par-dessus le bruitage que l'on mesure, par
+        exemple. Les tests qui veulent une trame appellent PT_Tick.
         """
         ctx = self.cpu.get_cpu_context()
         self.mem.w16(self.RETURN, 0x60fe)    # bra.s * : on s'arrete la
@@ -436,7 +524,7 @@ class Harness:
         self.cpu.w_pc(addr)
         done = False
         for _ in range(80):
-            self.machine.execute(100000)
+            self.machine.execute(100000)   # sans retour trame : l'appelant
             if self.cpu.r_pc() == self.RETURN:
                 done = True
                 break
@@ -478,7 +566,7 @@ class Harness:
         for _ in range(slices):
             self.offer_key()
             try:
-                self.machine.execute(cycles)
+                self.execute(cycles)
             except Exception as e:
                 return f"exception CPU : {e} (pc={self.cpu.r_pc():#x})"
             if self.cpu.r_pc() == 0xdeadbeef:

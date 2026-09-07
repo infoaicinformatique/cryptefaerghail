@@ -111,6 +111,14 @@ class Game(R.Harness):
     def addr(self, name):
         return self.hunk_sym[name]
 
+    def span(self, name):
+        """Debut et fin d'une routine : jusqu'au symbole suivant du meme
+        hunk. Sert a reconnaitre le processeur arrete dedans."""
+        hunk, off = self.syms[name]
+        after = [o for h, o in self.syms.values() if h == hunk and o > off]
+        base = self.segs[hunk][0]
+        return base + off, base + (min(after) if after else off + 16)
+
     def w(self, name, off=0):
         return self.mem.r16(self.addr(name) + off)
 
@@ -148,7 +156,7 @@ class Game(R.Harness):
         que le processeur soit revenu attendre le retour trame, sans
         redessin en cours ni image en attente d'echange."""
         pc = self.cpu.r_pc()
-        top, end = self.addr("WaitVBlank"), self.addr("WaitBlit")
+        top, end = self.span("VBI_Wait")
         return (top <= pc < end and self.w("NeedRedraw") == 0
                 and self.w("DrawReady") == 0)
 

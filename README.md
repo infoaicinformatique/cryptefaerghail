@@ -75,17 +75,21 @@ make preview       # écrit docs/preview.png
 ## Disquette prête à l'emploi
 
 `dist/AGADemos.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
-de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source du jeu
-(`crawl.s` et les deux fichiers écrits à la main dont il dépend), un
+de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source des deux
+démos et les trois fichiers écrits à la main dont le jeu dépend, un
 `Lisezmoi.txt` et un `S/Startup-Sequence` qui lance le jeu au démarrage.
 
 Elle ne peut plus tout porter : à huit bitplanes le jeu pèse à lui seul plus
 d'un demi-mégaoctet — six cent mille octets une fois sur la disquette, où un
 bloc de 512 n'en porte que 488 — et les trois programmes en occupent six cent
-trente mille sur huit cent quatre-vingt. Le reste — le source des deux démos,
-les données générées, et les tables en `dc.w` dont `surfgrad.i` qui pèse à lui
-seul quatre-vingt mille octets — vit dans **`dist/AGADemos.lha`**, qui porte
-tout. Les générateurs Python refont les tables en une seconde.
+quarante mille sur huit cent quatre-vingt. **`crawl.s` ne tient plus** : cent
+quarante-huit mille octets, trois cents blocs, et il n'en reste pas dix. Le
+script écrit donc ce qui rentre, dans un ordre fixé, et dit ce qu'il laisse.
+
+Le reste — `crawl.s`, les données générées, et les tables en `dc.w` dont
+`surfgrad.i` qui pèse à lui seul quatre-vingt mille octets — vit dans
+**`dist/AGADemos.lha`**, qui porte tout. Les générateurs Python refont les
+tables en une seconde.
 
 ```sh
 make disk          # refabrique les deux -- nécessite pip install amitools

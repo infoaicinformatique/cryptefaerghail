@@ -254,5 +254,8 @@ Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
 palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 700 Ko de
 Chip RAM libre.
 
-Le tiroir Src contient tout le source. Graphismes, cartes, musique et
+Le tiroir Src contient le source des deux demos et les trois fichiers
+ecrits a la main dont le jeu depend. Crawl.s ne tient plus sur la
+disquette -- cent quarante-huit mille octets -- : il est dans
+l'archive AGADemos.lha, qui porte tout. Graphismes, cartes, musique et
 bruitages sont generes par programme : rien n'est emprunte.

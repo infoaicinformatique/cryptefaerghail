@@ -46,6 +46,10 @@ L'ACCUEIL
   Le jeu s'ouvre sur le portail de la crypte.
     1    commencer une nouvelle partie
     2    reprendre la partie sauvee
+    3    ce qu'etait cette crypte : le prologue, en quatre pages.
+         N'importe quelle touche tourne la page, les fleches
+         reviennent en arriere, ESC ressort -- et la page d'apres
+         la derniere rend l'accueil.
     ESC  quitter
   La partie se sauve toute seule : des que le groupe est forme, a
   chaque etage franchi, et quand vous abandonnez par ESC. Le fichier

@@ -176,6 +176,12 @@ def shoot(g, name):
 if __name__ == "__main__":
     g = T.Game()
     shoot(g, "titre")
+    g.key(T.K_1 + 2)                      # 3 : le prologue
+    shoot(g, "prologue")
+    for _ in range(3):                    # jusqu'a la derniere page
+        g.key(T.K_SPACE)
+    shoot(g, "prologue-fin")
+    g.key(T.K_ESC)                        # retour a l'accueil
     g.key(T.K_1)                          # 1 : commencer une partie
     shoot(g, "creation")
     g.key(T.K_1 + 6)                      # magicien : les jets s'affichent

@@ -182,9 +182,22 @@ déjà écrite y trouve sa raison.
 | Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
 
-Dans le jeu, cela tient à peu de chose : la ligne d'ouverture, une inscription
+Dans le jeu, cela se lit à l'accueil — **touche 3**, quatre pages tournées à
+n'importe quelle touche, les flèches pour revenir, `ESC` pour ressortir ; la
+page d'après la dernière rend l'accueil, pour qui lit sans regarder les
+touches. Et cela affleure en jouant : la ligne d'ouverture, une inscription
 par étage dans le journal, la voix derrière le mur à l'échoppe, et la
 quittance en guise de victoire — **on ne sort de Faerghail qu'acquitté**.
+
+![Le prologue](docs/emu-prologue.png)
+
+Les quatre pages sont des listes de lignes terminées par un long nul : on en
+ajoute une sans rien recompter, et la dernière page ne demande pas de cas
+particulier. Une ligne marquée d'une étoile passe à l'or — il n'y en a
+qu'une. `PROLOGROWS` borne le dessin à ce que le cadre tient : une ligne de
+trop déborderait du plan et retomberait en haut du suivant, ce que
+`tools/test_layout.py` va justement chercher, page par page, en regardant la
+bordure de l'écran et la bande laissée entre le texte et le pied de page.
 
 ### Création du groupe
 
@@ -242,6 +255,9 @@ vie à ses dés de vie à l'apparition, et les rencontres sont réparties par
 niveau de donjon selon leur facteur de puissance.
 
 ### Commandes
+
+À l'accueil : `1` commence une partie, `2` reprend la partie sauvée, `3`
+ouvre le prologue, `ESC` quitte.
 
 | Touche | Effet |
 |---|---|

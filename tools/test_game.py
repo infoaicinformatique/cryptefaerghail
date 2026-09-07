@@ -260,6 +260,38 @@ def walk_towards(g, want, budget=60):
     return g.w("InCombat") != 0
 
 
+def prolog_test(g, fails):
+    """Le prologue, depuis l'accueil : les pages tournent, les fleches
+    reviennent, et la page tournee apres la derniere rend l'accueil --
+    c'est la sortie de qui lit sans regarder les touches."""
+    pages = read_equ("PROLOGPAGES", 4)
+    title, prolog = read_equ("PHASE_TITLE", 2), read_equ("PHASE_PROLOG", 3)
+    g.key(K_1 + 2)
+    check(g.w("Phase") == prolog, f"la touche 3 mene en phase "
+          f"{g.w('Phase')} au lieu de {prolog}", fails)
+    check(g.w("PrologPage") == 0, "le prologue ne s" + chr(39)
+          + "ouvre pas sur sa premiere page", fails)
+    for n in range(1, pages):
+        g.key(K_SPACE)
+        check(g.w("PrologPage") == n, f"page {g.w('PrologPage')} "
+              f"au lieu de {n}", fails)
+    g.key(K_SPACE)
+    check(g.w("Phase") == title, "la page d" + chr(39) + "apres la "
+          "derniere devrait rendre l" + chr(39) + "accueil", fails)
+
+    g.key(K_1 + 2)                       # les fleches reviennent en arriere
+    g.key(K_SPACE)
+    g.key(K_LEFT)
+    check(g.w("PrologPage") == 0, f"la fleche gauche laisse la page "
+          f"{g.w('PrologPage')}", fails)
+    g.key(K_LEFT)
+    check(g.w("PrologPage") == 0, "on remonte avant la premiere page", fails)
+    g.key(K_ESC)
+    check(g.w("Phase") == title, "ESC ne rend pas l" + chr(39) + "accueil",
+          fails)
+    print(f"  {pages} pages, les fleches reviennent, ESC rend l'accueil")
+
+
 def create_party(g, classes=(0, 6, 1, 5)):
     """Choix de classe, acceptation des jets, nom par defaut.
 
@@ -601,6 +633,9 @@ if __name__ == "__main__":
           + "accueil", fails)
     print(f"  ecran d'accueil, {len(g.syms)} symboles")
 
+    print("--- le prologue ---")
+    prolog_test(g, fails)
+
     print("--- creation du groupe ---")
     phase = create_party(g)
     check(phase == 1, f"phase {phase} apres creation, attendu 1", fails)
@@ -677,7 +712,7 @@ if __name__ == "__main__":
         ui, phase = g.w("UiMode"), g.w("Phase")
         if not check(ui <= 8, f"UiMode={ui}", fails):
             break
-        if not check(phase <= 2, f"Phase={phase}", fails):
+        if not check(phase <= 3, f"Phase={phase}", fails):
             break
         if not check(g.w("InvCursor") < 24, f"InvCursor={g.w('InvCursor')}", fails):
             break

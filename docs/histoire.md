@@ -6,6 +6,10 @@ règle du jeu — le marchand emmuré, les portes qui posent une question, les
 dalles à ressort, la craie sur le dallage — vient de quelque part, et c'est ce
 quelque part qui est écrit ici.*
 
+*L'essentiel se lit dans le jeu même : **touche 3 à l'accueil**, quatre pages
+resserrées à la largeur de l'écran. Ce qui suit est la version longue, celle
+où l'on a la place d'expliquer.*
+
 ## Le nom
 
 `Faerghail` n'est pas un nom d'homme. C'est un mot de contrat, dans la langue
@@ -200,8 +204,13 @@ Ils vont chercher le grand registre au dernier étage, et une plume.
 
 ## Ce qui reste à écrire
 
-Le grand registre n'est pas dans le jeu. Le dernier étage se termine sur un
-escalier et le jour, pas sur une salle de greffe, et Ossian n'a qu'une seule
-phrase d'accueil aux trois guichets. Ce sont les deux endroits où cette
+Le prologue de l'accueil dit le nom, la maison, l'emmurement et Ambelune. Le
+reste — l'échéance de chaque dalle, la question posée à chaque porte, ce
+qu'Ossian vend et pourquoi — ne se rencontre qu'en jouant, et ne se dit
+nulle part.
+
+Le grand registre, lui, n'est pas dans le jeu. Le dernier étage se termine sur
+un escalier et le jour, pas sur une salle de greffe, et Ossian n'a qu'une
+seule phrase d'accueil aux trois guichets. Ce sont les deux endroits où cette
 histoire dépasse encore ce que le programme sait raconter — et donc les deux
 prochaines choses à écrire, le jour où l'on ajoutera un quatrième étage.

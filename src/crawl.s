@@ -176,6 +176,9 @@ SFX_COIN	= 14
 PHASE_CREATE	= 0
 PHASE_PLAY	= 1
 PHASE_TITLE	= 2			; l'ecran d'accueil
+PHASE_PROLOG	= 3			; le prologue, depuis l'accueil
+PROLOGPAGES	= 4			; pages du prologue
+PROLOGROWS	= 16			; lignes qu'une page peut tenir
 TITLEH		= 176			; hauteur de l'illustration
 SAVEMAGIC	= $46414552		; "FAER"
 SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP
@@ -346,6 +349,11 @@ MainLoop:
 	bsr	TitleKey
 	bra.s	.noKey
 .notTitleKey:
+	cmp.w	#PHASE_PROLOG,d1
+	bne.s	.notPrologKey
+	bsr	PrologKey
+	bra.s	.noKey
+.notPrologKey:
 	tst.w	d1
 	bne.s	.playKey
 	bsr	CreateKey
@@ -355,9 +363,11 @@ MainLoop:
 .noKey:
 	tst.w	NeedRedraw
 	beq.s	.noDraw
-	clr.w	NeedRedraw
-	bsr	Redraw
-	move.w	#1,DrawReady
+	tst.w	DrawReady		; l'image finie attend encore le retour
+	bne.s	.noDraw			; trame : redessiner maintenant, ce
+	clr.w	NeedRedraw		; serait se faire echanger les tampons
+	bsr	Redraw			; en pleine page -- le fond efface dans
+	move.w	#1,DrawReady		; l'un, le texte pose dans l'autre
 .noDraw:
 	tst.w	Quit
 	beq	MainLoop
@@ -1890,8 +1900,13 @@ DrawScene:
 Redraw:
 	movem.l	d0-d7/a0-a6,-(sp)
 	cmp.w	#PHASE_TITLE,Phase
-	bne.s	.game
+	bne.s	.notTitle
 	bsr	DrawTitle
+	bra	.drawn
+.notTitle:
+	cmp.w	#PHASE_PROLOG,Phase
+	bne.s	.game
+	bsr	DrawProlog
 	bra	.drawn
 .game:
 	cmp.w	#PHASE_PLAY,Phase	; le releve suit le groupe
@@ -2594,13 +2609,13 @@ DrawTitle:
 
 	lea	TxtMenuNew,a0
 	moveq	#5,d0
-	move.w	#TITLEH+14,d1
+	move.w	#TITLEH+12,d1
 	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	lea	TxtMenuLoad,a0
 	moveq	#5,d0
-	move.w	#TITLEH+28,d1
+	move.w	#TITLEH+24,d1
 	move.w	#C_HILITE,d2
 	tst.w	HasSave
 	bne.s	.hasSave
@@ -2608,18 +2623,133 @@ DrawTitle:
 .hasSave:
 	bsr	DrawText
 
+	lea	TxtMenuStory,a0
+	moveq	#5,d0
+	move.w	#TITLEH+36,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+
 	lea	TxtMenuQuit,a0
 	moveq	#5,d0
-	move.w	#TITLEH+42,d1
+	move.w	#TITLEH+48,d1
 	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 
 	lea	TxtMenuHint,a0
 	moveq	#5,d0
-	move.w	#TITLEH+58,d1
+	move.w	#TITLEH+60,d1
 	move.w	#C_TEXTLOW,d2
 	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Le prologue : ce qu'etait Faerghail, en trois pages, depuis l'accueil.
+;
+; Le texte est celui de docs/histoire.md, resserre a trente-six signes
+; -- la largeur du journal, donc celle que la police 8x8 tient dans le
+; cadre. Chaque page est une liste de lignes terminee par un long nul :
+; on ajoute une ligne sans rien recompter, et la derniere page ne
+; demande pas de cas particulier.
+;----------------------------------------------------------------------
+DrawProlog:
+	movem.l	d0-d7/a0-a6,-(sp)
+	moveq	#0,d0
+	moveq	#0,d1
+	move.w	#SCRW,d2
+	move.w	#SCRH,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	moveq	#8,d0
+	moveq	#8,d1
+	move.w	#304,d2
+	move.w	#240,d3
+	bsr	DrawFrame
+
+	lea	TxtPrologTitle,a0
+	moveq	#2,d0
+	moveq	#16,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	move.w	PrologPage,d0
+	lsl.w	#2,d0
+	lea	PrologPages,a0
+	move.l	(a0,d0.w),a3		; les lignes de la page
+	moveq	#0,d7
+.lineLoop:
+	cmp.w	#PROLOGROWS,d7		; le cadre s'arrete la : au-dela, le
+	bge.s	.linesDone		; texte deborderait dans le plan suivant
+	move.l	(a3)+,d0
+	beq.s	.linesDone
+	move.l	d0,a0
+	move.w	#C_TEXT,d2
+	cmp.b	#$2a,(a0)		; une ligne marquee d'un * passe a l'or
+	bne.s	.plain
+	addq.l	#1,a0
+	move.w	#C_HILITE,d2
+.plain:
+	moveq	#2,d0
+	move.w	d7,d1
+	mulu.w	#12,d1
+	add.w	#32,d1
+	bsr	DrawText
+	addq.w	#1,d7
+	bra.s	.lineLoop
+.linesDone:
+	lea	TmpStr,a1		; PAGE n SUR N
+	lea	TxtPrologPage,a0
+	bsr	StrCopy
+	move.w	PrologPage,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	lea	TxtPrologOf,a0
+	bsr	StrCopy
+	move.w	#PROLOGPAGES,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#2,d0
+	move.w	#226,d1
+	move.w	#C_TEXTLOW,d2
+	bsr	DrawText
+
+	lea	TxtPrologHelp,a0
+	moveq	#2,d0
+	move.w	#238,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; PrologKey : n'importe quelle touche tourne la page, les fleches
+; reviennent en arriere, ESC rend l'accueil -- et la page tournee apres
+; la derniere le rend aussi, pour qui lit sans regarder les touches.
+PrologKey:
+	movem.l	d1-d7/a0-a6,-(sp)
+	cmp.w	#KEY_ESC,d0
+	beq.s	.back
+	cmp.w	#KEY_LEFT,d0
+	beq.s	.prev
+	cmp.w	#KEY_UP,d0
+	beq.s	.prev
+	move.w	PrologPage,d1
+	addq.w	#1,d1
+	cmp.w	#PROLOGPAGES,d1
+	blt.s	.set
+.back:
+	move.w	#PHASE_TITLE,Phase
+	bra.s	.redraw
+.prev:
+	move.w	PrologPage,d1
+	subq.w	#1,d1
+	bpl.s	.set
+	moveq	#0,d1
+.set:
+	move.w	d1,PrologPage
+.redraw:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
 ; PlayMusic : d0 = 0 pour l'accueil, 1 pour le donjon. Le replayer ne
@@ -2682,7 +2812,7 @@ TitleKey:
 	bra.s	.redraw
 .notNew:
 	cmp.w	#KEY_1+1,d0
-	bne.s	.done
+	bne.s	.notLoad
 	tst.w	HasSave
 	beq.s	.done
 	bsr	LoadGame
@@ -2694,6 +2824,12 @@ TitleKey:
 	move.w	#PHASE_PLAY,Phase
 	lea	TxtResumed,a0
 	bsr	LogAdd
+	bra.s	.redraw
+.notLoad:
+	cmp.w	#KEY_1+2,d0		; ce qu'etait cette crypte
+	bne.s	.done
+	clr.w	PrologPage
+	move.w	#PHASE_PROLOG,Phase
 .redraw:
 	move.w	#1,NeedRedraw
 .done:
@@ -6726,6 +6862,135 @@ ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
 	dc.l	TxtCls4,TxtCls5,TxtCls6,TxtCls7
 
+; Le prologue, page par page : chaque page est une liste de lignes
+; terminee par un long nul. Une ligne marquee d'une etoile passe a
+; l'or -- il n'y en a qu'une, la derniere.
+PrologPages:
+	dc.l	PrologP0,PrologP1,PrologP2,PrologP3
+
+PrologP0:
+	dc.l	TxtPr0L00
+	dc.l	TxtPr0L01
+	dc.l	TxtPr0L02
+	dc.l	TxtPr0L03
+	dc.l	TxtPr0L04
+	dc.l	TxtPr0L05
+	dc.l	TxtPr0L06
+	dc.l	TxtPr0L07
+	dc.l	TxtPr0L08
+	dc.l	TxtPr0L09
+	dc.l	TxtPr0L10
+	dc.l	TxtPr0L11
+	dc.l	TxtPr0L12
+	dc.l	TxtPr0L13
+	dc.l	0
+PrologP1:
+	dc.l	TxtPr1L00
+	dc.l	TxtPr1L01
+	dc.l	TxtPr1L02
+	dc.l	TxtPr1L03
+	dc.l	TxtPr1L04
+	dc.l	TxtPr1L05
+	dc.l	TxtPr1L06
+	dc.l	TxtPr1L07
+	dc.l	TxtPr1L08
+	dc.l	TxtPr1L09
+	dc.l	TxtPr1L10
+	dc.l	TxtPr1L11
+	dc.l	TxtPr1L12
+	dc.l	TxtPr1L13
+	dc.l	0
+PrologP2:
+	dc.l	TxtPr2L00
+	dc.l	TxtPr2L01
+	dc.l	TxtPr2L02
+	dc.l	TxtPr2L03
+	dc.l	TxtPr2L04
+	dc.l	TxtPr2L05
+	dc.l	TxtPr2L06
+	dc.l	TxtPr2L07
+	dc.l	TxtPr2L08
+	dc.l	TxtPr2L09
+	dc.l	TxtPr2L10
+	dc.l	TxtPr2L11
+	dc.l	0
+PrologP3:
+	dc.l	TxtPr3L00
+	dc.l	TxtPr3L01
+	dc.l	TxtPr3L02
+	dc.l	TxtPr3L03
+	dc.l	TxtPr3L04
+	dc.l	TxtPr3L05
+	dc.l	TxtPr3L06
+	dc.l	TxtPr3L07
+	dc.l	TxtPr3L08
+	dc.l	TxtPr3L09
+	dc.l	TxtPr3L10
+	dc.l	TxtPr3L11
+	dc.l	TxtPr3L12
+	dc.l	TxtPr3L13
+	dc.l	TxtPr3L14
+	dc.l	TxtPr3L15
+	dc.l	0
+
+TxtPr0L00:	dc.b	"FAERGHAIL N'EST PAS UN NOM D'HOMME.",0
+TxtPr0L01:	dc.b	"C'EST UN MOT DE CONTRAT : FAERGH,",0
+TxtPr0L02:	dc.b	"LE GAGE -- CE QU'ON LAISSE POUR",0
+TxtPr0L03:	dc.b	"GARANTIR CE QU'ON PROMET -- ET GAIL,",0
+TxtPr0L04:	dc.b	"LE SEUIL. LE SEUIL DU GAGE.",0
+TxtPr0L05:	dc.b	"",0
+TxtPr0L06:	dc.b	"IL Y A QUATRE SIECLES, LA VALLEE",0
+TxtPr0L07:	dc.b	"N'AVAIT NI PRINCE NI JUGE. UNE",0
+TxtPr0L08:	dc.b	"PAROLE VALAIT CE QUE VALAIT CELUI",0
+TxtPr0L09:	dc.b	"QUI L'ENTENDAIT ; A SA MORT, ELLE",0
+TxtPr0L10:	dc.b	"NE VALAIT PLUS RIEN.",0
+TxtPr0L11:	dc.b	"",0
+TxtPr0L12:	dc.b	"ON A DONC BATI UNE MAISON QUI NE",0
+TxtPr0L13:	dc.b	"MEURT PAS.",0
+TxtPr1L00:	dc.b	"CE QUI EST PROMIS EST DEPOSE : UN",0
+TxtPr1L01:	dc.b	"OBJET LAISSE EN GAGE, UN GREFFIER",0
+TxtPr1L02:	dc.b	"QUI L'INSCRIT AU REGISTRE, ET LA",0
+TxtPr1L03:	dc.b	"LIGNE RAYEE QUAND ON REVIENT LE",0
+TxtPr1L04:	dc.b	"CHERCHER. SINON, LE GAGE RESTE,",0
+TxtPr1L05:	dc.b	"ET LA LIGNE AUSSI.",0
+TxtPr1L06:	dc.b	"",0
+TxtPr1L07:	dc.b	"LA MAISON N'A PAS ETE CONSTRUITE :",0
+TxtPr1L08:	dc.b	"ELLE A ETE REPRISE. SOUS LA COLLINE",0
+TxtPr1L09:	dc.b	"COURAIT UNE CARRIERE DE SCHISTE,",0
+TxtPr1L10:	dc.b	"TROIS NIVEAUX DE GALERIES. UN ETAGE",0
+TxtPr1L11:	dc.b	"PAR GENERATION DE GREFFIERS : PLUS",0
+TxtPr1L12:	dc.b	"ON DESCEND, PLUS LES DETTES SONT",0
+TxtPr1L13:	dc.b	"VIEILLES.",0
+TxtPr2L00:	dc.b	"LE DERNIER GREFFIER N'AVAIT PAS",0
+TxtPr2L01:	dc.b	"D'HERITIER. LA COUTUME PREVOYAIT LE",0
+TxtPr2L02:	dc.b	"CAS, ET ELLE PREVOYAIT MAL :",0
+TxtPr2L03:	dc.b	"L'EMMUREMENT DE GARDE. ON L'A",0
+TxtPr2L04:	dc.b	"ENFERME VIVANT DERRIERE SON",0
+TxtPr2L05:	dc.b	"COMPTOIR, AVEC LE REGISTRE ET DE",0
+TxtPr2L06:	dc.b	"QUOI ECRIRE.",0
+TxtPr2L07:	dc.b	"",0
+TxtPr2L08:	dc.b	"IL A CESSE D'ETRE UN HOMME POUR",0
+TxtPr2L09:	dc.b	"DEVENIR UNE CLAUSE DE LA MAISON.",0
+TxtPr2L10:	dc.b	"C'EST LA VOIX QUE VOUS ENTENDREZ",0
+TxtPr2L11:	dc.b	"DERRIERE LE MUR, A CHAQUE ETAGE.",0
+TxtPr3L00:	dc.b	"DEPUIS UN SIECLE, PLUS PERSONNE NE",0
+TxtPr3L01:	dc.b	"DESCEND PAYER. LA MAISON RECOUVRE",0
+TxtPr3L02:	dc.b	"CE QU'ON LUI DOIT LA OU ELLE LE",0
+TxtPr3L03:	dc.b	"TROUVE : SUR LES HERITIERS.",0
+TxtPr3L04:	dc.b	"",0
+TxtPr3L05:	dc.b	"L'HIVER DERNIER, A AMBELUNE, DES",0
+TxtPr3L06:	dc.b	"NOMS DE VIVANTS SONT APPARUS A LA",0
+TxtPr3L07:	dc.b	"CRAIE SUR LES PORTES DE GRANGES.",0
+TxtPr3L08:	dc.b	"LES GENS DONT ON LISAIT LE NOM SE",0
+TxtPr3L09:	dc.b	"SONT MIS A MANQUER.",0
+TxtPr3L10:	dc.b	"",0
+TxtPr3L11:	dc.b	"QUATRE PERSONNES DESCENDENT : LE",0
+TxtPr3L12:	dc.b	"REGISTRE A QUATRE COLONNES DE",0
+TxtPr3L13:	dc.b	"SIGNATURE AU BAS D'UNE QUITTANCE.",0
+TxtPr3L14:	dc.b	"",0
+TxtPr3L15:	dc.b	"*ON NE SORT DE FAERGHAIL QU'ACQUITTE.",0
+	even
+
 FloorLore:				; l'inscription de chaque etage
 	dc.l	TxtFloor0,TxtFloor1,TxtFloor2
 
@@ -6906,7 +7171,12 @@ TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
 TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
 TxtMenuNew:	dc.b	"1   COMMENCER UNE NOUVELLE PARTIE",0
 TxtMenuLoad:	dc.b	"2   REPRENDRE LA PARTIE SAUVEE",0
+TxtMenuStory:	dc.b	"3   CE QU'ETAIT CETTE CRYPTE",0
 TxtMenuQuit:	dc.b	"ESC QUITTER",0
+TxtPrologTitle:	dc.b	"LE SEUIL DU GAGE",0
+TxtPrologPage:	dc.b	"PAGE ",0
+TxtPrologOf:	dc.b	" SUR ",0
+TxtPrologHelp:	dc.b	"UNE TOUCHE TOURNE LA PAGE   ESC SORT",0
 TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ETAGE",0
 TxtResumed:	dc.b	"VOUS REPRENEZ VOTRE DESCENTE.",0
 TxtSaved:	dc.b	"LA PARTIE EST SAUVEE.",0
@@ -7043,6 +7313,7 @@ AnimCount:	ds.w	1
 GameOver:	ds.w	1
 Quit:		ds.w	1
 NeedRedraw:	ds.w	1
+PrologPage:	ds.w	1		; page lue du prologue
 DrawReady:	ds.w	1
 Phase:		ds.w	1
 UiMode:		ds.w	1

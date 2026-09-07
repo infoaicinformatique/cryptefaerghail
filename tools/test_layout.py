@@ -79,6 +79,54 @@ def richest(g):
     g.setw("Gold", 0xffff)                # la bourse la plus encombrante
 
 
+PROLOG_ROWS = (7, 249)                   # lignes hors du cadre du prologue
+PROLOG_COLS = (6, 314)                   # colonnes idem, sur les lignes
+PROLOG_GAP = (20, 220, 300, 226)         # le blanc entre texte et pied
+
+
+def prolog_pages(g, fails):
+    """Le prologue : quatre pages de texte libre, donc quatre occasions
+    d'ecrire hors du cadre.
+
+    On regarde deux choses. La bordure de l'ecran d'abord : une ligne de
+    trop deborde du plan et retombe en haut du suivant, ou elle se voit.
+    Puis la bande laissee entre la derniere ligne et le pied de page --
+    c'est elle qui se remplit en premier quand une page grossit."""
+    oy0, oy1 = PROLOG_ROWS
+    ox0, ox1 = PROLOG_COLS
+    gx0, gy0, gx1, gy1 = PROLOG_GAP
+
+    def out(x, y):
+        """Hors du cadre. Les deux lignes de l'ombre portee (y=7 et 248)
+        ne comptent que par leurs bords : HLine travaille a l'octet et
+        arrondit le x-1 de l'ombre a l'octet du dessous, ce qui allume
+        huit pixels tout a gauche -- un travers de DrawFrame, partout
+        dans le jeu, et cache ailleurs par un fond de panneau."""
+        if y < oy0 or y >= oy1:
+            return True
+        return y > oy0 and y < oy1 - 1 and (x < ox0 or x >= ox1)
+
+    for page in range(T.read_equ("PROLOGPAGES", 4)):
+        px = S.grab(g, "ShowBuf")
+        bad = [(x, y)
+               for y in range(256) for x in range(SCRW)
+               if out(x, y) and S.PALETTE[px[y * SCRW + x]] != NOIR]
+        gap = [(x, y)
+               for y in range(gy0, gy1) for x in range(gx0, gx1)
+               if S.PALETTE[px[y * SCRW + x]] != NOIR]
+        name = f"prologue {page + 1}"
+        if bad:
+            ys = sorted({y for _, y in bad})
+            fails.append(f"{name} : {len(bad)} pixels hors du cadre, "
+                         f"y {ys[0]}..{ys[-1]}")
+        if gap:
+            fails.append(f"{name} : {len(gap)} pixels dans la bande qui "
+                         "separe le texte du pied de page")
+        print(f"  {name:16s} "
+              f"{'deborde' if bad or gap else 'dans le cadre'}")
+        g.key(T.K_SPACE)
+
+
 def shot(g, name, fails, ring=True):
     """`ring` a faux pour l'accueil : son illustration couvre l'ecran
     entier, elle a le droit d'occuper la bordure."""
@@ -97,6 +145,8 @@ if __name__ == "__main__":
     g = T.Game()
     print("--- ecrans, avec les textes les plus larges des tables ---")
     shot(g, "titre", fails, ring=False)
+    g.key(T.K_1 + 2)                      # 3 : le prologue, page a page
+    prolog_pages(g, fails)                # la derniere page rend l'accueil
     g.key(T.K_1)                          # sortir de l'accueil
     shot(g, "creation", fails)
     g.key(T.K_1 + 6)

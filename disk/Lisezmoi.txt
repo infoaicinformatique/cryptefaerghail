@@ -9,6 +9,39 @@ AGACRAWL - LA CRYPTE DE FAERGHAIL
 Dungeon crawler en vue subjective, dans l'esprit de Black Crypt, avec
 des regles inspirees de D&D 3.5.
 
+L'HISTOIRE
+  Faerghail n'est pas un nom d'homme : c'est un mot de contrat.
+  Faergh, le gage -- ce qu'on laisse pour garantir ce qu'on promet --
+  et gail, le seuil. Le seuil du gage.
+
+  Il y a quatre siecles, la vallee n'avait ni prince ni juge. On a
+  bati une maison qui ne meurt pas : on y descendait deposer un objet
+  pour garantir une promesse, un greffier l'inscrivait au registre,
+  et l'on remontait le chercher a l'echeance. La ligne etait alors
+  rayee. Sinon, le gage restait, et la ligne aussi.
+
+  Trois etages, un par generation de greffiers, creuses dans une
+  vieille carriere de schiste : d'ou la forme du lieu -- ni tombeau ni
+  donjon de guerre, un classement -- et d'ou la sortie tout en bas, la
+  ou la carriere debouche sur la vallee.
+
+  Le dernier greffier n'avait pas d'heritier. La coutume prevoyait le
+  cas : l'emmurement de garde. On l'a enferme vivant derriere son
+  comptoir, avec le registre et de quoi ecrire. Il a cesse d'etre un
+  homme pour devenir une clause de la maison. C'est la voix que vous
+  entendrez derriere le mur, a chaque etage.
+
+  Depuis un siecle, plus personne ne descend payer. La maison a
+  recommence a recouvrer ce qu'on lui doit, la ou elle le trouve --
+  sur les heritiers. L'hiver dernier, a Ambelune, des noms de vivants
+  ont commence a apparaitre a la craie sur les portes de granges, et
+  les gens dont on lisait le nom se sont mis a manquer.
+
+  Quatre personnes descendent. Il faut etre quatre : le registre a
+  quatre colonnes de signature au bas de chaque quittance.
+
+  On ne sort de Faerghail qu'acquitte.
+
 L'ACCUEIL
   Le jeu s'ouvre sur le portail de la crypte.
     1    commencer une nouvelle partie
@@ -183,6 +216,9 @@ LE DONJON
   portes ordinaires et portes verrouillees qui demandent une cle.
   Onze armes, cinq protections, potions, parchemins et tresors.
   Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
+  Chaque etage a sa porte a runes : elle pose une question et n'accepte
+  que trois reponses -- une clef se vole, pas une reponse. Juste, elle
+  s'efface ; faux, la rune inscrit un aventurier, au fer.
 
 MUSIQUE ET BRUITAGES
   Deux partitions, deux modules ProTracker quatre voies, tous deux en

@@ -143,6 +143,7 @@ tools/gen_score.py   générateur des deux musiques (accueil et donjon)
 tools/palette.py     la palette 256 couleurs AGA, décrite matière par matière
 tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
 tools/test_layout.py contrôle qu'aucun panneau ne déborde de la vue
+docs/histoire.md     le fond de fiction : ce qu'était Faerghail
 disk/                fichiers écrits à la main pour la disquette
 scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
@@ -152,6 +153,38 @@ scripts/get-toolchain.sh  installation de vasm + vlink
 
 Un crawler dans l'esprit de Black Crypt : on avance case par case, on tourne
 de 90°, et le donjon est dessiné en vue subjective.
+
+### L'histoire
+
+La crypte a un fond, écrit dans [docs/histoire.md](docs/histoire.md).
+
+`Faerghail` n'est pas un nom d'homme mais un mot de contrat : **faergh**, le
+gage, et **gail**, le seuil. *Le seuil du gage.* C'était une **maison de
+garde** — l'endroit où, faute de juge et de prince, on descendait déposer un
+objet pour garantir une promesse, et où un greffier tenait le registre des
+échéances. Trois étages, un par génération de greffiers, creusés dans une
+ancienne carrière de schiste : d'où la forme du lieu, qui n'est ni un tombeau
+ni un donjon de guerre mais un **classement**, et d'où la sortie tout en bas,
+là où la carrière débouche sur la vallée.
+
+Le fond n'a pas été inventé à côté du jeu, mais à partir de lui : chaque règle
+déjà écrite y trouve sa raison.
+
+| Ce que le jeu fait | Pourquoi la maison le fait |
+|---|---|
+| Un marchand scellé dans un mur, un par étage | L'emmurement de garde du dernier greffier : il est devenu une clause de la maison, et un guichet est un endroit, pas un homme |
+| Il rachète à moitié prix | Le taux d'un dépôt refait |
+| Une porte à runes par étage, **trois** réponses | Le contrôle par question — une clé se vole, pas une réponse — et les trois colonnes du registre |
+| Une réponse fausse brûle un aventurier | La rune ne punit pas : elle inscrit |
+| Des dalles piégées, deux fois plus en bas | Une dette impayée, un ressort tendu ; en bas, les échéances sont plus vieilles |
+| Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
+| Une croix à la craie sur la dalle repérée | La marque des greffiers, sur un compte à examiner |
+| Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
+| La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
+
+Dans le jeu, cela tient à peu de chose : la ligne d'ouverture, une inscription
+par étage dans le journal, la voix derrière le mur à l'échoppe, et la
+quittance en guise de victoire — **on ne sort de Faerghail qu'acquitté**.
 
 ### Création du groupe
 
@@ -595,3 +628,5 @@ de Paula.
 - Interruption COPER : découper l'image en bandes et changer de palette à
   mi-écran depuis le processeur plutôt que depuis la copperlist.
 - Faire tourner les deux démos dans le banc 68020, comme le jeu.
+- Le grand registre au dernier étage, et une vraie salle de greffe : voir la
+  fin de [docs/histoire.md](docs/histoire.md).

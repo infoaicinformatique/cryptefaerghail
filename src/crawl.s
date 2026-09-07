@@ -3597,6 +3597,7 @@ StartAdventure:
 	bsr	AddItem
 	lea	TxtIntro,a0
 	bsr	LogAdd
+	bsr	LogFloor
 	rts
 
 CreateKey:
@@ -5316,8 +5317,25 @@ Descend:
 	bsr	SfxPlay
 	lea	TxtDescend,a0
 	bsr	LogAdd
+	bsr	LogFloor
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; LogFloor : une ligne de journal propre a l'etage. La crypte etait une
+; maison de garde -- un etage par generation de greffiers, et la
+; profondeur vaut l'anciennete des dettes (voir docs/histoire.md).
+LogFloor:
+	movem.l	d0/a0,-(sp)
+	move.w	Level,d0
+	cmp.w	#LEVELS,d0
+	bcc.s	.done
+	lsl.w	#2,d0
+	lea	FloorLore,a0
+	move.l	(a0,d0.w),a0
+	bsr	LogAdd
+.done:
+	movem.l	(sp)+,d0/a0
 	rts
 
 ; SetGates : d6 = numero du mecanisme, d3 = terrain a poser sur ses
@@ -6708,6 +6726,9 @@ ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
 	dc.l	TxtCls4,TxtCls5,TxtCls6,TxtCls7
 
+FloorLore:				; l'inscription de chaque etage
+	dc.l	TxtFloor0,TxtFloor1,TxtFloor2
+
 RiddleTable:				; trois lignes, trois reponses, la bonne
 	dc.l	TxtR0Q1,TxtR0Q2,TxtR0Q3,TxtR0A1,TxtR0A2,TxtR0A3
 	dc.w	0,0
@@ -6735,7 +6756,10 @@ TxtInt:		dc.b	"INT ",0
 TxtSag:		dc.b	"SAG ",0
 TxtCha:		dc.b	"CHA ",0
 
-TxtIntro:	dc.b	"LA CRYPTE DE FAERGHAIL VOUS ATTEND.",0
+TxtIntro:	dc.b	"ON NE SORT DE FAERGHAIL QU'ACQUITTE.",0
+TxtFloor0:	dc.b	"LE GREFFE. LES GAGES SONT RECENTS.",0
+TxtFloor1:	dc.b	"PLUS BAS : LES VIEILLES ECHEANCES.",0
+TxtFloor2:	dc.b	"LE FOND. PLUS PERSONNE N'A PAYE.",0
 TxtCreate1:	dc.b	"CREEZ VOS QUATRE AVENTURIERS.",0
 TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
 TxtCreateTitle:	dc.b	"CREATION DU GROUPE",0
@@ -6766,7 +6790,7 @@ TxtFound:	dc.b	"VOUS TROUVEZ ",0
 TxtDrops:	dc.b	"VOUS JETEZ ",0
 TxtBagFull:	dc.b	"LE SAC EST PLEIN.",0
 TxtDescend:	dc.b	"UN ESCALIER. VOUS DESCENDEZ.",0
-TxtWin:		dc.b	"LA SORTIE ! VOUS REVOYEZ LE JOUR.",0
+TxtWin:		dc.b	"ACQUITTES. VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
 TxtYouHit:	dc.b	"LE GROUPE INFLIGE ",0
@@ -6788,7 +6812,7 @@ TxtSpellHit:	dc.b	"LE SORT INFLIGE ",0
 TxtHealed:	dc.b	" RECUPERE ",0
 TxtPvSuffix:	dc.b	" PV.",0
 TxtShopSeen:	dc.b	"UNE ECHOPPE ! ESPACE POUR ENTRER.",0
-TxtShopHello:	dc.b	"BIENVENUE, DIT LE MARCHAND.",0
+TxtShopHello:	dc.b	"UNE VOIX DERRIERE LE MUR : BIENVENUE",0
 TxtShopTitle:	dc.b	"ECHOPPE",0
 TxtShopBuy:	dc.b	"ACHAT",0
 TxtShopSell:	dc.b	"VENTE",0
@@ -6851,7 +6875,7 @@ TxtLeverSeen:	dc.b	"UN LEVIER SCELLE DANS LE MUR.",0
 TxtGateShut:	dc.b	"UNE HERSE DE FER BARRE LE PASSAGE.",0
 TxtLeverDown:	dc.b	"LE LEVIER CEDE. UNE HERSE SE LEVE.",0
 TxtLeverUp:	dc.b	"LE LEVIER REMONTE. LA HERSE RETOMBE.",0
-TxtRuneTitle:	dc.b	"LA PORTE VOUS PARLE",0
+TxtRuneTitle:	dc.b	"LA PORTE VERIFIE VOTRE DROIT",0
 TxtRuneAsk:	dc.b	"REPONDEZ : 1, 2 OU 3",0
 TxtRuneOk:	dc.b	"LES RUNES S'EFFACENT. PASSAGE !",0
 TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLERE.",0

@@ -200,17 +200,35 @@ Ils vont chercher le grand registre au dernier étage, et une plume.
 | Trois étages, de plus en plus dangereux | Un étage par génération, la profondeur vaut l'ancienneté |
 | Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
+| Elle ne s'ouvre qu'une fois la ligne rayée au registre | On ne sort de Faerghail qu'acquitté |
 | La partie se sauve à chaque étage | Le registre est tenu à jour |
+
+## Le greffe, et ce qu'on vient y faire
+
+Le grand registre est au fond du dernier étage, scellé dans un mur : un
+pupitre de chêne, le livre ouvert dessus, une chaîne qui le tient au mur —
+le registre ne sort pas —, l'encrier et la plume.
+
+La page porte quatre noms, et ce sont ceux du groupe. Une quittance de la
+maison a quatre colonnes de signature ; c'est pour cela qu'on descend à
+quatre, et c'est là que la raison de ce nombre se voit enfin. Rayer la ligne
+ne demande rien d'autre que d'être là : le greffier a été emmuré *avec le
+registre et de quoi écrire*, et ce de quoi écrire n'a jamais servi depuis.
+
+Ce que cela change, en jouant : l'escalier du dernier étage ne mène plus
+nulle part tant que la ligne n'est pas rayée. La porte des quittances tient
+bon, et le groupe repart chercher le greffe. Le troisième étage n'est plus une
+sortie à trouver, mais un compte à solder puis une sortie à trouver.
 
 ## Ce qui reste à écrire
 
-Le prologue de l'accueil dit le nom, la maison, l'emmurement et Ambelune. Le
-reste — l'échéance de chaque dalle, la question posée à chaque porte, ce
-qu'Ossian vend et pourquoi — ne se rencontre qu'en jouant, et ne se dit
-nulle part.
+Le prologue de l'accueil dit le nom, la maison, l'emmurement et Ambelune ; le
+registre dit la dette et la quittance. Le reste — l'échéance de chaque dalle,
+la question posée à chaque porte, ce qu'Ossian vend et pourquoi — ne se
+rencontre qu'en jouant, et ne se dit nulle part.
 
-Le grand registre, lui, n'est pas dans le jeu. Le dernier étage se termine sur
-un escalier et le jour, pas sur une salle de greffe, et Ossian n'a qu'une
-seule phrase d'accueil aux trois guichets. Ce sont les deux endroits où cette
-histoire dépasse encore ce que le programme sait raconter — et donc les deux
-prochaines choses à écrire, le jour où l'on ajoutera un quatrième étage.
+Il manque encore la salle : le registre est un pupitre dans un mur, pas un
+greffe, et Ossian n'a qu'une seule phrase d'accueil aux trois guichets. Ce
+sont les deux endroits où cette histoire dépasse encore ce que le programme
+sait raconter — et donc les deux prochaines choses à écrire, le jour où l'on
+ajoutera un quatrième étage.

@@ -172,6 +172,9 @@ déjà écrite y trouve sa raison.
 
 | Ce que le jeu fait | Pourquoi la maison le fait |
 |---|---|
+| Le grand registre, au fond du dernier étage | C'est un greffe : la maison tient ses comptes, et la ligne se raye là où elle est écrite |
+| Les quatre noms du groupe y font les quatre colonnes | Une quittance porte quatre signatures |
+| La sortie ne s'ouvre qu'une fois la ligne rayée | On ne sort de Faerghail qu'acquitté |
 | Un marchand scellé dans un mur, un par étage | L'emmurement de garde du dernier greffier : il est devenu une clause de la maison, et un guichet est un endroit, pas un homme |
 | Il rachète à moitié prix | Le taux d'un dépôt refait |
 | Une porte à runes par étage, **trois** réponses | Le contrôle par question — une clé se vole, pas une réponse — et les trois colonnes du registre |
@@ -262,7 +265,7 @@ ouvre le prologue, `ESC` quitte.
 | Touche | Effet |
 |---|---|
 | Flèches | avancer, reculer, tourner |
-| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, désamorcer un piège |
+| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
 | 1 à 4 | choisir le héros courant |
 | A / S / F | attaquer, lancer un sort, fuir (en combat) |
@@ -276,10 +279,29 @@ ouvre le prologue, `ESC` quitte.
 
 Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
 clés, trésors), 4 monstres animés sur deux poses, coffres, objets au sol,
-niches creusées dans les murs, portes ordinaires, portes verrouillées — et
+niches creusées dans les murs, portes ordinaires, portes verrouillées, le
+grand registre au fond du dernier étage — et
 une **porte à runes** par niveau, qui pose une énigme à trois réponses :
 juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
 un aventurier.
+
+**Le grand registre**, au greffe du dernier étage. Scellé dans un mur comme
+l'échoppe, mais loin du départ : il faut le chercher. `ESPACE` ouvre la page,
+qui porte les quatre noms du groupe — ce sont les quatre colonnes de signature
+d'une quittance. `ENTRÉE` raye la ligne, une fois pour toutes, et vaut de
+l'expérience à tout le monde.
+
+Sans cela, **l'escalier du dernier étage ne mène nulle part** : la porte des
+quittances ne cède qu'à qui a rayé sa ligne. Le troisième étage a donc un
+objet, et pas seulement une sortie — trouver le greffe, puis trouver
+l'escalier. Le générateur place le registre dans un mur bordé par un couloir
+atteignable **sans forcer une serrure**, jamais collé à l'escalier, et le
+contrôle par parcours en largeur, comme il le fait déjà pour les clés ; il
+tient aussi les dalles piégées à distance de son pupitre. La quittance est
+dans la partie sauvée — d'où un nouveau nombre magique, `FAE2` : une
+sauvegarde d'avant le registre n'a plus le bon compte et se refuse.
+
+![Le grand registre](docs/emu-registre.png)
 
 **Une échoppe par étage.** L'or ramassé dans les coffres et sur les cadavres
 ne servait à rien : chaque objet portait pourtant un prix dans `ItemTable`, et
@@ -644,5 +666,6 @@ de Paula.
 - Interruption COPER : découper l'image en bandes et changer de palette à
   mi-écran depuis le processeur plutôt que depuis la copperlist.
 - Faire tourner les deux démos dans le banc 68020, comme le jeu.
-- Le grand registre au dernier étage, et une vraie salle de greffe : voir la
-  fin de [docs/histoire.md](docs/histoire.md).
+- Une vraie salle de greffe autour du registre, plutôt qu'un pupitre dans un
+  mur, et une phrase d'accueil par étage pour la voix derrière le comptoir :
+  voir la fin de [docs/histoire.md](docs/histoire.md).

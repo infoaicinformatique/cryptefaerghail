@@ -43,6 +43,7 @@ T_LEVER		= 7			; levier scelle dans un mur
 T_GATE		= 8			; herse commandee par un levier
 T_SHOP		= 9			; echoppe scellee dans un mur
 T_TRAP		= 10			; dallage piege, invisible au depart
+T_LEDGER	= 11			; le grand registre, scelle au greffe
 
 ; MapParam d'un piege : le quartet bas donne l'espece, le bit 7 dit que
 ; le groupe l'a repere. Un piege desamorce redevient du dallage.
@@ -180,8 +181,10 @@ PHASE_PROLOG	= 3			; le prologue, depuis l'accueil
 PROLOGPAGES	= 4			; pages du prologue
 PROLOGROWS	= 16			; lignes qu'une page peut tenir
 TITLEH		= 176			; hauteur de l'illustration
-SAVEMAGIC	= $46414552		; "FAER"
-SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP
+; "FAE2" : la quittance s'est ajoutee a l'entete de la partie sauvee,
+; et une sauvegarde d'avant le grand registre n'a plus le bon compte.
+SAVEMAGIC	= $46414532		; "FAE2"
+SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -191,6 +194,7 @@ UI_MAP		= 5
 UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
+UI_LEDGER	= 9			; le grand registre
 
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
@@ -1604,6 +1608,8 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_SHOP,d2
 	beq.s	.yes
+	cmp.w	#T_LEDGER,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1691,6 +1697,11 @@ DrawScene:
 	bsr	DrawShop
 	bra	.done
 .notShop:
+	cmp.w	#UI_LEDGER,d0
+	bne.s	.notLedger
+	bsr	DrawLedger
+	bra	.done
+.notLedger:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1778,6 +1789,13 @@ DrawScene:
 	bsr	BlitPiece
 	bra.s	.noFront
 .notShopArt:
+	cmp.w	#T_LEDGER,d4		; le pupitre du greffe
+	bne.s	.notLedgerArt
+	moveq	#ART_LEDGER,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	bra.s	.noFront
+.notLedgerArt:
 	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
 	bne.s	.noFront
 	move.w	d7,d2
@@ -2156,45 +2174,50 @@ DrawStatus:
 	cmp.w	#UI_INV,d0
 	bne.s	.helpSpell
 	lea	TxtHelpInv,a0
-	bra.s	.help
+	bra	.help
 .helpSpell:
 	cmp.w	#UI_SPELL,d0
 	bne.s	.helpRiddle
 	lea	TxtHelpSpell,a0
-	bra.s	.help
+	bra	.help
 .helpRiddle:
 	cmp.w	#UI_RIDDLE,d0
 	bne.s	.helpMap
 	lea	TxtHelpRiddle,a0
-	bra.s	.help
+	bra	.help
 .helpMap:
 	cmp.w	#UI_MAP,d0
 	bne.s	.helpBook
 	lea	TxtHelpMap,a0
-	bra.s	.help
+	bra	.help
 .helpBook:
 	cmp.w	#UI_BOOK,d0
 	bne.s	.helpOpts
 	lea	TxtHelpBook,a0
-	bra.s	.help
+	bra	.help
 .helpOpts:
 	cmp.w	#UI_OPTS,d0
 	bne.s	.helpShop
 	lea	TxtHelpOpts,a0
-	bra.s	.help
+	bra	.help
 .helpShop:
 	cmp.w	#UI_SHOP,d0
-	bne.s	.helpOther
+	bne.s	.helpLedger
 	lea	TxtHelpShop,a0
-	bra.s	.help
+	bra	.help
+.helpLedger:
+	cmp.w	#UI_LEDGER,d0
+	bne.s	.helpOther
+	lea	TxtHelpLedger,a0
+	bra	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
-	bra.s	.help
+	bra	.help
 .helpView:
 	tst.w	InCombat
 	beq.s	.helpMove
 	lea	TxtHelpFight,a0
-	bra.s	.help
+	bra	.help
 .helpMove:
 	lea	TxtHelpMove,a0
 .help:
@@ -4046,6 +4069,7 @@ NewGame:
 	clr.w	InvCursor
 	clr.w	InvTop
 	clr.w	KeyCount
+	clr.w	Acquitted
 	move.w	#20,Gold
 	lea	Heroes,a1
 	move.w	#NHEROES*hr_SIZEOF-1,d0
@@ -4211,6 +4235,8 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.gate
 	cmp.w	#T_SHOP,d0
 	beq	.shop
+	cmp.w	#T_LEDGER,d0
+	beq	.ledger
 	cmp.w	#T_TRAP,d0
 	beq	.trap
 
@@ -4258,6 +4284,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bra	.redraw
 .shop:
 	lea	TxtShopSeen,a0
+	bsr	LogAdd
+	bra	.redraw
+.ledger:
+	lea	TxtLedgerSeen,a0
 	bsr	LogAdd
 	bra	.redraw
 
@@ -4394,6 +4424,8 @@ DoAction:
 	beq	.lever
 	cmp.w	#T_SHOP,d0
 	beq	.shopOpen
+	cmp.w	#T_LEDGER,d0
+	beq	.ledgerOpen
 	cmp.w	#T_TRAP,d0
 	beq	.trapDisarm
 	lea	TxtNothing,a0
@@ -4407,6 +4439,13 @@ DoAction:
 	moveq	#SFX_COIN,d0
 	bsr	SfxPlay
 	lea	TxtShopHello,a0
+	bsr	LogAdd
+	bra	.done
+.ledgerOpen:
+	move.w	#UI_LEDGER,UiMode
+	moveq	#SFX_CHEST,d0
+	bsr	SfxPlay
+	lea	TxtLedgerOpen,a0
 	bsr	LogAdd
 	bra	.done
 .trapDisarm:
@@ -4611,6 +4650,11 @@ MapColour:
 	move.w	#C_STONE+12,d0		; niche
 	bra.s	.done
 .notNiche:
+	cmp.w	#T_LEDGER,d2
+	bne.s	.notLedgerMap
+	move.w	#C_PARCH,d0		; le greffe : on y revient
+	bra.s	.done
+.notLedgerMap:
 	cmp.w	#T_WALL,d2
 	bne.s	.floor
 	move.w	#C_STONE+4,d0		; mur reconnu
@@ -4696,7 +4740,7 @@ DrawMap:
 	blt	.rowLoop
 
 	lea	LegendTab,a2		; la legende, chacun dans sa couleur
-	moveq	#5,d7
+	moveq	#6,d7
 .legLoop:
 	move.l	(a2)+,a0
 	moveq	#0,d0
@@ -5432,16 +5476,166 @@ DisarmTrap:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+
+;----------------------------------------------------------------------
+; Le grand registre, au greffe du dernier etage
+;
+; La maison de garde tenait ses comptes ici : un nom, une promesse, un
+; gage, et la ligne rayee le jour ou le deposant revenait le chercher.
+; Personne n'est revenu depuis un siecle, et la maison recouvre sur les
+; heritiers -- c'est pour cela que le groupe est descendu.
+;
+; Le registre montre les quatre noms du groupe, qui sont les quatre
+; colonnes de signature d'une quittance. Rayer la ligne ouvre la porte
+; des quittances, tout en bas : sans cela, l'escalier du dernier etage
+; ne mene nulle part (voir Descend).
+;----------------------------------------------------------------------
+DrawLedger:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+
+	lea	TxtLedgerTitle,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	TxtLedgerHouse,a0
+	moveq	#3,d0
+	moveq	#32,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtLedgerFloor,a0
+	moveq	#3,d0
+	moveq	#42,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+
+	lea	TxtLedgerHead,a0	; l'en-tete suit l'etat de la ligne
+	tst.w	Acquitted
+	beq.s	.headOk
+	lea	TxtLedgerHeadOk,a0
+.headOk:
+	moveq	#3,d0
+	moveq	#58,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+
+	lea	Heroes,a6		; les quatre colonnes de signature
+	moveq	#0,d7
+.nameLoop:
+	lea	TmpStr,a1
+	move.w	d7,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	lea	TxtLedgerDot,a0
+	bsr	StrCopy
+	tst.w	hr_HpMax(a6)
+	beq.s	.empty
+	move.l	a6,a0
+	bra.s	.copyName
+.empty:
+	lea	TxtEmptySlot,a0
+.copyName:
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#5,d0
+	move.w	d7,d1
+	mulu.w	#10,d1
+	add.w	#70,d1
+	move.w	#C_TEXT,d2
+	tst.w	Acquitted
+	beq.s	.notPaid
+	move.w	#C_TEXTLOW,d2		; raye : la ligne s'eteint
+.notPaid:
+	bsr	DrawText
+	lea	hr_SIZEOF(a6),a6
+	addq.w	#1,d7
+	cmp.w	#NHEROES,d7
+	blt.s	.nameLoop
+
+	tst.w	Acquitted		; le pied de la page
+	bne.s	.struck
+	lea	TxtLedgerQuill,a0
+	moveq	#3,d0
+	move.w	#118,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtLedgerAsk,a0
+	moveq	#3,d0
+	move.w	#132,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	bra.s	.done
+.struck:
+	lea	TxtLedgerDone,a0
+	moveq	#3,d0
+	move.w	#118,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	TxtLedgerFree,a0
+	moveq	#3,d0
+	move.w	#132,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; LedgerKey : ENTREE raye la ligne, et on ne la raye qu'une fois.
+LedgerKey:
+	movem.l	d0-d7/a0-a6,-(sp)
+	cmp.w	#KEY_RETURN,d0
+	bne	.done
+	tst.w	Acquitted
+	bne	.done
+	move.w	#1,Acquitted
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtLedgerStruck,a0
+	bsr	LogAdd
+	lea	TxtLedgerOut,a0
+	bsr	LogAdd
+	lea	Heroes,a6		; signer, c'est comprendre ou l'on est
+	moveq	#NHEROES-1,d6
+.xpLoop:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpNext
+	add.w	#60,hr_Xp(a6)
+	bsr	CheckLevel
+.xpNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.xpLoop
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
 Descend:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	Level,d0
 	addq.w	#1,d0
 	cmp.w	#LEVELS,d0
 	blt.s	.next
+	tst.w	Acquitted		; la porte des quittances ne s'ouvre
+	beq.s	.unpaid			; qu'a qui a raye sa ligne
 	move.w	#1,GameOver
 	moveq	#SFX_LEVEL,d0
 	bsr	SfxPlay
 	lea	TxtWin,a0
+	bsr	LogAdd
+	bra.s	.done
+.unpaid:
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtDoorHeld,a0
+	bsr	LogAdd
+	lea	TxtDoorHeld2,a0
 	bsr	LogAdd
 	bra.s	.done
 .next:
@@ -6515,6 +6709,11 @@ HandleKey:
 	bsr	AnswerRiddle
 	bra	.done
 .notRiddleUi:
+	cmp.w	#UI_LEDGER,d1		; --- le grand registre
+	bne.s	.notLedgerUi
+	bsr	LedgerKey
+	bra	.done
+.notLedgerUi:
 	cmp.w	#UI_SPELL,d1		; --- choix d'un sort
 	bne.s	.notSpellUi
 	move.w	d0,d2
@@ -6817,7 +7016,8 @@ ZeroWord:	dc.w	0
 
 ; Ce qu'une partie contient : adresse et longueur de chaque bloc.
 SaveList:
-	dc.l	PosX,12			; PosX, PosY, Dir, Level, Gold, KeyCount
+	dc.l	PosX,14			; PosX, PosY, Dir, Level, Gold, KeyCount,
+					; Acquitted
 	dc.l	Heroes,NHEROES*hr_SIZEOF
 	dc.l	Inventory,INVSIZE
 	dc.l	MapTerrain,MAPBYTES
@@ -6857,6 +7057,8 @@ LegendTab:
 	dc.b	3,140,14,0
 	dc.l	TxtLegMonster
 	dc.b	12,140,3,0
+	dc.l	TxtLegLedger
+	dc.b	20,140,C_PARCH,0
 
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
@@ -7076,13 +7278,30 @@ TxtCasts:	dc.b	" LANCE ",0
 TxtSpellHit:	dc.b	"LE SORT INFLIGE ",0
 TxtHealed:	dc.b	" RECUPERE ",0
 TxtPvSuffix:	dc.b	" PV.",0
+TxtLedgerSeen:	dc.b	"UN PUPITRE. UN LIVRE ENCHAINE.",0
+TxtLedgerOpen:	dc.b	"LE GRAND REGISTRE DE FAERGHAIL.",0
+TxtLedgerTitle:	dc.b	"LE GRAND REGISTRE",0
+TxtLedgerHouse:	dc.b	"MAISON DE GARDE",0
+TxtLedgerFloor:	dc.b	"GREFFE DU FOND",0
+TxtLedgerHead:	dc.b	"LIGNE NON RAYEE :",0
+TxtLedgerHeadOk: dc.b	"LIGNE RAYEE :",0
+TxtLedgerDot:	dc.b	". ",0
+TxtLedgerQuill:	dc.b	"LA PLUME EST A PORTEE.",0
+TxtLedgerAsk:	dc.b	"ENTREE : RAYER LA LIGNE",0
+TxtLedgerDone:	dc.b	"LA LIGNE EST RAYEE.",0
+TxtLedgerFree:	dc.b	"VOUS ETES ACQUITTES.",0
+TxtLedgerStruck: dc.b	"LA PLUME RAYE LA LIGNE.",0
+TxtLedgerOut:	dc.b	"LA MAISON NE VOUS DOIT PLUS RIEN.",0
+TxtDoorHeld:	dc.b	"L'ESCALIER DESCEND SUR UNE PORTE.",0
+TxtDoorHeld2:	dc.b	"ELLE NE CEDE PAS : RIEN N'EST RAYE.",0
+TxtHelpLedger:	dc.b	"ENTREE RAYE LA LIGNE   ESC REFERME",0
 TxtShopSeen:	dc.b	"UNE ECHOPPE ! ESPACE POUR ENTRER.",0
 TxtShopHello:	dc.b	"UNE VOIX DERRIERE LE MUR : BIENVENUE",0
 TxtShopTitle:	dc.b	"ECHOPPE",0
 TxtShopBuy:	dc.b	"ACHAT",0
 TxtShopSell:	dc.b	"VENTE",0
 TxtShopHelp:	dc.b	"TAB CHANGE DE COTE",0
-TxtShopHelp2:	dc.b	"ENTREE CONCLUT, ESC SORT",0
+TxtShopHelp2:	dc.b	"ENTREE CONCLUT ESC SORT",0
 TxtShopGold:	dc.b	"OR ",0
 TxtShopEmpty:	dc.b	"L'ETAL EST VIDE.",0
 TxtShopNoSell:	dc.b	"VOTRE SAC EST VIDE.",0
@@ -7224,6 +7443,7 @@ TxtLegShut:	dc.b	"FERMEE",0
 TxtLegYou:	dc.b	"VOUS",0
 TxtLegStairs:	dc.b	"ESCALIER",0
 TxtLegMonster:	dc.b	"MONSTRE",0
+TxtLegLedger:	dc.b	"GREFFE",0
 TxtHelpMap:	dc.b	"M OU ESC POUR REFERMER LA CARTE",0
 TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
 TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
@@ -7280,6 +7500,7 @@ Dir:		ds.w	1
 Level:		ds.w	1
 Gold:		ds.w	1
 KeyCount:	ds.w	1
+Acquitted:	ds.w	1		; la ligne du registre est rayee
 InCombat:	ds.w	1
 MonKind:	ds.w	1
 MonArt:		ds.w	1

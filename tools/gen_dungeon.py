@@ -686,6 +686,94 @@ def make_shop():
     return p
 
 
+def make_ledger():
+    """Le grand registre : une niche muree en pupitre, le livre ouvert
+    dessus, la chaine qui le tient au mur, l'encrier et la plume.
+
+    Il occupe un mur entier comme l'echoppe -- c'est l'affaire du
+    dernier etage, on ne doit pas passer devant sans le voir. Le fond
+    du renfoncement reste clair : un livre noir dans un trou noir ne se
+    lirait pas, et c'est la seule chose que l'on vient voir ici."""
+    x0, x1 = snap(CX - 46, CX + 46)
+    y0, y1 = CY - 42, CY + 36
+    p = Piece(x0, y0, x1 - x0, y1 - y0)
+
+    for y in range(CY - 36, CY + 30):                 # le renfoncement
+        for x in range(CX - 42, CX + 43):
+            e = max(abs(x - CX) / 42.0, abs(y - (CY - 3)) / 33.0)
+            if e > 1.0:
+                continue
+            if e > 0.94:                              # l'encadrement taille
+                p.set(x, y, pal.lit("STONE", 0.30 + 0.24 * e))
+            else:                                     # le fond, eclaire
+                p.set(x, y, pal.lit("EARTH", 0.60 + 0.26 * e))
+
+    for y in range(CY + 10, CY + 30):                 # le pupitre de chene
+        for x in range(CX - 38, CX + 39):
+            grain = 0.30 + 0.24 * ((x * 5 + y * 3) % 5) / 4.0
+            p.set(x, y, pal.lit("WOOD", min(1.0, grain + 0.26)))
+    for x in range(CX - 38, CX + 39):                 # son arete eclairee
+        p.set(x, CY + 10, pal.lit("WOOD", 0.20))
+        p.set(x, CY + 11, pal.lit("WOOD", 0.26))
+
+    # Le livre ouvert, en perspective : etroit au fond, large devant.
+    def half_at(y):
+        return int(12 + 26 * ((y - (CY - 24)) / 36.0))
+
+    for y in range(CY - 24, CY + 12):
+        half = half_at(y)
+        for x in range(CX - half, CX + half + 1):
+            d = abs(x - CX)
+            if d < 2:                                 # la reliure, dans l'ombre
+                p.set(x, y, pal.lit("WOOD", 0.84))
+            elif d > half - 4:                        # la tranche des feuillets
+                p.set(x, y, pal.lit("PARCHD", 0.26))
+            else:
+                creux = 0.06 + 0.24 * (1.0 - d / float(half))
+                p.set(x, y, pal.lit("PARCH", creux))
+
+    # Les lignes ecrites, et une seule rayee d'un trait : celle qu'on
+    # est venu rayer.
+    for i in range(10):
+        yy = CY - 20 + i * 3
+        half = half_at(yy)
+        for side in (-1, 1):
+            a, b = CX + side * 6, CX + side * (half - 6)
+            for x in range(min(a, b), max(a, b)):
+                if (x + i) % 3:                       # une ecriture, pas un trait
+                    p.set(x, yy, pal.lit("INK", 0.30))
+    ry = CY - 2
+    for x in range(CX + 6, CX + half_at(ry) - 6):     # la ligne rayee
+        p.set(x, ry, pal.lit("BLOOD", 0.22))
+        p.set(x, ry + 1, pal.lit("BLOOD", 0.30))
+
+    # La chaine qui tient le livre au mur : le registre ne sort pas.
+    # Des maillons espaces, pas un trait plein -- sinon on croit voir
+    # une barre de fer posee en travers de la page.
+    for i in range(8):
+        cx, cy = CX - 40 + i * 4, CY - 30 + i * 2
+        for dy in range(2):
+            for dx in range(2):
+                p.set(cx + dx, cy + dy, pal.lit("IRON", 0.24))
+        p.set(cx + 2, cy + 1, pal.lit("IRON", 0.62))   # le maillon suivant
+
+    # L'encrier et la plume, poses la ou le livre est encore etroit.
+    for y in range(CY - 24, CY - 12):
+        for x in range(CX + 24, CX + 38):
+            d = ((x - (CX + 31)) / 7.0) ** 2 + ((y - (CY - 18)) / 6.0) ** 2
+            if d <= 1.0:
+                p.set(x, y, pal.lit("IRON", 0.18 + 0.44 * d))
+    for i in range(20):                               # le tuyau, sombre
+        x, y = CX + 30 + i // 2, CY - 20 - i
+        p.set(x, y, pal.lit("INK", 0.24))
+        p.set(x + 1, y, pal.lit("BONE", 0.30 + 0.40 * (i / 20.0)))
+    for i in range(9):                                # les barbes, en haut
+        x, y = CX + 35 + i // 2, CY - 30 - i
+        for k in range(1, 4):
+            p.set(x - k, y + k, pal.lit("BONE", 0.20 + 0.06 * k))
+    return p
+
+
 def make_trap():
     """La dalle piegee, une fois reperee : une croix gravee a la craie
     sur le dallage, juste devant le groupe. Elle ne se voit que quand
@@ -1325,6 +1413,8 @@ def build_art():
     pieces += [make_niche()]
     ART_INDEX["ART_SHOP"] = len(pieces)
     pieces += [make_shop()]
+    ART_INDEX["ART_LEDGER"] = len(pieces)
+    pieces += [make_ledger()]
     ART_INDEX["ART_TRAP"] = len(pieces)
     pieces += [make_trap()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
@@ -1411,6 +1501,7 @@ MAPW = MAPH = 24
 FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
 LEVER, GATE = 7, 8                       # herse et son levier
 SHOP, TRAP = 9, 10                       # echoppe et dallage piege
+LEDGER = 11                              # le grand registre, dernier etage
 NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
@@ -1608,8 +1699,38 @@ def build_level(level, seed):
         if shop in free:
             free.remove(shop)
 
+    # Le grand registre, au dernier etage seulement : le greffe est au
+    # fond, la ou les echeances sont les plus vieilles. On le scelle
+    # dans un mur borde par un couloir, loin du depart -- il faut le
+    # chercher -- mais jamais colle a l'escalier, sinon on tomberait
+    # dessus en sortant. Sans lui, la porte des quittances ne cede pas.
+    ledger = None
+    if level == 2:
+        for (cx, cy), d in sorted(reach.items(), key=lambda kv: -kv[1]):
+            if grid[cy][cx] != FLOOR:
+                continue
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = cx + dx, cy + dy
+                if not (0 < nx < MAPW - 1 and 0 < ny < MAPH - 1):
+                    continue
+                if grid[ny][nx] != WALL or par[ny][nx]:
+                    continue
+                if abs(nx - far[0]) + abs(ny - far[1]) < 3:
+                    continue
+                if shop and abs(nx - shop[0]) + abs(ny - shop[1]) < 3:
+                    continue
+                ledger = (nx, ny)
+                break
+            if ledger:
+                break
+        assert ledger, "dernier etage sans grand registre"
+        grid[ledger[1]][ledger[0]] = LEDGER
+        if ledger in free:
+            free.remove(ledger)
+
     # Les dalles piegees : sur du dallage nu, loin du depart, et jamais
-    # devant l'echoppe -- on doit pouvoir aller marchander sans sauter.
+    # devant l'echoppe ni devant le registre -- on doit pouvoir aller
+    # marchander et signer sans sauter.
     traps = 0
     for x, y in list(free):
         if traps >= 4 + 2 * level:
@@ -1619,6 +1740,8 @@ def build_level(level, seed):
         if reach.get((x, y), 0) < 4:
             continue
         if shop and abs(x - shop[0]) + abs(y - shop[1]) <= 1:
+            continue
+        if ledger and abs(x - ledger[0]) + abs(y - ledger[1]) <= 1:
             continue
         grid[y][x] = TRAP
         par[y][x] = rnd.randrange(NTRAPKINDS)
@@ -1672,7 +1795,8 @@ def distances(grid, start, blocked=()):
                 continue
             if (nx, ny) in blocked:
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE, SHOP):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE, SHOP,
+                                         LEDGER):
                 continue
             dist[(nx, ny)] = dist[(x, y)] + 1
             q.append((nx, ny))
@@ -1681,7 +1805,9 @@ def distances(grid, start, blocked=()):
 
 def check_solvable(grid, par, start):
     """Le niveau doit rester finissable : au moins une cle atteignable
-    sans forcer une serrure, ou l'escalier accessible directement."""
+    sans forcer une serrure, ou l'escalier accessible directement. Et
+    au dernier etage, le grand registre doit s'atteindre : la sortie
+    n'ouvre pas tant que la ligne n'est pas rayee."""
     import collections
     seen, q = {start}, collections.deque([start])
     keys, stairs = 0, False
@@ -1696,12 +1822,20 @@ def check_solvable(grid, par, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER, SHOP):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER, SHOP,
+                                         LEDGER):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
     assert stairs or keys > 0, \
         "niveau bloque : ni escalier ni cle sans forcer une serrure"
+
+    ledgers = [(x, y) for y in range(MAPH) for x in range(MAPW)
+               if (grid[y][x] & 0x0f) == LEDGER]
+    for lx, ly in ledgers:                           # scelle dans un mur : on
+        assert any((lx + dx, ly + dy) in seen       # le lit depuis le couloir
+                   for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))), \
+            "grand registre hors d'atteinte : la sortie ne s'ouvrirait pas"
 
     # Chaque levier doit s'atteindre sans franchir la herse qu'il commande,
     # sinon le mecanisme s'enferme lui-meme.
@@ -1756,7 +1890,7 @@ def check_reachable(grid, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP, LEDGER):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))

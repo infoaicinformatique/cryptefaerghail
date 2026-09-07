@@ -127,9 +127,22 @@ def prolog_pages(g, fails):
         g.key(T.K_SPACE)
 
 
+def frame(g):
+    """Fait tourner le jeu jusqu'a ce qu'il ait redessine.
+
+    Poser NeedRedraw ne dessine rien : c'est la boucle principale qui
+    lit ce drapeau. Sans ce tour de manivelle, les panneaux montes a la
+    main -- l'echoppe, le registre -- etaient photographies sur l'image
+    precedente, et le banc declarait dans le cadre un panneau qui n'y
+    avait jamais ete dessine."""
+    g.setw("NeedRedraw", 1)
+    g.run(slices=120, idle=g.idle)
+
+
 def shot(g, name, fails, ring=True):
     """`ring` a faux pour l'accueil : son illustration couvre l'ecran
     entier, elle a le droit d'occuper la bordure."""
+    frame(g)
     px = S.grab(g, "ShowBuf")
     bad = outside(px) if ring else []
     if bad:
@@ -186,6 +199,17 @@ if __name__ == "__main__":
     g.setw("ShopTop", 16)
     g.setw("NeedRedraw", 1)
     shot(g, "echoppe-vente", fails)
+    g.setw("UiMode", 0)
+    g.setw("NeedRedraw", 1)
+
+    # Le grand registre, dans ses deux etats : la page porte les quatre
+    # noms du groupe, et le pied change une fois la ligne rayee.
+    for state, name in ((0, "registre"), (1, "registre-raye")):
+        g.setw("Acquitted", state)
+        g.setw("UiMode", T.read_equ("UI_LEDGER", 9))
+        g.setw("NeedRedraw", 1)
+        shot(g, name, fails)
+    g.setw("Acquitted", 0)
     g.setw("UiMode", 0)
     g.setw("NeedRedraw", 1)
 

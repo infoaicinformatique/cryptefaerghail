@@ -194,8 +194,9 @@ class Game(R.Harness):
 MAPH = 24
 PANEL_X, PANEL_TOP, PANEL_STEP = 224, 12, 37
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
-T_WALL, T_NICHE, T_LEVER, T_GATE = 1, 5, 7, 8
+T_WALL, T_LOCKED, T_NICHE, T_LEVER, T_GATE = 1, 4, 5, 7, 8
 T_SHOP, T_TRAP = 9, 10
+T_LEDGER = 11                                    # le grand registre
 C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
 
 
@@ -384,6 +385,111 @@ def shop_test(g, fails):
     print("  sans le sou : le marchand ne cede rien")
     g.key(K_ESC)
     check(g.w("UiMode") == 0, "l'echoppe ne se referme pas", fails)
+
+
+def ledger_test(g, fails):
+    """Le grand registre du dernier etage, et la porte des quittances.
+
+    On descend d'autorite au troisieme -- y arriver en jouant prendrait
+    la moitie du banc -- puis on verifie les deux moities de la regle :
+    l'escalier ne rend pas le jour tant que la ligne n'est pas rayee, et
+    la rayer suffit a l'ouvrir."""
+    g.setw("GameOver", 0)                 # le fuzzing a pu achever le groupe
+    g.setw("UiMode", 0)
+    g.setw("InCombat", 0)
+    heal(g)
+    g.setw("Level", 2)
+    if not check(g.call(g.addr("LoadLevel")), "LoadLevel ne rend pas la main",
+                 fails):
+        return
+    g.setw("Acquitted", 0)
+    g.setw("NeedRedraw", 1)
+    g.key(K_1)                            # laisser le jeu se remettre en place
+
+    # La marche jusqu'au greffe puis jusqu'a l'escalier traverse un
+    # etage entier de dalles piegees, de herses et de monstres du
+    # troisieme, qui aurait raison d'un groupe arrive la par la porte de
+    # service. On deblaie : ce qui est eprouve ici, c'est le registre et
+    # la porte des quittances, pas la traversee -- les pieges, les
+    # leviers et les combats ont chacun leur banc.
+    ter = g.addr("MapTerrain")
+    for y in range(MAPH):
+        for x in range(MAPW):
+            cell = g.mem.r8(ter + y * MAPW + x)
+            if cell & 0x0f == T_TRAP:
+                g.mem.w8(ter + y * MAPW + x, cell & 0xf0)
+            elif cell & 0x0f == T_GATE:          # une herse et son levier
+                g.mem.w8(ter + y * MAPW + x, cell & 0xf0)
+            elif cell & 0x30 == 0x20:            # un monstre poste la
+                g.mem.w8(ter + y * MAPW + x, cell & 0x0f)
+
+    grid = grid_of(g)
+    seats = [(x, y) for y in range(MAPH) for x in range(MAPW)
+             if grid[y][x] & 0x0f == T_LEDGER]
+    if not check(seats, "aucun grand registre au dernier etage", fails):
+        return
+    lx, ly = seats[0]
+    spot = [(lx + dx, ly + dy) for dx, dy in DIRS
+            if 0 <= lx + dx < MAPW and 0 <= ly + dy < MAPH
+            and grid[ly + dy][lx + dx] & 0x0f not in
+            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER)]
+    if not check(spot, f"registre mure en {lx},{ly}", fails):
+        return
+    if not walk_to(g, spot[0], budget=200):
+        fails.append(f"impossible d'atteindre le registre en {spot[0]} "
+                     f"(arret en {(g.w('PosX'), g.w('PosY'))}, "
+                     f"combat {g.w('InCombat')}, fin {g.w('GameOver')}, "
+                     f"ui {g.w('UiMode')})")
+        return
+    if not check(face_cell(g, (lx, ly)), "impossible de faire face au "
+                 "registre", fails):
+        return
+
+    stairs = [(x, y) for y in range(MAPH) for x in range(MAPW)
+              if grid[y][x] & 0x0f == 3]
+    g.key(K_SPACE)
+    ui = g.w("UiMode")
+    if not check(ui == 9, f"le registre ne s'ouvre pas (UiMode={ui})", fails):
+        return
+    check(g.w("Acquitted") == 0, "la ligne est rayee avant qu'on signe", fails)
+    xp0 = g.hero(0, "hr_Xp")
+    g.key(K_RET)
+    check(g.w("Acquitted") == 1, "ENTREE ne raye pas la ligne", fails)
+    check(g.hero(0, "hr_Xp") > xp0, "rayer la ligne ne vaut aucune "
+          "experience", fails)
+    g.key(K_RET)                          # on ne la raye pas deux fois
+    check(g.w("Acquitted") == 1, "la quittance se defait", fails)
+    g.key(K_ESC)
+    print(f"  registre en {lx},{ly} : la ligne se raye, et une seule fois")
+
+    if not check(stairs, "pas d'escalier au dernier etage", fails):
+        return
+    g.setw("Acquitted", 0)                # la porte, ligne non rayee
+    g.setw("KeyCount", 5)                 # les serrures ne sont pas le sujet
+    if not walk_to(g, stairs[0], budget=400):
+        fails.append(f"impossible d'atteindre l'escalier en {stairs[0]} "
+                     f"(arret en {(g.w('PosX'), g.w('PosY'))}, "
+                     f"fin {g.w('GameOver')})")
+        return
+    check(g.w("GameOver") == 0, "la sortie s'ouvre sans quittance", fails)
+
+    # La quittance signee, la meme porte. Il faut redescendre la marche :
+    # c'est le pas qui la franchit qui compte, pas le fait d'etre dessus.
+    grid = grid_of(g)
+    back = [(stairs[0][0] + dx, stairs[0][1] + dy) for dx, dy in DIRS
+            if 0 <= stairs[0][0] + dx < MAPW and 0 <= stairs[0][1] + dy < MAPH
+            and grid[stairs[0][1] + dy][stairs[0][0] + dx] & 0x0f == 0]
+    if not check(back, "escalier sans case voisine ou reculer", fails):
+        return
+    g.setw("Acquitted", 1)
+    g.setw("NeedRedraw", 1)
+    if not walk_to(g, back[0], budget=20) or not walk_to(g, stairs[0],
+                                                         budget=20):
+        fails.append("impossible de revenir a l'escalier")
+        return
+    check(g.w("GameOver") == 1, "la sortie reste fermee malgre la quittance",
+          fails)
+    print("  la porte des quittances : fermee sans, ouverte avec")
 
 
 def trap_test(g, fails):
@@ -593,8 +699,10 @@ def walk_to(g, target, budget=80):
                     continue
                 t = grid[nxt[1]][nxt[0]] & 0x0f
                 if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE,
-                                        T_SHOP, T_TRAP):
+                                        T_SHOP, T_LEDGER, T_TRAP):
                     continue                 # les pieges se testent a part
+                if t == T_LOCKED and g.w("KeyCount") == 0:
+                    continue                 # sans cle, ce n'est pas un chemin
                 seen[nxt] = cur
                 q.append(nxt)
         if not path or len(path) < 2:
@@ -710,7 +818,7 @@ if __name__ == "__main__":
     for n in range(800):
         g.key(random.choice(allkeys))
         ui, phase = g.w("UiMode"), g.w("Phase")
-        if not check(ui <= 8, f"UiMode={ui}", fails):
+        if not check(ui <= 9, f"UiMode={ui}", fails):
             break
         if not check(phase <= 3, f"Phase={phase}", fails):
             break
@@ -722,6 +830,9 @@ if __name__ == "__main__":
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
           f"niveau {g.w('Level')} or {g.w('Gold')}")
+
+    print("--- le grand registre ---")
+    ledger_test(g, fails)
 
     print()
     if fails:

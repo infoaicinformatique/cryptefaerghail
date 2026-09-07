@@ -54,7 +54,9 @@ L'ACCUEIL
   La partie se sauve toute seule : des que le groupe est forme, a
   chaque etage franchi, et quand vous abandonnez par ESC. Le fichier
   s'appelle AGACrawl.sav et se range a cote du programme (PROGDIR:) ;
-  effacez-le pour repartir de zero.
+  effacez-le pour repartir de zero. Une sauvegarde faite avant que le
+  grand registre existe n'a plus le bon compte : le jeu la refuse et
+  reste sur l'accueil.
 
 CREATION DU GROUPE
   Quatre aventuriers, chacun d'une des huit classes :
@@ -220,6 +222,17 @@ LE DONJON
   portes ordinaires et portes verrouillees qui demandent une cle.
   Onze armes, cinq protections, potions, parchemins et tresors.
   Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
+
+LE GRAND REGISTRE
+  Au fond du dernier etage, scelle dans un mur : un pupitre, le livre
+  ouvert dessus, la chaine qui le tient, l'encrier et la plume.
+  ESPACE ouvre la page. Elle porte les quatre noms du groupe -- une
+  quittance de la maison a quatre colonnes de signature, c'est pour
+  cela qu'on descend a quatre. ENTREE raye la ligne, une seule fois,
+  et vaut de l'experience a tout le monde.
+  Sans cela, l'escalier du dernier etage ne mene nulle part : la porte
+  des quittances ne cede qu'a qui a raye sa ligne. Le greffe apparait
+  sur la carte, en couleur de parchemin.
   Chaque etage a sa porte a runes : elle pose une question et n'accepte
   que trois reponses -- une clef se vole, pas une reponse. Juste, elle
   s'efface ; faux, la rune inscrit un aventurier, au fer.

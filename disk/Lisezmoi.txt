@@ -1,11 +1,11 @@
-LA CRYPTE DE FAERGHAIL - ET DEUX DEMOS AGA
-==========================================
+LA CRYPTE DE FAERGHAIL
+======================
 
-A lancer depuis le Shell (pas depuis le Workbench : ces programmes ne
-gerent pas le message WBStartup).
+A lancer depuis le Shell (pas depuis le Workbench : le programme ne
+gere pas le message WBStartup).
 
-AGACRAWL - LA CRYPTE DE FAERGHAIL
----------------------------------
+AGACRAWL
+--------
 Dungeon crawler en vue subjective, dans l'esprit de Black Crypt, avec
 des regles inspirees de D&D 3.5.
 
@@ -258,16 +258,13 @@ MUSIQUE ET BRUITAGES
   grincement de porte, coffre, potion, sort, grognement, montee de
   niveau, pas et rale -- puis rendue a la musique.
 
-AGASCROLL et AGADEMO : deux demonstrations AGA (playfield 8 bitplanes
-en scrolling materiel, scroller sinusoidal sur barres copper, degrade
-copper 24 bits, musique ProTracker).
-
 Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
 palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 700 Ko de
 Chip RAM libre.
 
-Le tiroir Src contient le source des deux demos et les trois fichiers
-ecrits a la main dont le jeu depend. Crawl.s ne tient plus sur la
-disquette -- cent quarante-huit mille octets -- : il est dans
-l'archive AGADemos.lha, qui porte tout. Graphismes, cartes, musique et
+Le tiroir Src contient tout le source ecrit a la main : crawl.s et les
+trois fichiers dont il depend. Les tables generees -- decors, cartes,
+police, degrades -- n'y sont pas : elles pesent trop, et les
+generateurs Python les refont en une seconde. L'archive
+Faerghail.lha, elle, porte tout. Graphismes, cartes, musique et
 bruitages sont generes par programme : rien n'est emprunte.

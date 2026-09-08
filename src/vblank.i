@@ -13,9 +13,7 @@
 ;
 ; Le programme fournit VBI_Frame : le travail d'une trame, appele depuis
 ; l'interruption. Tous les registres y sont libres (le gestionnaire les
-; a deja empiles) et a5 y vaut CUSTOM. Il fournit aussi VBI_Mid, appele
-; quand le copper reveille le processeur en cours d'image -- un simple
-; rts pour qui ne s'en sert pas. Il reserve aussi trois variables
+; a deja empiles) et a5 y vaut CUSTOM. Il reserve aussi trois variables
 ; dans sa propre section BSS -- ce fichier ne declare aucune section,
 ; pour que son code reste dans le hunk de l'appelant et que les bsr
 ; internes restent des sauts courts :
@@ -24,7 +22,6 @@
 ;   VBI_OldLvl3:  ds.l 1
 ;   VBI_Count:    ds.w 1
 ;   VBI_Flag:     ds.w 1
-;   VBI_Mids:     ds.w 1
 ;
 ; Pourquoi une interruption plutot qu'une attente active sur VPOSR :
 ; le processeur n'a plus a surveiller le balayage, et surtout le travail
@@ -54,7 +51,6 @@ VBI_Install:
 	move.l	a1,LVL3_VECTOR(a0)
 	clr.w	VBI_Count
 	clr.w	VBI_Flag
-	clr.w	VBI_Mids
 	lea	CUSTOM,a5
 	move.w	#INTF_VERTB,INTREQ(a5)	; pas d'interruption en retard
 	move.w	#INTF_SETCLR|INTF_INTEN|INTF_VERTB,INTENA(a5)
@@ -79,10 +75,9 @@ VBI_Remove:
 ;----------------------------------------------------------------------
 ; VBI_Handler : le gestionnaire de niveau 3
 ;
-; Le niveau 3 est partage : VERTB pour le retour trame, COPER quand le
-; copper ecrit lui-meme dans INTREQ au milieu de l'image. On regarde
-; donc ce qui a frappe avant de faire quoi que ce soit, et l'on sert
-; les deux causes -- elles peuvent tomber ensemble.
+; Le niveau 3 est partage (VERTB, COPER, BLIT) : on verifie que la cause
+; est bien le retour trame avant de faire quoi que ce soit, sinon une
+; interruption d'un autre appareil serait comptee comme une trame.
 ;
 ; L'acquittement est ecrit deux fois : le custom chip met un cycle a
 ; voir la valeur, et sans cette seconde ecriture le processeur peut
@@ -92,17 +87,7 @@ VBI_Remove:
 VBI_Handler:
 	movem.l	d0-d7/a0-a6,-(sp)
 	lea	CUSTOM,a5
-	move.w	INTREQR(a5),d7		; ce qui a frappe
-
-	move.w	d7,d0
-	and.w	#INTF_COPER,d0		; le copper, au milieu de l'image
-	beq.s	.notCopper
-	move.w	#INTF_COPER,INTREQ(a5)
-	move.w	#INTF_COPER,INTREQ(a5)
-	addq.w	#1,VBI_Mids
-	bsr	VBI_Mid			; la bande du bas
-.notCopper:
-	move.w	d7,d0
+	move.w	INTREQR(a5),d0
 	and.w	#INTF_VERTB,d0
 	beq.s	.notMine
 	move.w	#INTF_VERTB,INTREQ(a5)

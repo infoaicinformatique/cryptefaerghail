@@ -149,7 +149,6 @@ CIAICR_TA       = $81           ; interruption sur le timer A
 ; --- bits INTENA / INTREQ ---
 INTF_SETCLR     = $8000
 INTF_INTEN      = $4000         ; interrupteur general (maitre)
-INTF_COPER      = $0010         ; copper (COPPER MOVE vers INTREQ)
 INTF_VERTB      = $0020         ; debut du retour trame -- niveau 3
 INTB_VERTB      = 5
 INTF_EXTER      = $2000         ; CIA-B et port d'extension -- niveau 6

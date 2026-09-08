@@ -1,4 +1,4 @@
-# Assemble les trois programmes et fait tourner les bancs.
+# Assemble le jeu et fait tourner les bancs.
 #
 # Tout ce depot se verifie par programme -- le jeu tourne dans un 68020
 # emule, les bruitages se relisent aux registres de Paula, les panneaux
@@ -66,6 +66,3 @@ jobs:
 
       - name: Bancs
         run: make test
-
-      - name: Modele de la copperlist et du scroll
-        run: make check

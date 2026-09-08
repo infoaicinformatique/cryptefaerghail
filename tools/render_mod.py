@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rejoue data/music.mod avec la meme semantique que src/ptreplay.i et
+"""Rejoue un module avec la meme semantique que src/ptreplay.i et
 ecrit un WAV. Sert a la fois de verification du module et d'apercu sonore.
 
     python3 tools/render_mod.py [secondes] [sortie.wav] [module.mod]
@@ -294,7 +294,7 @@ def render(mod, seconds, path):
 if __name__ == "__main__":
     seconds = float(sys.argv[1]) if len(sys.argv) > 1 else 20.0
     path = sys.argv[2] if len(sys.argv) > 2 else os.path.join(ROOT, "music.wav")
-    name = sys.argv[3] if len(sys.argv) > 3 else "data/music.mod"
+    name = sys.argv[3] if len(sys.argv) > 3 else "data/crawlmus.mod"
     mod = Module(open(os.path.join(ROOT, name), "rb").read())
     print(f"module : {mod.npat} patterns, ordre {mod.order[:mod.songlen]}, "
           f"{sum(1 for i in mod.instruments if i['length'])} instruments")

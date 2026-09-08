@@ -971,19 +971,13 @@ PT_PeriodTable:
 	SECTION	ptmodule,DATA_C		; Paula ne lit que la Chip RAM
 ;======================================================================
 
-PT_ModuleData:
-	ifd	PT_SCORE		; le jeu a sa propre partition ;
-	incbin	"data/crawlmus.mod"	; les demos gardent la leur
-	else
-	incbin	"data/music.mod"
-	endif
+PT_ModuleData:				; la marche du donjon
+	incbin	"data/crawlmus.mod"
 	even
 
-	ifd	PT_SCORE
 PT_TitleModule:				; devant le portail, avant la descente
 	incbin	"data/titlemus.mod"
 	even
-	endif
 
 ;======================================================================
 	SECTION	ptbss,BSS

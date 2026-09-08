@@ -404,7 +404,7 @@ TITLE_W, TITLE_H = 320, 176
 
 def glyph_rows(ch):
     """Les huit lignes d'un caractere, en bits, depuis la police 8x8."""
-    import gen_data
+    import glyphs as gen_data
     rows = gen_data.GLYPHS.get(ch.upper())
     if rows is None:
         return [0] * 8
@@ -1938,7 +1938,7 @@ def write_palette(path):
 
 
 def write_font8(path):
-    import gen_data
+    import glyphs as gen_data
     order = list(gen_data.GLYPHS)
     with open(path, "w") as f:
         f.write(";---------------------------------------------------------\n")

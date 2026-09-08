@@ -126,7 +126,8 @@ src/font8.i      police 8x8 de l'interface                   (généré)
 data/dgnart.bin  décors en perspective et monstres           (généré)
 data/dgnmap.bin  les trois niveaux                           (généré)
 src/ptreplay.i   replayer ProTracker 4 voies pour Paula
-src/vblank.i     interruption de retour trame (niveau 3, VERTB)
+src/vblank.i     interruption de retour trame (niveau 3, VERTB et COPER)
+src/ciatimer.i   timer A du CIA-B : le tempo du module (niveau 6)
 data/music.mod   module ProTracker, samples et partition     (généré)
 tools/gen_data.py    générateur des quatre .i de données
 tools/gen_module.py  générateur du module ProTracker
@@ -143,6 +144,7 @@ tools/play_game.py   pilote le jeu vers les monstres, les objets, l'escalier
 tools/shot68k.py     photographie les écrans dessinés par le processeur émulé
 tools/test_sfx.py    vérifie les bruitages aux registres de Paula
 tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
+tools/test_demos.py  fait tourner les deux démos dans le 68020 émulé
 tools/gen_score.py   générateur des deux musiques (accueil et donjon)
 tools/palette.py     la palette 256 couleurs AGA, décrite matière par matière
 tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
@@ -657,6 +659,72 @@ routines depuis le banc, eux, restent à l'abri de l'interruption : c'est le
 test qui tient l'horloge, et un tic de musique par-dessus le bruitage que l'on
 mesure fausserait la mesure.
 
+## Points techniques — l'image coupée en deux (COPER)
+
+Le copper sait changer une palette à mi-écran ; c'est même ce qu'il fait de
+mieux. Mais la palette doit alors être **écrite dans la copperlist** : 256
+couleurs en 24 bits, c'est 816 mots par bande, et il en faut une par bande.
+
+L'autre voie est un `MOVE` vers `INTREQ` posé à la ligne voulue, avec le bit
+`COPER` armé : le copper réveille le processeur, qui fait le travail lui-même.
+`AGAScroll` en pose un à la ligne 140.
+
+```
+	dc.w	(BANDLINE<<8)|$07, $fffe	; WAIT ligne 140
+	dc.w	INTREQ, $8010			; et réveille le 68000
+```
+
+Ce que le processeur écrit alors tient en **un registre** : `BPLAM`, les huit
+bits de poids fort de `BPLCON4`, que le matériel ajoute par ou-exclusif à
+chaque pixel avant de lire la palette. Avec `BPLAM = $80`, la bande du bas va
+chercher ses couleurs dans l'autre moitié des 256 — sans qu'une seule couleur
+ait été écrite, ni dans la copperlist ni ailleurs. L'en-tête de la liste remet
+`BPLCON4` en haut de l'image suivante : il n'y a rien à défaire.
+
+Le niveau 3 est **partagé** : `VERTB` et `COPER` frappent au même vecteur. Le
+gestionnaire lit donc `INTREQR` et sert les deux causes — elles peuvent tomber
+ensemble — au lieu de supposer que c'est le retour trame.
+
+Le banc n'émule pas le copper. Il **lit sa liste** : un `MOVE` vers `$09c`
+avec le bit `COPER` armé, c'est un réveil demandé, et le banc l'accorde à
+mi-trame. Sans cette lecture il réveillerait aussi les programmes qui n'ont
+rien demandé, et leur gestionnaire y verrait une cause qui n'existe pas.
+
+## Points techniques — le tempo (`src/ciatimer.i`)
+
+Un module ProTracker ne se joue pas à 50 Hz. Il se joue à **BPM × 2 / 5 tics
+par seconde** — 50 Hz n'est que le cas du tempo par défaut, 125. L'effet `Fxx`
+avec un paramètre d'au moins 32 change ce tempo, et le replayer n'avait aucun
+moyen de l'honorer tant qu'il était attelé au balayage : le code l'ignorait,
+avec un commentaire qui le disait.
+
+Il est maintenant attelé au **timer A du CIA-B**, dont l'horloge vaut
+709 379 Hz en PAL. Un compte de `709379 × 5 / (2 × BPM)` donne exactement la
+bonne cadence : 14 187 à 125 BPM, soit 50,00 Hz. L'interruption est de
+**niveau 6** (`INTF_EXTER`), son vecteur pris et rendu comme celui du retour
+trame.
+
+**L'ordre d'acquittement compte.** On efface `INTREQ` *avant* de lire l'ICR du
+CIA : la lecture efface les drapeaux du CIA et fait retomber sa ligne, et
+l'ordre inverse laisserait passer une interruption fantôme.
+
+**Ce que l'on ne rend pas** en sortant : le compte du timer, qui est en
+écriture seule — on ne peut pas savoir ce qu'il valait. On rend le vecteur, le
+masque du CIA et `INTENA` ; le timer reste sur notre tempo, muet.
+
+**Le retour trame garde l'image**, le timer garde la musique : `VBI_Frame` ne
+fait plus que l'échange de copperlist ou de tampons, `CIA_Tick` le tic du
+module. Les sections critiques du son — lancement d'un bruitage, changement de
+module — passent par `CIA_Lock`.
+
+**Un bug est tombé avec.** Le replayer arme le point de boucle d'une note au
+tic suivant son lancement, comme Paula l'exige. Il le faisait aussi sur le
+canal 3 quand un bruitage venait de l'emprunter : deux écritures qui posaient
+la boucle du module sur un canal en train de jouer autre chose. Le banc des
+bruitages l'a vu dès que la musique a changé de cadence — il vérifiait
+exactement cela depuis toujours, mais l'état du module ne tombait jamais au
+bon endroit.
+
 ## Points techniques — musique (`src/ptreplay.i`)
 
 **Cadence.** `PT_Tick` est appelé une fois par image depuis la boucle
@@ -730,7 +798,5 @@ de Paula.
 
 - Scrolling infini : bitmap de la largeur de l'écran + 16 pixels, avec une
   colonne redessinée au blitter à chaque franchissement de mot.
-- Interruption COPER : découper l'image en bandes et changer de palette à
-  mi-écran depuis le processeur plutôt que depuis la copperlist.
 - Une phrase d'accueil par étage pour la voix derrière le comptoir : voir la
   fin de [docs/histoire.md](docs/histoire.md).

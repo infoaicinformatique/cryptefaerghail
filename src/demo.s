@@ -367,6 +367,11 @@ VBI_Frame:
 .noSwap:
 	rts				; la musique, elle, suit le timer A
 
+; VBI_Mid : ce programme ne coupe pas son image en bandes -- le copper
+; ne reveille personne, et le gestionnaire ne passera jamais par ici.
+VBI_Mid:
+	rts
+
 ; CIA_Tick : le tic du module, appele par le timer A.
 CIA_Tick:
 	bsr	PT_Tick
@@ -450,6 +455,7 @@ VBI_Vbr:	ds.l	1
 VBI_OldLvl3:	ds.l	1
 VBI_Count:	ds.w	1
 VBI_Flag:	ds.w	1
+VBI_Mids:	ds.w	1
 CIA_Vbr:	ds.l	1
 CIA_OldLvl6:	ds.l	1
 CIA_Count:	ds.w	1

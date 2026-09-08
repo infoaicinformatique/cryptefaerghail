@@ -111,6 +111,21 @@ def run_demo(name, fails):
     check(len(g.audio) > audio0, f"{name} : Paula ne recoit rien", fails)
     check(len(liste) > 1, f"{name} : la copperlist ne s'echange jamais "
           f"({liste})", fails)
+
+    # AGAScroll coupe son image en deux : le copper reveille le
+    # processeur a mi-playfield, qui change de palette d'un registre.
+    if name == "AGAScroll":
+        check(g.intena & 0x0010, f"{name} : COPER n'est pas armee", fails)
+        check(g.w("VBI_Mids") > 0, f"{name} : le copper ne reveille "
+              "jamais le processeur", fails)
+        bplcon4 = g.custom.get(0x10c, 0)
+        check(bplcon4 >> 8 == 0x80, f"{name} : BPLAM vaut {bplcon4 >> 8:#04x} "
+              "au lieu de 0x80 dans la bande du bas", fails)
+        print(f"  {name} : {g.w('VBI_Mids')} reveils du copper, "
+              f"BPLCON4 = {bplcon4:#06x} en bas de l'image")
+    else:
+        check(g.w("VBI_Mids") == 0, f"{name} : un reveil de copper que "
+              "personne n'a demande", fails)
     print(f"  {name} : {g.irq3 - irq0} trames, {len(g.audio) - audio0} "
           f"ecritures Paula, {len(liste)} copperlists a l'affiche")
 

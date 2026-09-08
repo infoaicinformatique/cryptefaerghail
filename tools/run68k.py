@@ -140,6 +140,9 @@ class Harness:
         self.cia_acc = 0.0
         self.frame_acc = 0
         self.frame_due = False
+        self.coper_due = False
+        self.irq_coper = 0
+        self.coper_lists = {}            # copperlists deja examinees
         self.cia_due = 0
         self.irq6 = 0
         self.irq3 = 0                    # niveau 3 pris depuis le depart
@@ -430,7 +433,13 @@ class Harness:
         Une trame vaut un cinquantieme de seconde ; le timer A y fait
         CIA_CLOCK / compte / 50 tics, soit exactement un au tempo par
         defaut de 125 BPM, et davantage si le module accelere."""
+        avant = self.frame_acc
         self.frame_acc += cycles
+        # A mi-trame, la ou une copperlist peut poser son MOVE vers
+        # INTREQ : le banc n'emule pas le copper, il sait seulement que
+        # celui-ci arrive au milieu de l'image.
+        if avant < self.VBI_PERIOD // 2 <= self.frame_acc:
+            self.coper_due = True
         if self.frame_acc >= self.VBI_PERIOD:
             self.frame_acc -= self.VBI_PERIOD
             self.frame_due = True
@@ -444,6 +453,31 @@ class Harness:
             if self.cia_due < 4:                 # on ne rattrape pas plus
                 self.cia_due += 1
 
+    def copper_raises(self):
+        """La copperlist a l'affiche ecrit-elle dans INTREQ ?
+
+        Le banc n'emule pas le copper ; il lit sa liste. Un MOVE vers
+        $09c avec le bit COPER arme, c'est un reveil demande -- sans
+        quoi le banc reveillerait aussi les programmes qui n'ont rien
+        demande, et leur gestionnaire de niveau 3 y verrait une cause
+        qui n'existe pas."""
+        cop = (self.custom.get(0x80, 0) << 16) | self.custom.get(0x82, 0)
+        if not cop:
+            return False
+        if cop in self.coper_lists:
+            return self.coper_lists[cop]
+        found, addr = False, cop
+        for _ in range(8192):
+            mot, val = self.mem.r16(addr), self.mem.r16(addr + 2)
+            if mot == 0xffff and val == 0xfffe:      # fin de liste
+                break
+            if not mot & 1 and (mot & 0x1fe) == 0x09c and val & 0x8010 == 0x8010:
+                found = True
+                break
+            addr += 4
+        self.coper_lists[cop] = found
+        return found
+
     def fire(self):
         """Envoie au plus une interruption, la plus prioritaire d'abord."""
         if self.cia_due and self.cia_mask & 0x01 \
@@ -452,6 +486,17 @@ class Harness:
                 self.cia_due -= 1
                 self.irq6 += 1
                 return
+        if self.coper_due and not self.copper_raises():
+            self.coper_due = False               # sa liste n'en demande pas
+        if self.coper_due:
+            self.intreq |= 0x0010                # INTF_COPER
+            if self.intena & 0x4000 and self.intena & 0x0010:
+                if self.interrupt(3, 0x6c):
+                    self.coper_due = False
+                    self.irq_coper += 1
+                    return
+            else:
+                self.coper_due = False           # personne ne l'attend
         if self.frame_due:
             self.intreq |= 0x0020                # INTF_VERTB
             if self.intena & 0x4000 and self.intena & 0x0020:

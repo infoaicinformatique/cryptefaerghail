@@ -53,6 +53,8 @@ PANY_AMP	= 128
 
 ; --- bande de scrolltext, en bas de l'ecran ---
 SPLITLINE	= 236			; le playfield occupe 44..235
+BANDLINE	= 140			; ou le copper reveille le processeur
+BANDBPLAM	= $80			; ce qu'il ajoute a chaque pixel en bas
 SCRTEXTH	= 64			; hauteur de la bande
 SCRBPL		= 48			; 384 pixels de large, un seul plan
 SCRMOD		= SCRBPL-FETCHBYTES
@@ -132,6 +134,7 @@ Start:
 
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 	bsr	VBI_Install		; a partir d'ici, la trame nous appelle
+	move.w	#INTF_SETCLR|INTF_COPER,INTENA(a5)	; et le copper aussi
 	bsr	CIA_Install		; et le timer A bat la mesure
 
 ;----------------------------------------------------------------------
@@ -350,6 +353,17 @@ BuildCopperList:
 	move.w	#BPLCON1,(a2)+		; scroll fin (mis a jour par image)
 	move.l	a2,li_Con1(a0)
 	clr.w	(a2)+
+
+	; --- a mi-playfield, le copper reveille le processeur ---
+	; Un MOVE vers INTREQ, et c'est tout : le reste du travail se fait
+	; dans VBI_Mid, au niveau 3. C'est la seule facon de changer de
+	; palette en cours d'image sans ecrire la nouvelle dans la
+	; copperlist -- ici, un BPLAM qui envoie la bande du bas chercher
+	; ses couleurs dans l'autre moitie de la palette.
+	move.w	#(BANDLINE<<8)|$07,(a2)+
+	move.w	#$fffe,(a2)+
+	move.w	#INTREQ,(a2)+
+	move.w	#INTF_SETCLR|INTF_COPER,(a2)+
 
 	; --- bascule vers la bande de scrolltext ---
 	; A partir de SPLITLINE le copper repasse a un seul bitplane, celui
@@ -1000,6 +1014,18 @@ VBI_Frame:
 .noSwap:
 	rts				; la musique, elle, suit le timer A
 
+; VBI_Mid : le copper a atteint BANDLINE et nous a reveilles.
+;
+; Un seul registre : BPLAM, les huit bits de poids fort de BPLCON4, que
+; le materiel ajoute par ou-exclusif a chaque pixel avant de lire la
+; palette. La bande du bas va donc chercher ses couleurs dans l'autre
+; moitie des 256, sans qu'une seule couleur ait ete ecrite. L'en-tete
+; de la copperlist remet BPLCON4 en haut de l'image suivante : il n'y a
+; rien a defaire.
+VBI_Mid:
+	move.w	#(BANDBPLAM<<8)|$00ff,BPLCON4(a5)
+	rts
+
 ; CIA_Tick : le tic du module, appele par le timer A.
 CIA_Tick:
 	bsr	PT_Tick
@@ -1072,6 +1098,7 @@ VBI_Vbr:	ds.l	1
 VBI_OldLvl3:	ds.l	1
 VBI_Count:	ds.w	1
 VBI_Flag:	ds.w	1
+VBI_Mids:	ds.w	1
 CIA_Vbr:	ds.l	1
 CIA_OldLvl6:	ds.l	1
 CIA_Count:	ds.w	1

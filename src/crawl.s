@@ -7399,6 +7399,11 @@ HandleKey:
 	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
+; VBI_Mid : ce programme ne coupe pas son image en bandes -- le copper
+; ne reveille personne, et le gestionnaire ne passera jamais par ici.
+VBI_Mid:
+	rts
+
 ; CIA_Tick : le tic du module, appele par le timer A. Coupee dans les
 ; reglages, la musique n'avance plus du tout -- ce n'est pas seulement
 ; le volume qui tombe.
@@ -7974,6 +7979,7 @@ VBI_Vbr:	ds.l	1
 VBI_OldLvl3:	ds.l	1
 VBI_Count:	ds.w	1
 VBI_Flag:	ds.w	1
+VBI_Mids:	ds.w	1
 CIA_Vbr:	ds.l	1
 CIA_OldLvl6:	ds.l	1
 CIA_Count:	ds.w	1

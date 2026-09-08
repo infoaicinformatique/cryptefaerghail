@@ -1502,6 +1502,7 @@ FLOOR, WALL, DOOR, STAIRS, LOCKED, NICHE, RUNE = 0, 1, 2, 3, 4, 5, 6
 LEVER, GATE = 7, 8                       # herse et son levier
 SHOP, TRAP = 9, 10                       # echoppe et dallage piege
 LEDGER = 11                              # le grand registre, dernier etage
+STAIRSUP = 12                            # l'escalier qui remonte d'un etage
 NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
@@ -1704,7 +1705,7 @@ def build_level(level, seed):
     # dans un mur borde par un couloir, loin du depart -- il faut le
     # chercher -- mais jamais colle a l'escalier, sinon on tomberait
     # dessus en sortant. Sans lui, la porte des quittances ne cede pas.
-    ledger = None
+    ledger, greffe = None, None
     if level == 2:
         for (cx, cy), d in sorted(reach.items(), key=lambda kv: -kv[1]):
             if grid[cy][cx] != FLOOR:
@@ -1719,7 +1720,7 @@ def build_level(level, seed):
                     continue
                 if shop and abs(nx - shop[0]) + abs(ny - shop[1]) < 3:
                     continue
-                ledger = (nx, ny)
+                ledger, greffe = (nx, ny), (cx, cy)
                 break
             if ledger:
                 break
@@ -1727,6 +1728,24 @@ def build_level(level, seed):
         grid[ledger[1]][ledger[0]] = LEDGER
         if ledger in free:
             free.remove(ledger)
+
+        # La salle du greffe : le pupitre ne donne plus sur un bout de
+        # couloir mais sur une chambre. On n'ouvre que du mur nu, et
+        # jamais au contact d'un levier ou d'une herse -- ceux-la
+        # comptent sur le trace pour couper la route, et une salle
+        # percee a cote leur ferait un contournement.
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                x, y = greffe[0] + dx, greffe[1] + dy
+                if not (1 <= x < MAPW - 1 and 1 <= y < MAPH - 1):
+                    continue
+                if grid[y][x] != WALL or par[y][x]:
+                    continue
+                if any(grid[y + b][x + a] in (GATE, LEVER)
+                       for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                    continue
+                grid[y][x] = FLOOR
+                free.append((x, y))
 
     # Les dalles piegees : sur du dallage nu, loin du depart, et jamais
     # devant l'echoppe ni devant le registre -- on doit pouvoir aller
@@ -1762,6 +1781,12 @@ def build_level(level, seed):
                     grid[y][x] = NICHE
                     par[y][x] = ITEMS[rnd.choice(loot)]
                     niches += 1
+    # L'escalier qui remonte, sur la case d'arrivee : on redescend par ou
+    # l'on est venu. Le premier etage n'en a pas -- au-dessus, c'est le
+    # jour, et la crypte ne se quitte que par le bas.
+    if level > 0:
+        grid[start[1]][start[0]] = STAIRSUP
+
     return grid, par, start, far
 
 

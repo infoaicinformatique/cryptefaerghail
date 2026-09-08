@@ -132,6 +132,7 @@ Start:
 
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
 	bsr	VBI_Install		; a partir d'ici, la trame nous appelle
+	bsr	CIA_Install		; et le timer A bat la mesure
 
 ;----------------------------------------------------------------------
 ; Boucle principale : on batit la liste cachee, puis on l'offre a
@@ -166,6 +167,7 @@ MainLoop:
 	btst	#6,CIAAPRA
 	bne	MainLoop
 
+	bsr	CIA_Remove
 	bsr	VBI_Remove
 	bsr	PT_Stop
 	bsr	RestoreSystem
@@ -996,11 +998,16 @@ VBI_Frame:
 	move.l	d1,FrontRec
 	move.l	d0,BackRec
 .noSwap:
-	bsr	PT_Tick			; un tick de musique par image
+	rts				; la musique, elle, suit le timer A
+
+; CIA_Tick : le tic du module, appele par le timer A.
+CIA_Tick:
+	bsr	PT_Tick
 	rts
 
-; --- retour trame et replayer ProTracker : dans cette meme section ---
+; --- retour trame, timer et replayer : dans cette meme section ---
 	include	"vblank.i"
+	include	"ciatimer.i"
 	include	"ptreplay.i"
 
 ;======================================================================
@@ -1065,6 +1072,10 @@ VBI_Vbr:	ds.l	1
 VBI_OldLvl3:	ds.l	1
 VBI_Count:	ds.w	1
 VBI_Flag:	ds.w	1
+CIA_Vbr:	ds.l	1
+CIA_OldLvl6:	ds.l	1
+CIA_Count:	ds.w	1
+CIA_Bpm:	ds.w	1
 PalRot:		ds.w	1
 BarCenters:	ds.w	NBARS
 BarTab1:	ds.l	SCRTEXTH

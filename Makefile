@@ -10,7 +10,7 @@
 #                    police, tables d'objets et de sorts, bruitages)
 #   make wav         rend la musique en WAV pour l'ecouter sans Amiga
 #   make check       verifie l'arithmetique du scroll et de la copperlist
-#   make test        fait tourner le jeu dans un 68020 emule
+#   make test        fait tourner le jeu et les demos dans un 68020 emule
 #   make shots       photographie les ecrans du jeu emule
 #   make preview     rend une image de AGAScroll dans docs/preview.png
 #   make disk        fabrique dist/AGADemos.adf (disquette amorcable) et
@@ -75,9 +75,10 @@ wav:
 check:
 	python3 tools/preview.py 40 /dev/null
 
-# Fait tourner le jeu dans un 68020 emule et verifie son comportement.
+# Fait tourner le jeu et les deux demos dans un 68020 emule.
 test:
 	python3 tools/test_game.py
+	python3 tools/test_demos.py
 	python3 tools/test_sfx.py
 	python3 tools/test_replay.py
 	python3 tools/test_copper.py

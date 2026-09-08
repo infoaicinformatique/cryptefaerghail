@@ -223,6 +223,18 @@ LE DONJON
   Onze armes, cinq protections, potions, parchemins et tresors.
   Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
 
+LES MONSTRES
+  Ils ne tiennent plus leur case a vous attendre : ils font un pas
+  vers vous toutes les quatorze trames si vous etes a moins de six
+  cases. Un couloir vide n'est plus sur.
+
+ON REMONTE
+  Chaque etage sous le premier a son escalier montant, sur la case ou
+  l'on arrive. On retombe sur l'escalier descendant de l'etage du
+  dessus, et l'etage quitte reste exactement comme on l'a laisse --
+  coffres vides, monstres tombes, etal degarni. Au-dessus du premier,
+  c'est le jour.
+
 LE GRAND REGISTRE
   Au fond du dernier etage, scelle dans un mur : un pupitre, le livre
   ouvert dessus, la chaine qui le tient, l'encrier et la plume.

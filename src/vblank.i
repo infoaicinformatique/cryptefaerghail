@@ -8,8 +8,6 @@
 ;   VBI_Install   installe le vecteur de niveau 3 et arme VERTB
 ;   VBI_Remove    coupe VERTB et rend le vecteur au systeme
 ;   VBI_Wait      attend la prochaine trame
-;   VBI_Disable   suspend VERTB (section critique)
-;   VBI_Enable    la reprend
 ;   VBI_Count     word : nombre de trames depuis l'installation
 ; Toutes preservent l'integralite des registres.
 ;
@@ -63,18 +61,6 @@ VBI_Install:
 VBI_GetVbr:
 	movec	vbr,d0
 	rte
-
-; VBI_Disable / VBI_Enable : parenthese autour d'un passage que
-; l'interruption ne doit pas traverser -- typiquement le lancement d'un
-; bruitage, qui prend un canal de Paula au replayer et laisserait, s'il
-; etait coupe en deux, un canal a moitie arme.
-VBI_Disable:
-	move.w	#INTF_VERTB,INTENA+CUSTOM
-	rts
-
-VBI_Enable:
-	move.w	#INTF_SETCLR|INTF_VERTB,INTENA+CUSTOM
-	rts
 
 VBI_Remove:
 	movem.l	d0/a0,-(sp)

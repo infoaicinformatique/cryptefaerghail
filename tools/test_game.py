@@ -198,6 +198,7 @@ DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
 T_WALL, T_LOCKED, T_NICHE, T_LEVER, T_GATE = 1, 4, 5, 7, 8
 T_SHOP, T_TRAP = 9, 10
 T_LEDGER = 11                                    # le grand registre
+T_STAIRSUP = 12                                  # l'escalier qui remonte
 C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
 
 
@@ -388,6 +389,117 @@ def shop_test(g, fails):
     check(g.w("UiMode") == 0, "l'echoppe ne se referme pas", fails)
 
 
+def walk_test(g, fails):
+    """Les monstres marchent, et celui qui vient a nous meurt chez lui.
+
+    Deux choses a la fois : le pas vers le groupe, et la case que la
+    mort nettoie. Tant que le groupe entrait toujours dans le monstre,
+    les deux cases etaient la meme ; ce n'est plus vrai."""
+    ter, par = g.addr("MapTerrain"), g.addr("MapParam")
+    for i in range(MAPW * MAPH):          # l'etage a nous seuls
+        cell = g.mem.r8(ter + i)
+        if cell & 0x30 == 0x20:
+            g.mem.w8(ter + i, cell & 0x0f)
+    heal(g)
+    px, py = g.w("PosX"), g.w("PosY")
+    grid = grid_of(g)
+    spot = next(((x, y) for d in (2, 3, 4)
+                 for x in range(MAPW) for y in range(MAPH)
+                 if abs(x - px) + abs(y - py) == d and grid[y][x] == 0
+                 and g.mem.r8(par + y * MAPW + x) == 0), None)
+    if not check(spot, "pas de dallage nu ou poser un monstre", fails):
+        return
+    mx, my = spot
+    g.mem.w8(ter + my * MAPW + mx, 0x20)  # un kobold, espece 0
+    g.mem.w8(par + my * MAPW + mx, 0)
+
+    for _ in range(30):                   # il vient
+        g.run(slices=2)
+        if g.w("InCombat"):
+            break
+    if not check(g.w("InCombat"), f"le monstre pose en {spot} n'est jamais "
+                 "venu jusqu'au groupe", fails):
+        return
+    here = (g.w("PosX"), g.w("PosY"))
+    mon = (g.w("MonX"), g.w("MonY"))
+    check(here == (px, py), f"le groupe a bouge tout seul : {here}", fails)
+    check(mon != here, "le monstre combat depuis la case du groupe", fails)
+    print(f"  pose en {spot}, il aborde le groupe en {here} depuis {mon}")
+
+    for _ in range(80):
+        if not g.w("InCombat"):
+            break
+        g.key(K_A)
+    if g.w("GameOver"):
+        fails.append("le groupe tombe contre un kobold")
+        return
+    grid = grid_of(g)
+    restes = [(x, y) for y in range(MAPH) for x in range(MAPW)
+              if grid[y][x] & 0x30 == 0x20]
+    check(not restes, f"le monstre mort tient encore sa case {restes}", fails)
+    marques = [(x, y) for y in range(MAPH) for x in range(MAPW)
+               if grid[y][x] & 0x40]
+    check(not marques, f"des marques de travail restent sur la carte "
+          f"{marques[:4]}", fails)
+    print("  vaincu, sa case est rendue au dallage")
+
+
+def stairs_test(g, fails):
+    """L'escalier qui remonte, et l'etage qui reste comme on l'a laisse.
+
+    Sans etat garde, remonter puis redescendre rendrait l'etage neuf --
+    coffres pleins, monstres debout -- et le donjon se moissonnerait en
+    boucle. On vide donc un coffre, on remonte, on redescend."""
+    g.setw("GameOver", 0)
+    g.setw("UiMode", 0)
+    g.setw("InCombat", 0)
+    heal(g)
+    g.setw("Level", 1)
+    if not check(g.call(g.addr("LevelEnter")), "LevelEnter ne rend pas la "
+                 "main", fails):
+        return
+    ter = g.addr("MapTerrain")
+    grid = grid_of(g)
+    px, py = g.w("PosX"), g.w("PosY")
+    check(grid[py][px] & 0x0f == T_STAIRSUP, "on n'arrive pas sur l'escalier "
+          f"qui remonte (terrain {grid[py][px] & 0x0f})", fails)
+
+    coffres = [(x, y) for y in range(MAPH) for x in range(MAPW)
+               if grid[y][x] & 0x30 == 0x10]
+    if not check(coffres, "aucun coffre au deuxieme etage", fails):
+        return
+    cx, cy = coffres[0]
+    g.mem.w8(ter + cy * MAPW + cx, grid[cy][cx] & 0x0f)   # on le vide
+
+    voisin = next(((px + dx, py + dy) for dx, dy in DIRS
+                   if 0 <= px + dx < MAPW and 0 <= py + dy < MAPH
+                   and grid[py + dy][px + dx] & 0x0f == 0), None)
+    if not check(voisin, "l'escalier montant n'a pas de voisin libre", fails):
+        return
+    # Un pas, pas un trajet : remonter deplace le groupe a l'etage du
+    # dessus, et walk_to, qui vise une case, ne s'y retrouverait plus.
+    if not check(walk_to(g, voisin, budget=20), "impossible de descendre de "
+                 "l'escalier", fails):
+        return
+    if not check(face_cell(g, (px, py)), "impossible de faire face a "
+                 "l'escalier", fails):
+        return
+    g.key(K_UP)
+    check(g.w("Level") == 0, f"remonter laisse au niveau {g.w('Level')}", fails)
+    here = (g.w("PosX"), g.w("PosY"))
+    check(grid_of(g)[here[1]][here[0]] & 0x0f == 3, "on ne remonte pas sur "
+          f"l'escalier qui descend (en {here})", fails)
+    print(f"  remonte du 2 au 1, on arrive sur l'escalier en {here}")
+
+    g.setw("Level", 1)                    # et l'etage n'a pas repousse
+    g.call(g.addr("LevelEnter"))
+    apres = [(x, y) for y in range(MAPH) for x in range(MAPW)
+             if grid_of(g)[y][x] & 0x30 == 0x10]
+    check(len(apres) == len(coffres) - 1, f"l'etage a ete relu : "
+          f"{len(apres)} coffres au lieu de {len(coffres) - 1}", fails)
+    print(f"  et le coffre vide en {(cx, cy)} l'est reste")
+
+
 def ledger_test(g, fails):
     """Le grand registre du dernier etage, et la porte des quittances.
 
@@ -400,8 +512,8 @@ def ledger_test(g, fails):
     g.setw("InCombat", 0)
     heal(g)
     g.setw("Level", 2)
-    if not check(g.call(g.addr("LoadLevel")), "LoadLevel ne rend pas la main",
-                 fails):
+    if not check(g.call(g.addr("LevelEnter")), "LevelEnter ne rend pas la "
+                 "main", fails):
         return
     g.setw("Acquitted", 0)
     g.setw("NeedRedraw", 1)
@@ -783,11 +895,15 @@ if __name__ == "__main__":
             g.key(random.choice(moves))
             continue
         hp0 = g.w("MonHp")
+        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
         g.key(K_A)
         rounds += 1
         if not g.w("InCombat"):
             fights += 1
-        check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
+        # Le monstre suivant peut arriver dans la trame ou le precedent
+        # tombe : on ne compare que si c'est le meme.
+        if (g.w("MonX"), g.w("MonY"), g.w("MonKind")) == qui:
+            check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
         for i in range(4):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
@@ -807,6 +923,9 @@ if __name__ == "__main__":
 
     print("--- les pieges ---")
     trap_test(g, fails)
+
+    print("--- les monstres marchent ---")
+    walk_test(g, fails)
 
     print("--- la souris ---")
     mouse_test(g, fails)
@@ -831,6 +950,9 @@ if __name__ == "__main__":
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
           f"niveau {g.w('Level')} or {g.w('Gold')}")
+
+    print("--- l'escalier qui remonte ---")
+    stairs_test(g, fails)
 
     print("--- le grand registre ---")
     ledger_test(g, fails)

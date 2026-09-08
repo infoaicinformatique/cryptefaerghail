@@ -130,8 +130,18 @@ class Harness:
         self.pending = None
         self.icr = 0
         self.custom = {}
-        self.intena = 0                  # INTENA/INTREQ sont des registres
-        self.intreq = 0                  # a bascule : bit 15 = pose/efface
+        self.intena = 0                  # INTENA, INTREQ et DMACON sont des
+        self.intreq = 0                  # registres a bascule : bit 15 pose,
+        self.dmacon = 0                  # sinon efface
+        self.cia_mask = 0                # CIA-B : masque d'interruption,
+        self.cia_flags = 0               # drapeaux, compte du timer A et
+        self.cia_latch = 0               # accumulateur de tics
+        self.cia_run = False
+        self.cia_acc = 0.0
+        self.frame_acc = 0
+        self.frame_due = False
+        self.cia_due = 0
+        self.irq6 = 0
         self.irq3 = 0                    # niveau 3 pris depuis le depart
         self.bad_blits = []
         self.dos_dir = os.environ.get("AGA_SAVEDIR", "/tmp")
@@ -144,7 +154,7 @@ class Harness:
     def setup_hw(self):
         mem = self.mem
         mem.reserve_special_range()                  # $dff000
-        mem.reserve_special_range()                  # $bfe000
+        mem.reserve_special_range()                  # $bf0000 : les deux CIA
 
         def raster(off):
             """VPOSR/VHPOSR : le balayage avance a chaque interrogation."""
@@ -158,7 +168,7 @@ class Harness:
             if off in (0x04, 0x06):
                 return raster(off)
             if off == 0x02:                          # DMACONR
-                return 0                             # blitter au repos
+                return self.dmacon & 0x1fff          # BBUSY/BZERO au repos
             if off == 0x1c:                          # INTENAR
                 return self.intena
             if off == 0x1e:                          # INTREQR
@@ -168,6 +178,18 @@ class Harness:
             if off == 0x16:                          # POTGOR : bouton droit
                 return 0xffff & ~(0x0400 if self.mouse_btn & 2 else 0)
             return self.custom.get(off, 0)
+
+        def r_custom8(addr, *a):
+            """Une lecture d'octet prend sa moitie du registre.
+
+            Le banc rendait la valeur entiere tronquee, donc toujours la
+            moitie basse : `btst #6,DMACONR(a6)` lisait l'octet de poids
+            fort et y trouvait le bit 6 de l'octet faible -- le bit du
+            DMA blitter au lieu de BBUSY. Tant que DMACONR rendait zero
+            cela ne se voyait pas ; depuis qu'il rend l'etat reel,
+            AGAScroll attendait un blitter eternellement occupe."""
+            word = r_custom(addr & ~1)
+            return (word >> 8) & 0xff if not addr & 1 else word & 0xff
 
         def r_custom32(addr, *a):
             """Une lecture longue de $dff004 ramene VPOSR et VHPOSR
@@ -192,6 +214,8 @@ class Harness:
                 self.intena = setclr(self.intena, val) & 0x7fff
             elif off == 0x9c:                        # INTREQ
                 self.intreq = setclr(self.intreq, val) & 0x7fff
+            elif off == 0x96:                        # DMACON
+                self.dmacon = setclr(self.dmacon, val) & 0x7fff
             self.custom[off] = val
             if off in AUDIO:                         # journal pour les tests
                 self.audio.append((off, val))
@@ -205,26 +229,45 @@ class Harness:
             if off in AUDIO:
                 self.audio.append((off, val))
 
+        # Les deux CIA tiennent dans la meme page de soixante-quatre kilos
+        # ($bf0000) : un seul jeu de fonctions les sert, sans quoi le
+        # second enregistrement effacerait le premier -- et le bouton de
+        # la souris se lirait dans le CIA-B.
         def r_cia(addr, *a):
-            if addr == 0xbfed01:                     # ICR : lecture = effacement
+            if addr == 0xbfed01:                     # A : ICR, lecture efface
                 v = self.icr
                 self.icr = 0
                 return v
-            if addr == 0xbfec01:                     # SDR : code clavier
+            if addr == 0xbfec01:                     # A : SDR, code clavier
                 return self.sdr
-            if addr == 0xbfe001:                     # bouton gauche : 0 = mis
+            if addr == 0xbfe001:                     # A : bouton gauche, 0 = mis
                 return 0xff & ~(0x40 if self.mouse_btn & 1 else 0)
+            if addr == 0xbfdd00:                     # B : ICR, lecture efface
+                v = self.cia_flags
+                self.cia_flags = 0
+                return v
             return 0
 
         def w_cia(addr, val, *a):
-            pass
+            val &= 0xff
+            if addr == 0xbfd400:                     # B : compte, poids faible
+                self.cia_latch = (self.cia_latch & 0xff00) | val
+            elif addr == 0xbfd500:                   # B : poids fort, recharge
+                self.cia_latch = (self.cia_latch & 0x00ff) | (val << 8)
+            elif addr == 0xbfdd00:                   # B : masque, a bascule
+                if val & 0x80:
+                    self.cia_mask |= val & 0x7f
+                else:
+                    self.cia_mask &= ~(val & 0x7f)
+            elif addr == 0xbfde00:                   # B : commande du timer A
+                self.cia_run = bool(val & 1)
 
-        mem.set_special_range_read_funcs(CUSTOM, 1, r_custom, r_custom,
+        mem.set_special_range_read_funcs(CUSTOM, 1, r_custom8, r_custom,
                                          r_custom32)
         mem.set_special_range_write_funcs(CUSTOM, 1, w_custom, w_custom,
                                           w_custom32)
-        mem.set_special_range_read_funcs(0xbfe000, 1, r_cia, r_cia, r_cia)
-        mem.set_special_range_write_funcs(0xbfe000, 1, w_cia, w_cia, w_cia)
+        mem.set_special_range_read_funcs(0xbf0000, 1, r_cia, r_cia, r_cia)
+        mem.set_special_range_write_funcs(0xbf0000, 1, w_cia, w_cia, w_cia)
         self.sdr = 0xff
         self.mouse_rx = 0                            # compteurs quadrature
         self.mouse_ry = 0
@@ -319,6 +362,7 @@ class Harness:
         stub_library(m, EXECBASE)
         m.w16(EXECBASE + 296, 0x0001)                # AttnFlags : 68010+,
         self.setup_supervisor()                      # donc un VBR a demander
+        self.setup_allocmem()
         stub_library(m, GFXBASE)
         stub_library(m, DOSBASE)
         self.setup_dos()
@@ -355,34 +399,88 @@ class Harness:
             m.w16(thunk, word)
             thunk += 2
 
-    # --- interruption de retour trame (niveau 3) ---------------------
-    VBI_PERIOD = 6000                    # cycles entre deux trames
+    # --- exec/AllocMem() ---------------------------------------------
+    HEAP = 0x00160000                    # au-dessus des hunks charges
 
-    def vbi(self):
-        """Pose VERTB et detourne le processeur vers le vecteur de niveau
-        3, comme le ferait Paula. machine68k n'a pas de ligne d'IRQ : on
-        empile donc le cadre d'exception a la main (format 0 : SR, PC,
-        mot de format = numero de vecteur x 4)."""
-        self.intreq |= 0x0020                        # INTF_VERTB
-        if not (self.intena & 0x4000 and self.intena & 0x0020):
-            return                                   # maitre ou VERTB coupe
+    def setup_allocmem(self):
+        """Les demos demandent leur bitmap a AllocMem ; la souche rendait
+        zero et elles ressortaient aussitot. On leur donne un bloc, une
+        fois pour toutes : le banc n'a qu'un programme a la fois, et
+        aucune des deux ne libere pour realouer."""
+        m = self.mem
+        m.w16(EXECBASE - 198, 0x203c)                # move.l #HEAP,d0
+        m.w32(EXECBASE - 198 + 2, self.HEAP)
+        m.w16(EXECBASE - 198 + 6, 0x4e75)            # rts
+
+    # --- interruptions : retour trame (3) et timer du CIA-B (6) ------
+    #
+    # Le banc avance par petites tranches et decide, a chaque bord, ce
+    # qui est du. Une seule interruption part par tranche, le niveau 6
+    # d'abord comme sur la machine, et ce qui n'a pas pu partir reste du
+    # -- sans quoi le tic du module, dont le gestionnaire dure plusieurs
+    # milliers de cycles, affamerait le retour trame.
+    VBI_PERIOD = 12000                   # cycles entre deux trames
+    SLICE = 2000                         # ou l'on regarde les interruptions
+
+    CIA_CLOCK = 709379                   # horloge du CIA en PAL
+
+    def due(self, cycles):
+        """Fait avancer les deux horloges d'autant de cycles.
+
+        Une trame vaut un cinquantieme de seconde ; le timer A y fait
+        CIA_CLOCK / compte / 50 tics, soit exactement un au tempo par
+        defaut de 125 BPM, et davantage si le module accelere."""
+        self.frame_acc += cycles
+        if self.frame_acc >= self.VBI_PERIOD:
+            self.frame_acc -= self.VBI_PERIOD
+            self.frame_due = True
+        if not (self.cia_run and self.cia_latch):
+            return
+        par_trame = self.CIA_CLOCK / self.cia_latch / 50.0
+        self.cia_acc += par_trame * cycles / self.VBI_PERIOD
+        while self.cia_acc >= 1.0:
+            self.cia_acc -= 1.0
+            self.cia_flags |= 0x81               # timer A, et la ligne IR
+            if self.cia_due < 4:                 # on ne rattrape pas plus
+                self.cia_due += 1
+
+    def fire(self):
+        """Envoie au plus une interruption, la plus prioritaire d'abord."""
+        if self.cia_due and self.cia_mask & 0x01 \
+                and self.intena & 0x4000 and self.intena & 0x2000:
+            if self.interrupt(6, 0x78):
+                self.cia_due -= 1
+                self.irq6 += 1
+                return
+        if self.frame_due:
+            self.intreq |= 0x0020                # INTF_VERTB
+            if self.intena & 0x4000 and self.intena & 0x0020:
+                if self.interrupt(3, 0x6c):
+                    self.frame_due = False
+                    self.irq3 += 1
+            else:
+                self.frame_due = False           # personne ne l'attend
+
+    def interrupt(self, level, vector_offset):
+        """Detourne le processeur vers un autovecteur, cadre d'exception
+        du 68020 compris (format 0 : SR, PC, mot de format)."""
         sr = self.cpu.r_sr()
-        if ((sr >> 8) & 7) >= 3:                     # deja au moins au 3
-            return
-        vector = self.mem.r32(0x6c)                  # VBR nul dans ce banc
+        if ((sr >> 8) & 7) >= level:
+            return False
+        vector = self.mem.r32(vector_offset)         # VBR nul dans ce banc
         if not vector:
-            return
+            return False
         sp = self.cpu.r_reg(15)
         sp -= 2
-        self.mem.w16(sp, 0x006c)                     # format 0, vecteur 27
+        self.mem.w16(sp, vector_offset)              # format 0, vecteur x 4
         sp -= 4
         self.mem.w32(sp, self.cpu.r_pc())
         sp -= 2
         self.mem.w16(sp, sr)
         self.cpu.w_reg(15, sp)
-        self.cpu.w_sr((sr & ~0x8700) | 0x2300)       # superviseur, masque 3
+        self.cpu.w_sr((sr & ~0x8700) | 0x2000 | (level << 8))
         self.cpu.w_pc(vector)
-        self.irq3 += 1
+        return True
 
     def execute(self, cycles):
         """Comme machine.execute, mais le retour trame tombe en cours de
@@ -392,9 +490,11 @@ class Harness:
         while done < cycles:
             if self.cpu.r_pc() == self.EXIT:
                 break                    # le programme a rendu la main
-            self.vbi()
-            run = self.machine.execute(min(self.VBI_PERIOD, cycles - done))
+            self.fire()
+            pas = min(self.SLICE, cycles - done)
+            run = self.machine.execute(pas)
             done += max(getattr(run, "cycles", 0) or 0, 1)
+            self.due(pas)
         return done
 
     # --- dos.library ------------------------------------------------

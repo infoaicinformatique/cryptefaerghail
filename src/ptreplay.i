@@ -6,9 +6,12 @@
 ; puis le fichier declare ses propres sections de donnees.
 ; Interface :
 ;   PT_Init   ouvre le module (incbin) et prepare les canaux
-;   PT_Tick   a appeler une fois par image (50 Hz) : c'est la cadence
+;   PT_Tick   a appeler a la cadence du module : BPM x 2 / 5 tics par
+;             seconde, soit 50 Hz au tempo par defaut de 125
 ;   PT_Stop   coupe le DMA audio et rend le filtre a son etat d'origine
-; Toutes preservent l'integralite des registres.
+; Toutes preservent l'integralite des registres. PT_Ready dit qu'un
+; module est ouvert : la cadence vient d'une interruption, qui peut
+; frapper avant le premier PT_Init comme entre deux modules.
 ;
 ; Effets gerees : 0xy arpege, 1xx / 2xx portamento, 3xx portamento vers la
 ; note, Axy volume slide, Cxx volume, Fxx vitesse (ticks par ligne), Bxx
@@ -68,6 +71,7 @@ ins_SIZEOF	= 16
 ; PT_Init : a0 = module ProTracker a jouer. Le pointeur est passe par
 ; l'appelant depuis qu'un programme peut en avoir plusieurs.
 PT_Init:
+	clr.w	PT_Ready		; plus rien a jouer le temps de l'ouvrir
 	movem.l	d0-d7/a0-a6,-(sp)
 	moveq	#0,d0
 	move.b	950(a0),d0		; longueur du morceau
@@ -156,6 +160,9 @@ PT_Init:
 	dbf	d2,.chan
 
 	move.w	#6,PT_Speed		; 6 ticks par ligne
+	move.w	#125,PT_Bpm		; et le tempo par defaut d'un module
+	clr.w	PT_BpmChanged
+	move.w	#1,PT_Ready		; le module est jouable
 	move.w	#5,PT_TickCnt		; le premier appel joue une ligne
 	clr.w	PT_Row
 	clr.w	PT_Pos
@@ -175,6 +182,7 @@ PT_Init:
 ; PT_Stop : silence, DMA audio coupe, filtre restaure
 ;----------------------------------------------------------------------
 PT_Stop:
+	clr.w	PT_Ready
 	movem.l	d0/a0/a5-a6,-(sp)
 	lea	CUSTOM,a6
 	move.w	#DMAF_AUDIO,DMACON(a6)
@@ -204,7 +212,13 @@ PT_Tick:
 .repLoop:				; de depart, on peut armer la boucle
 	tst.w	chn_SetRep(a5)
 	beq.s	.repNext
-	clr.w	chn_SetRep(a5)
+	clr.w	chn_SetRep(a5)		; armee ou non, l'attente est consommee
+	move.w	chn_DmaBit(a5),d0	; canal emprunte par un bruitage ?
+	cmp.w	#8,d0
+	bne.s	.repDo
+	tst.w	PT_SfxLock
+	bne.s	.repNext		; on ne pose pas la boucle du module
+.repDo:					; sur un canal qui joue autre chose
 	move.l	chn_AudBase(a5),a0
 	move.l	chn_RepData(a5),AUDx_LC(a0)
 	move.w	chn_RepLen(a5),AUDx_LEN(a0)
@@ -472,12 +486,16 @@ PT_DecodeNote:
 .volOk:
 	move.w	d4,chn_Volume(a5)
 .notVol:
-	cmp.w	#$f,d5			; Fxx : vitesse (le tempo BPM, >= 32,
-	bne.s	.notSpeed		; n'a pas de sens en cadence VBlank)
-	tst.w	d4
-	beq.s	.notSpeed
+	cmp.w	#$f,d5			; Fxx : moins de 32, c'est le nombre de
+	bne.s	.notSpeed		; tics par ligne ; a partir de 32, c'est
+	tst.w	d4			; le tempo en BPM, et c'est la cadence
+	beq.s	.notSpeed		; du timer qui change
 	cmp.w	#32,d4
-	bge.s	.notSpeed
+	blt.s	.rowTicks
+	move.w	d4,PT_Bpm
+	move.w	#1,PT_BpmChanged
+	bra.s	.notSpeed
+.rowTicks:
 	move.w	d4,PT_Speed
 .notSpeed:
 	cmp.w	#$b,d5			; Bxx : saut de position
@@ -975,6 +993,9 @@ PT_Order:	ds.l	1
 PT_Patterns:	ds.l	1
 PT_SongLen:	ds.w	1
 PT_Speed:	ds.w	1
+PT_Ready:	ds.w	1		; un module est ouvert et jouable
+PT_Bpm:		ds.w	1		; tempo courant, en BPM
+PT_BpmChanged:	ds.w	1		; le tempo vient de changer
 PT_TickCnt:	ds.w	1
 PT_Row:		ds.w	1
 PT_Pos:		ds.w	1

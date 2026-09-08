@@ -268,7 +268,7 @@ ouvre le prologue, `ESC` quitte.
 
 | Touche | Effet |
 |---|---|
-| Flèches | avancer, reculer, tourner |
+| Flèches | avancer, reculer, tourner (l'escalier montant est sur la case d'arrivée) |
 | Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
 | 1 à 4 | choisir le héros courant |
@@ -289,11 +289,45 @@ une **porte à runes** par niveau, qui pose une énigme à trois réponses :
 juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
 un aventurier.
 
+**Les monstres marchent.** Ils tenaient leur case et attendaient qu'on leur
+rentre dedans : un couloir vide était sûr, et le donjon n'avait pas de nerf.
+Ils font maintenant un pas toutes les quatorze trames vers le groupe, s'il est
+à moins de six cases — de plus loin, ils n'ont rien entendu. Le pas se pose
+sur du dallage nu et rien d'autre : ni porte, ni dalle piégée, ni escalier, ni
+la case d'un autre. Celui qui arrive sur le groupe engage le combat lui-même,
+et **meurt chez lui** : la case nettoyée à sa mort est la sienne, plus celle
+du groupe — les deux étaient la même tant que c'était toujours nous qui
+entrions dedans.
+
+Un bit de travail marque ceux qui ont déjà bougé pendant le balayage de la
+carte : sans lui, un monstre qui avance dans le sens du balayage serait
+rencontré une seconde fois par la même boucle et traverserait l'étage d'un
+coup. La marque est effacée avant de sortir, pour qu'elle ne parte jamais dans
+une sauvegarde.
+
+**On remonte.** Chaque étage sous le premier a son escalier montant, sur la
+case d'arrivée : on redescend par où l'on est venu, et l'on retombe sur
+l'escalier descendant de l'étage du dessus. Au-dessus du premier, c'est le
+jour, et la crypte ne se quitte que par le bas.
+
+Cela demandait de **garder l'état de chaque étage** : le jeu n'en tenait qu'un
+à la fois et relisait `dgnmap.bin` en descendant. Tant qu'on ne remontait
+jamais, cela ne se voyait pas ; sinon on retrouverait l'étage neuf à chaque
+passage — coffres pleins, monstres debout, échoppe regarnie — et le donjon se
+moissonnerait en boucle. Les trois états (terrain, paramètres, relevé de la
+carte, étal) tiennent maintenant côte à côte, et c'est eux que la sauvegarde
+emporte.
+
 **Le grand registre**, au greffe du dernier étage. Scellé dans un mur comme
 l'échoppe, mais loin du départ : il faut le chercher. `ESPACE` ouvre la page,
 qui porte les quatre noms du groupe — ce sont les quatre colonnes de signature
 d'une quittance. `ENTRÉE` raye la ligne, une fois pour toutes, et vaut de
 l'expérience à tout le monde.
+
+Le pupitre donne sur une **petite salle** creusée devant lui : le générateur
+n'ouvre que du mur nu, et jamais au contact d'un levier ou d'une herse — ceux
+-là comptent sur le tracé pour couper la route, et une salle percée à côté
+leur ferait un contournement.
 
 Sans cela, **l'escalier du dernier étage ne mène nulle part** : la porte des
 quittances ne cède qu'à qui a rayé sa ligne. Le troisième étage a donc un
@@ -674,20 +708,21 @@ injouable serait invisible à la relecture du code — et
 données pour produire les captures ci-dessus.
 
 Côté musique, `tools/render_mod.py` rejoue le module avec exactement la même
-sémantique que le replayer 68k (mêmes effets, même cadence 50 Hz, mêmes règles
-de boucle) et produit un WAV : c'est ce qui vérifie le module et la logique de
-rejeu.
+sémantique que le replayer 68k (mêmes effets, même cadence — `BPM × 2 / 5`
+tics par seconde —, mêmes règles de boucle) et produit un WAV : c'est ce qui
+vérifie le module et la logique de rejeu.
 
-Le jeu, lui, **tourne pour de bon** : `tools/run68k.py` charge l'exécutable
-hunk, le relocalise, remplace `exec.library` et `graphics.library` par des
-souches, et exécute le vrai code dans un 68020 émulé — chipset simulé au
-strict nécessaire (balayage, blitter rectangulaire, souris et clavier au CIA,
-retour trame au niveau 3). Six bancs s'appuient dessus : invariants du jeu,
-bruitages relus aux registres de Paula, replayer, copperlist, sauvegarde,
-largeur des panneaux, plus un parcours dirigé de 428 pas.
+**Les trois programmes tournent pour de bon** : `tools/run68k.py` charge
+l'exécutable hunk, le relocalise, remplace `exec.library` et
+`graphics.library` par des souches, et exécute le vrai code dans un 68020
+émulé — chipset simulé au strict nécessaire (balayage, blitter rectangulaire,
+souris et clavier au CIA-A, timer A du CIA-B, retour trame au niveau 3 et
+timer au niveau 6, les deux avec leur vrai cadre d'exception). Sept bancs
+s'appuient dessus : invariants du jeu, bruitages relus aux registres de Paula,
+replayer, copperlist, sauvegarde, largeur des panneaux, les deux démos, plus
+un parcours dirigé de quatre cents pas.
 
-En revanche **rien n'a encore tourné sur Amiga réel**, et les deux démos
-n'ont jamais été exécutées, même émulées : les modèles valident
+En revanche **rien n'a encore tourné sur Amiga réel** : les modèles valident
 l'arithmétique et la logique du code, pas le comportement du chipset ni celui
 de Paula.
 
@@ -695,11 +730,7 @@ de Paula.
 
 - Scrolling infini : bitmap de la largeur de l'écran + 16 pixels, avec une
   colonne redessinée au blitter à chaque franchissement de mot.
-- Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que
-  par le retour trame.
 - Interruption COPER : découper l'image en bandes et changer de palette à
   mi-écran depuis le processeur plutôt que depuis la copperlist.
-- Faire tourner les deux démos dans le banc 68020, comme le jeu.
-- Une vraie salle de greffe autour du registre, plutôt qu'un pupitre dans un
-  mur, et une phrase d'accueil par étage pour la voix derrière le comptoir :
-  voir la fin de [docs/histoire.md](docs/histoire.md).
+- Une phrase d'accueil par étage pour la voix derrière le comptoir : voir la
+  fin de [docs/histoire.md](docs/histoire.md).

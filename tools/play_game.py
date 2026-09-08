@@ -382,6 +382,7 @@ def fight(g, fails, stats):
     guard = 0
     while g.w("InCombat") and guard < 60:
         hp0 = g.sw("MonHp")
+        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
         guard += 1
         if guard % 4 == 2:
             g.key(T.K_1 + random.randrange(4))
@@ -390,7 +391,11 @@ def fight(g, fails, stats):
                 continue
         g.key(T.K_A)
         stats["rounds"] += 1
-        if g.w("InCombat") and g.sw("MonHp") > hp0:
+        # Depuis que les monstres marchent, le suivant peut arriver dans
+        # la trame ou le precedent tombe : des PV qui remontent ne sont
+        # une anomalie que si c'est le meme monstre.
+        encore = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
+        if g.w("InCombat") and encore == qui and g.sw("MonHp") > hp0:
             fails.append(f"PV du monstre en hausse : {hp0} -> {g.sw('MonHp')}")
         for i in range(4):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")

@@ -4,7 +4,9 @@ ecrit un WAV. Sert a la fois de verification du module et d'apercu sonore.
 
     python3 tools/render_mod.py [secondes] [sortie.wav] [module.mod]
 
-Le replayer 68k est cadence par le VBlank (50 Hz) : c'est aussi le cas ici.
+Le replayer 68k est cadence par le timer A du CIA-B, a BPM x 2 / 5 tics
+par seconde -- 50 Hz au tempo par defaut de 125. Ce modele suit la meme
+cadence, effet Fxx compris : au-dela de 32, le parametre est un tempo.
 Effets simules : 0xy arpege, 1xx/2xx portamento, 3xx portamento vers la
 note, 4xy vibrato, 5xy et 6xy leurs combinaisons avec le volume, 7xy
 tremolo, 9xx depart dans le sample, Axy volume slide, Bxx saut, Cxx
@@ -24,7 +26,8 @@ import wave
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAL_CLOCK = 3546895                      # Hz, horloge Paula en PAL
-TICK_HZ = 50                             # cadence VBlank
+BPM_DEFAULT = 125                        # tempo d'un module, en BPM
+TICK_HZ = BPM_DEFAULT * 2 / 5            # 50 Hz au tempo par defaut
 RATE = 22050
 
 PERIODS = [
@@ -101,6 +104,7 @@ class Channel:
 def render(mod, seconds, path):
     chans = [Channel() for _ in range(4)]
     speed, tickcnt, row, songpos = 6, 6, 0, 0
+    bpm = BPM_DEFAULT
     out = []
     samples_per_tick = int(RATE / TICK_HZ)
     total_ticks = int(seconds * TICK_HZ)
@@ -149,8 +153,12 @@ def render(mod, seconds, path):
                     ch.tremcmd = param
                 elif fx == 0xc:
                     ch.volume = min(64, param)
-                elif fx == 0xf and 0 < param < 32:
-                    speed = param
+                elif fx == 0xf and param:
+                    if param >= 32:                  # Fxx : au-dela de 32,
+                        bpm = param                  # c'est un tempo, et la
+                        samples_per_tick = int(RATE / (bpm * 2 / 5))
+                    else:                            # cadence change ; en
+                        speed = param                # deca, des tics par ligne
                 elif fx == 0xb:
                     do_jump = param
                 elif fx == 0xd:

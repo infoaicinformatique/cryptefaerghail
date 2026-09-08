@@ -35,7 +35,8 @@ hr_SIZEOF = 46 + 8                       # relu ci-dessous depuis le source
 
 
 def read_equ(name, default):
-    src = open(os.path.join(ROOT, "src", "crawl.s")).read()
+    src = open(os.path.join(ROOT, "src", "crawl.s"),
+               encoding="latin-1").read()
     for line in src.splitlines():
         if line.startswith(name):
             try:
@@ -111,6 +112,14 @@ class Game(R.Harness):
     def addr(self, name):
         return self.hunk_sym[name]
 
+    def span(self, name):
+        """Debut et fin d'une routine : jusqu'au symbole suivant du meme
+        hunk. Sert a reconnaitre le processeur arrete dedans."""
+        hunk, off = self.syms[name]
+        after = [o for h, o in self.syms.values() if h == hunk and o > off]
+        base = self.segs[hunk][0]
+        return base + off, base + (min(after) if after else off + 16)
+
     def w(self, name, off=0):
         return self.mem.r16(self.addr(name) + off)
 
@@ -148,7 +157,7 @@ class Game(R.Harness):
         que le processeur soit revenu attendre le retour trame, sans
         redessin en cours ni image en attente d'echange."""
         pc = self.cpu.r_pc()
-        top, end = self.addr("WaitVBlank"), self.addr("WaitBlit")
+        top, end = self.span("VBI_Wait")
         return (top <= pc < end and self.w("NeedRedraw") == 0
                 and self.w("DrawReady") == 0)
 
@@ -186,8 +195,10 @@ class Game(R.Harness):
 MAPH = 24
 PANEL_X, PANEL_TOP, PANEL_STEP = 224, 12, 37
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
-T_WALL, T_NICHE, T_LEVER, T_GATE = 1, 5, 7, 8
+T_WALL, T_LOCKED, T_NICHE, T_LEVER, T_GATE = 1, 4, 5, 7, 8
 T_SHOP, T_TRAP = 9, 10
+T_LEDGER = 11                                    # le grand registre
+T_STAIRSUP = 12                                  # l'escalier qui remonte
 C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
 
 
@@ -250,6 +261,38 @@ def walk_towards(g, want, budget=60):
             if (g.w("PosX"), g.w("PosY")) == here:
                 return g.w("InCombat") != 0
     return g.w("InCombat") != 0
+
+
+def prolog_test(g, fails):
+    """Le prologue, depuis l'accueil : les pages tournent, les fleches
+    reviennent, et la page tournee apres la derniere rend l'accueil --
+    c'est la sortie de qui lit sans regarder les touches."""
+    pages = read_equ("PROLOGPAGES", 4)
+    title, prolog = read_equ("PHASE_TITLE", 2), read_equ("PHASE_PROLOG", 3)
+    g.key(K_1 + 2)
+    check(g.w("Phase") == prolog, f"la touche 3 mene en phase "
+          f"{g.w('Phase')} au lieu de {prolog}", fails)
+    check(g.w("PrologPage") == 0, "le prologue ne s" + chr(39)
+          + "ouvre pas sur sa premiere page", fails)
+    for n in range(1, pages):
+        g.key(K_SPACE)
+        check(g.w("PrologPage") == n, f"page {g.w('PrologPage')} "
+              f"au lieu de {n}", fails)
+    g.key(K_SPACE)
+    check(g.w("Phase") == title, "la page d" + chr(39) + "apres la "
+          "derniere devrait rendre l" + chr(39) + "accueil", fails)
+
+    g.key(K_1 + 2)                       # les fleches reviennent en arriere
+    g.key(K_SPACE)
+    g.key(K_LEFT)
+    check(g.w("PrologPage") == 0, f"la fleche gauche laisse la page "
+          f"{g.w('PrologPage')}", fails)
+    g.key(K_LEFT)
+    check(g.w("PrologPage") == 0, "on remonte avant la premiere page", fails)
+    g.key(K_ESC)
+    check(g.w("Phase") == title, "ESC ne rend pas l" + chr(39) + "accueil",
+          fails)
+    print(f"  {pages} pages, les fleches reviennent, ESC rend l'accueil")
 
 
 def create_party(g, classes=(0, 6, 1, 5)):
@@ -344,6 +387,222 @@ def shop_test(g, fails):
     print("  sans le sou : le marchand ne cede rien")
     g.key(K_ESC)
     check(g.w("UiMode") == 0, "l'echoppe ne se referme pas", fails)
+
+
+def walk_test(g, fails):
+    """Les monstres marchent, et celui qui vient a nous meurt chez lui.
+
+    Deux choses a la fois : le pas vers le groupe, et la case que la
+    mort nettoie. Tant que le groupe entrait toujours dans le monstre,
+    les deux cases etaient la meme ; ce n'est plus vrai."""
+    ter, par = g.addr("MapTerrain"), g.addr("MapParam")
+    for i in range(MAPW * MAPH):          # l'etage a nous seuls
+        cell = g.mem.r8(ter + i)
+        if cell & 0x30 == 0x20:
+            g.mem.w8(ter + i, cell & 0x0f)
+    heal(g)
+    px, py = g.w("PosX"), g.w("PosY")
+    grid = grid_of(g)
+    spot = next(((x, y) for d in (2, 3, 4)
+                 for x in range(MAPW) for y in range(MAPH)
+                 if abs(x - px) + abs(y - py) == d and grid[y][x] == 0
+                 and g.mem.r8(par + y * MAPW + x) == 0), None)
+    if not check(spot, "pas de dallage nu ou poser un monstre", fails):
+        return
+    mx, my = spot
+    g.mem.w8(ter + my * MAPW + mx, 0x20)  # un kobold, espece 0
+    g.mem.w8(par + my * MAPW + mx, 0)
+
+    for _ in range(30):                   # il vient
+        g.run(slices=2)
+        if g.w("InCombat"):
+            break
+    if not check(g.w("InCombat"), f"le monstre pose en {spot} n'est jamais "
+                 "venu jusqu'au groupe", fails):
+        return
+    here = (g.w("PosX"), g.w("PosY"))
+    mon = (g.w("MonX"), g.w("MonY"))
+    check(here == (px, py), f"le groupe a bouge tout seul : {here}", fails)
+    check(mon != here, "le monstre combat depuis la case du groupe", fails)
+    print(f"  pose en {spot}, il aborde le groupe en {here} depuis {mon}")
+
+    for _ in range(80):
+        if not g.w("InCombat"):
+            break
+        g.key(K_A)
+    if g.w("GameOver"):
+        fails.append("le groupe tombe contre un kobold")
+        return
+    grid = grid_of(g)
+    restes = [(x, y) for y in range(MAPH) for x in range(MAPW)
+              if grid[y][x] & 0x30 == 0x20]
+    check(not restes, f"le monstre mort tient encore sa case {restes}", fails)
+    marques = [(x, y) for y in range(MAPH) for x in range(MAPW)
+               if grid[y][x] & 0x40]
+    check(not marques, f"des marques de travail restent sur la carte "
+          f"{marques[:4]}", fails)
+    print("  vaincu, sa case est rendue au dallage")
+
+
+def stairs_test(g, fails):
+    """L'escalier qui remonte, et l'etage qui reste comme on l'a laisse.
+
+    Sans etat garde, remonter puis redescendre rendrait l'etage neuf --
+    coffres pleins, monstres debout -- et le donjon se moissonnerait en
+    boucle. On vide donc un coffre, on remonte, on redescend."""
+    g.setw("GameOver", 0)
+    g.setw("UiMode", 0)
+    g.setw("InCombat", 0)
+    heal(g)
+    g.setw("Level", 1)
+    if not check(g.call(g.addr("LevelEnter")), "LevelEnter ne rend pas la "
+                 "main", fails):
+        return
+    ter = g.addr("MapTerrain")
+    grid = grid_of(g)
+    px, py = g.w("PosX"), g.w("PosY")
+    check(grid[py][px] & 0x0f == T_STAIRSUP, "on n'arrive pas sur l'escalier "
+          f"qui remonte (terrain {grid[py][px] & 0x0f})", fails)
+
+    coffres = [(x, y) for y in range(MAPH) for x in range(MAPW)
+               if grid[y][x] & 0x30 == 0x10]
+    if not check(coffres, "aucun coffre au deuxieme etage", fails):
+        return
+    cx, cy = coffres[0]
+    g.mem.w8(ter + cy * MAPW + cx, grid[cy][cx] & 0x0f)   # on le vide
+
+    voisin = next(((px + dx, py + dy) for dx, dy in DIRS
+                   if 0 <= px + dx < MAPW and 0 <= py + dy < MAPH
+                   and grid[py + dy][px + dx] & 0x0f == 0), None)
+    if not check(voisin, "l'escalier montant n'a pas de voisin libre", fails):
+        return
+    # Un pas, pas un trajet : remonter deplace le groupe a l'etage du
+    # dessus, et walk_to, qui vise une case, ne s'y retrouverait plus.
+    if not check(walk_to(g, voisin, budget=20), "impossible de descendre de "
+                 "l'escalier", fails):
+        return
+    if not check(face_cell(g, (px, py)), "impossible de faire face a "
+                 "l'escalier", fails):
+        return
+    g.key(K_UP)
+    check(g.w("Level") == 0, f"remonter laisse au niveau {g.w('Level')}", fails)
+    here = (g.w("PosX"), g.w("PosY"))
+    check(grid_of(g)[here[1]][here[0]] & 0x0f == 3, "on ne remonte pas sur "
+          f"l'escalier qui descend (en {here})", fails)
+    print(f"  remonte du 2 au 1, on arrive sur l'escalier en {here}")
+
+    g.setw("Level", 1)                    # et l'etage n'a pas repousse
+    g.call(g.addr("LevelEnter"))
+    apres = [(x, y) for y in range(MAPH) for x in range(MAPW)
+             if grid_of(g)[y][x] & 0x30 == 0x10]
+    check(len(apres) == len(coffres) - 1, f"l'etage a ete relu : "
+          f"{len(apres)} coffres au lieu de {len(coffres) - 1}", fails)
+    print(f"  et le coffre vide en {(cx, cy)} l'est reste")
+
+
+def ledger_test(g, fails):
+    """Le grand registre du dernier etage, et la porte des quittances.
+
+    On descend d'autorite au troisieme -- y arriver en jouant prendrait
+    la moitie du banc -- puis on verifie les deux moities de la regle :
+    l'escalier ne rend pas le jour tant que la ligne n'est pas rayee, et
+    la rayer suffit a l'ouvrir."""
+    g.setw("GameOver", 0)                 # le fuzzing a pu achever le groupe
+    g.setw("UiMode", 0)
+    g.setw("InCombat", 0)
+    heal(g)
+    g.setw("Level", 2)
+    if not check(g.call(g.addr("LevelEnter")), "LevelEnter ne rend pas la "
+                 "main", fails):
+        return
+    g.setw("Acquitted", 0)
+    g.setw("NeedRedraw", 1)
+    g.key(K_1)                            # laisser le jeu se remettre en place
+
+    # La marche jusqu'au greffe puis jusqu'a l'escalier traverse un
+    # etage entier de dalles piegees, de herses et de monstres du
+    # troisieme, qui aurait raison d'un groupe arrive la par la porte de
+    # service. On deblaie : ce qui est eprouve ici, c'est le registre et
+    # la porte des quittances, pas la traversee -- les pieges, les
+    # leviers et les combats ont chacun leur banc.
+    ter = g.addr("MapTerrain")
+    for y in range(MAPH):
+        for x in range(MAPW):
+            cell = g.mem.r8(ter + y * MAPW + x)
+            if cell & 0x0f == T_TRAP:
+                g.mem.w8(ter + y * MAPW + x, cell & 0xf0)
+            elif cell & 0x0f == T_GATE:          # une herse et son levier
+                g.mem.w8(ter + y * MAPW + x, cell & 0xf0)
+            elif cell & 0x30 == 0x20:            # un monstre poste la
+                g.mem.w8(ter + y * MAPW + x, cell & 0x0f)
+
+    grid = grid_of(g)
+    seats = [(x, y) for y in range(MAPH) for x in range(MAPW)
+             if grid[y][x] & 0x0f == T_LEDGER]
+    if not check(seats, "aucun grand registre au dernier etage", fails):
+        return
+    lx, ly = seats[0]
+    spot = [(lx + dx, ly + dy) for dx, dy in DIRS
+            if 0 <= lx + dx < MAPW and 0 <= ly + dy < MAPH
+            and grid[ly + dy][lx + dx] & 0x0f not in
+            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER)]
+    if not check(spot, f"registre mure en {lx},{ly}", fails):
+        return
+    if not walk_to(g, spot[0], budget=200):
+        fails.append(f"impossible d'atteindre le registre en {spot[0]} "
+                     f"(arret en {(g.w('PosX'), g.w('PosY'))}, "
+                     f"combat {g.w('InCombat')}, fin {g.w('GameOver')}, "
+                     f"ui {g.w('UiMode')})")
+        return
+    if not check(face_cell(g, (lx, ly)), "impossible de faire face au "
+                 "registre", fails):
+        return
+
+    stairs = [(x, y) for y in range(MAPH) for x in range(MAPW)
+              if grid[y][x] & 0x0f == 3]
+    g.key(K_SPACE)
+    ui = g.w("UiMode")
+    if not check(ui == 9, f"le registre ne s'ouvre pas (UiMode={ui})", fails):
+        return
+    check(g.w("Acquitted") == 0, "la ligne est rayee avant qu'on signe", fails)
+    xp0 = g.hero(0, "hr_Xp")
+    g.key(K_RET)
+    check(g.w("Acquitted") == 1, "ENTREE ne raye pas la ligne", fails)
+    check(g.hero(0, "hr_Xp") > xp0, "rayer la ligne ne vaut aucune "
+          "experience", fails)
+    g.key(K_RET)                          # on ne la raye pas deux fois
+    check(g.w("Acquitted") == 1, "la quittance se defait", fails)
+    g.key(K_ESC)
+    print(f"  registre en {lx},{ly} : la ligne se raye, et une seule fois")
+
+    if not check(stairs, "pas d'escalier au dernier etage", fails):
+        return
+    g.setw("Acquitted", 0)                # la porte, ligne non rayee
+    g.setw("KeyCount", 5)                 # les serrures ne sont pas le sujet
+    if not walk_to(g, stairs[0], budget=400):
+        fails.append(f"impossible d'atteindre l'escalier en {stairs[0]} "
+                     f"(arret en {(g.w('PosX'), g.w('PosY'))}, "
+                     f"fin {g.w('GameOver')})")
+        return
+    check(g.w("GameOver") == 0, "la sortie s'ouvre sans quittance", fails)
+
+    # La quittance signee, la meme porte. Il faut redescendre la marche :
+    # c'est le pas qui la franchit qui compte, pas le fait d'etre dessus.
+    grid = grid_of(g)
+    back = [(stairs[0][0] + dx, stairs[0][1] + dy) for dx, dy in DIRS
+            if 0 <= stairs[0][0] + dx < MAPW and 0 <= stairs[0][1] + dy < MAPH
+            and grid[stairs[0][1] + dy][stairs[0][0] + dx] & 0x0f == 0]
+    if not check(back, "escalier sans case voisine ou reculer", fails):
+        return
+    g.setw("Acquitted", 1)
+    g.setw("NeedRedraw", 1)
+    if not walk_to(g, back[0], budget=20) or not walk_to(g, stairs[0],
+                                                         budget=20):
+        fails.append("impossible de revenir a l'escalier")
+        return
+    check(g.w("GameOver") == 1, "la sortie reste fermee malgre la quittance",
+          fails)
+    print("  la porte des quittances : fermee sans, ouverte avec")
 
 
 def trap_test(g, fails):
@@ -553,8 +812,10 @@ def walk_to(g, target, budget=80):
                     continue
                 t = grid[nxt[1]][nxt[0]] & 0x0f
                 if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE,
-                                        T_SHOP, T_TRAP):
+                                        T_SHOP, T_LEDGER, T_TRAP):
                     continue                 # les pieges se testent a part
+                if t == T_LOCKED and g.w("KeyCount") == 0:
+                    continue                 # sans cle, ce n'est pas un chemin
                 seen[nxt] = cur
                 q.append(nxt)
         if not path or len(path) < 2:
@@ -592,6 +853,9 @@ if __name__ == "__main__":
     check(g.w("Phase") == 2, "le jeu devrait demarrer sur l" + chr(39)
           + "accueil", fails)
     print(f"  ecran d'accueil, {len(g.syms)} symboles")
+
+    print("--- le prologue ---")
+    prolog_test(g, fails)
 
     print("--- creation du groupe ---")
     phase = create_party(g)
@@ -631,11 +895,15 @@ if __name__ == "__main__":
             g.key(random.choice(moves))
             continue
         hp0 = g.w("MonHp")
+        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
         g.key(K_A)
         rounds += 1
         if not g.w("InCombat"):
             fights += 1
-        check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
+        # Le monstre suivant peut arriver dans la trame ou le precedent
+        # tombe : on ne compare que si c'est le meme.
+        if (g.w("MonX"), g.w("MonY"), g.w("MonKind")) == qui:
+            check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
         for i in range(4):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
@@ -656,6 +924,9 @@ if __name__ == "__main__":
     print("--- les pieges ---")
     trap_test(g, fails)
 
+    print("--- les monstres marchent ---")
+    walk_test(g, fails)
+
     print("--- la souris ---")
     mouse_test(g, fails)
 
@@ -667,9 +938,9 @@ if __name__ == "__main__":
     for n in range(800):
         g.key(random.choice(allkeys))
         ui, phase = g.w("UiMode"), g.w("Phase")
-        if not check(ui <= 8, f"UiMode={ui}", fails):
+        if not check(ui <= 9, f"UiMode={ui}", fails):
             break
-        if not check(phase <= 2, f"Phase={phase}", fails):
+        if not check(phase <= 3, f"Phase={phase}", fails):
             break
         if not check(g.w("InvCursor") < 24, f"InvCursor={g.w('InvCursor')}", fails):
             break
@@ -679,6 +950,12 @@ if __name__ == "__main__":
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
           f"niveau {g.w('Level')} or {g.w('Gold')}")
+
+    print("--- l'escalier qui remonte ---")
+    stairs_test(g, fails)
+
+    print("--- le grand registre ---")
+    ledger_test(g, fails)
 
     print()
     if fails:

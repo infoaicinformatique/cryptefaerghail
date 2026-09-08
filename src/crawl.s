@@ -43,6 +43,8 @@ T_LEVER		= 7			; levier scelle dans un mur
 T_GATE		= 8			; herse commandee par un levier
 T_SHOP		= 9			; echoppe scellee dans un mur
 T_TRAP		= 10			; dallage piege, invisible au depart
+T_LEDGER	= 11			; le grand registre, scelle au greffe
+T_STAIRSUP	= 12			; l'escalier qui remonte d'un etage
 
 ; MapParam d'un piege : le quartet bas donne l'espece, le bit 7 dit que
 ; le groupe l'a repere. Un piege desamorce redevient du dallage.
@@ -52,6 +54,13 @@ tp_Name		= 0			; 16 octets
 tp_Save		= 16			; 0 Vigueur, 1 Reflexes, 2 Volonte
 tp_Faces	= 18			; faces du de de degats
 tp_SIZEOF	= 20
+
+; Les monstres marchent : un pas toutes les MONSTEP trames, vers le
+; groupe et seulement s'il est a moins de MONRANGE cases. MON_MOVED est
+; un bit de travail pose sur la case pendant le balayage.
+MON_MOVED	= 6
+MONSTEP		= 14
+MONRANGE	= 6
 
 NSHOP		= 8			; etals d'une echoppe
 SHOPROWS	= 8			; lignes visibles
@@ -176,9 +185,23 @@ SFX_COIN	= 14
 PHASE_CREATE	= 0
 PHASE_PLAY	= 1
 PHASE_TITLE	= 2			; l'ecran d'accueil
+PHASE_PROLOG	= 3			; le prologue, depuis l'accueil
+PROLOGPAGES	= 4			; pages du prologue
+PROLOGROWS	= 16			; lignes qu'une page peut tenir
 TITLEH		= 176			; hauteur de l'illustration
-SAVEMAGIC	= $46414552		; "FAER"
-SAVESIZE	= 4+12+NHEROES*hr_SIZEOF+INVSIZE+3*MAPBYTES+NSHOP
+; L'etat d'un etage, garde d'une visite a l'autre : terrain, parametres,
+; releve de la carte et etal du marchand. Sans lui, remonter un escalier
+; rendrait l'etage neuf -- coffres pleins, monstres debout, echoppe
+; regarnie -- et le donjon se moissonnerait en boucle.
+LVSTATE		= 3*MAPBYTES+NSHOP
+LVSTORE		= LEVELS*LVSTATE
+
+; "FAE4" : les trois etages sont maintenant gardes chacun dans son etat,
+; puisqu'on peut remonter. Une sauvegarde plus ancienne n'a plus le bon
+; compte, et le nombre magique la fait refuser plutot que relire de
+; travers.
+SAVEMAGIC	= $46414534		; "FAE4"
+SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+6
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -188,6 +211,7 @@ UI_MAP		= 5
 UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
+UI_LEDGER	= 9			; le grand registre
 
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
@@ -298,6 +322,11 @@ Start:
 	lsr.w	#8,d0
 	move.w	d0,MouseRawY
 	bsr	MoveSprite
+	bsr	VBI_Install		; a partir d'ici, la trame nous appelle
+	bsr	CIA_Install		; et le timer A bat la mesure -- les deux
+					; avant la premiere musique, pour que
+					; PlayMusic ne demasque jamais une
+					; interruption sans gestionnaire
 	move.w	#-1,CurMusic		; l'accueil a sa propre musique
 	moveq	#0,d0
 	bsr	PlayMusic
@@ -310,22 +339,19 @@ Start:
 ;----------------------------------------------------------------------
 ; Boucle principale
 ;
-; MusicPoll est appele aussi pendant les longs redessins : sans cela le
-; module perd des tics des qu'on se deplace, puisqu'un redessin complet
-; depasse la duree d'une image.
+; La musique et l'echange de tampons ne sont plus de son ressort : ils
+; se font dans l'interruption de retour trame (VBI_Frame, plus bas).
+; C'est ce qui permet a un redessin de durer deux trames sans que le
+; module perde un seul tic -- le defaut que l'on entendait en se
+; deplacant, et que des appels au replayer semes dans le redessin ne
+; rattrapaient qu'a moitie.
 ;----------------------------------------------------------------------
 MainLoop:
-	bsr	WaitVBlank
+	bsr	VBI_Wait
 	bsr	SurfFlicker		; la torche respire, sans un blit
 	move.w	VHPOSR+CUSTOM,d0	; le balayage brasse le hasard : sans
 	eor.w	d0,RngSeed+2		; cela, chaque partie serait identique
-	bsr	MusicPoll
 
-	tst.w	DrawReady
-	beq.s	.noSwap
-	clr.w	DrawReady
-	bsr	SwapBuffers
-.noSwap:
 	tst.w	InCombat		; les monstres respirent
 	beq.s	.noAnim
 	addq.w	#1,AnimCount
@@ -337,6 +363,7 @@ MainLoop:
 	move.w	d0,AnimFrame
 	move.w	#1,NeedRedraw
 .noAnim:
+	bsr	MonWalk			; les monstres avancent d'une case
 	bsr	ReadMouse
 	bsr	MouseAct
 	bsr	PollKey
@@ -348,6 +375,11 @@ MainLoop:
 	bsr	TitleKey
 	bra.s	.noKey
 .notTitleKey:
+	cmp.w	#PHASE_PROLOG,d1
+	bne.s	.notPrologKey
+	bsr	PrologKey
+	bra.s	.noKey
+.notPrologKey:
 	tst.w	d1
 	bne.s	.playKey
 	bsr	CreateKey
@@ -357,13 +389,17 @@ MainLoop:
 .noKey:
 	tst.w	NeedRedraw
 	beq.s	.noDraw
-	clr.w	NeedRedraw
-	bsr	Redraw
-	move.w	#1,DrawReady
+	tst.w	DrawReady		; l'image finie attend encore le retour
+	bne.s	.noDraw			; trame : redessiner maintenant, ce
+	clr.w	NeedRedraw		; serait se faire echanger les tampons
+	bsr	Redraw			; en pleine page -- le fond efface dans
+	move.w	#1,DrawReady		; l'un, le texte pose dans l'autre
 .noDraw:
 	tst.w	Quit
 	beq	MainLoop
 
+	bsr	CIA_Remove
+	bsr	VBI_Remove
 	bsr	PT_Stop
 	bsr	RestoreSystem
 	move.l	4.w,a6
@@ -401,35 +437,22 @@ RestoreSystem:
 	rts
 
 ;----------------------------------------------------------------------
-; MusicPoll : un tic de module par trame, cadence sur le balayage ;
-; a semer dans les traitements longs pour que le son ne decroche pas
-;----------------------------------------------------------------------
-; MusicPoll : un tic de replay par trame, ou que l'on en soit.
+; VBI_Frame : le travail cadence, appele depuis l'interruption de
+; retour trame. a5 = CUSTOM, tous les registres sont libres.
 ;
-; L'ancienne version n'acceptait de rattraper un tic que si le balayage
-; se trouvait dans le retour trame : treize lignes sur trois cent
-; treize. Pendant un redessin qui dure deux trames, presque tous les
-; appels tombaient a cote et la musique hoquetait -- c'est le defaut
-; entendu en se deplacant. On regarde maintenant si le balayage a
-; reboucle depuis le dernier appel : cela marche a n'importe quel
-; moment de la trame.
-MusicPoll:
-	tst.w	OptMusic		; coupee dans les reglages
-	beq.s	.muted
-	movem.l	d0-d1/a5,-(sp)
-	lea	CUSTOM,a5
-	move.l	VPOSR(a5),d0
-	and.l	#$0001ff00,d0
-	lsr.l	#8,d0			; ligne courante
-	move.w	MusicLine,d1
-	move.w	d0,MusicLine
-	cmp.w	d1,d0
-	bge.s	.done			; toujours dans la meme trame
-	bsr	PT_Tick			; le balayage a reboucle
-.done:
-	movem.l	(sp)+,d0-d1/a5
-.muted:
-	rts
+; Deux choses seulement, mais qui ne souffrent pas d'attendre que la
+; boucle principale ait fini son redessin :
+;   - l'echange des tampons, qui tombe ainsi dans le retour trame et
+;     non au milieu de l'image (plus de dechirure) ;
+;   - le tic du module, a 50 Hz quoi qu'il arrive.
+;----------------------------------------------------------------------
+VBI_Frame:
+	tst.w	DrawReady		; une image finie attend d'etre montree
+	beq.s	.noSwap
+	clr.w	DrawReady
+	bsr	SwapBuffers
+.noSwap:
+	rts				; la musique, elle, suit le timer A
 
 ;----------------------------------------------------------------------
 ; SfxPlay : d0 = numero d'effet, joue sur le canal 3
@@ -455,6 +478,7 @@ SfxPlay:
 	add.l	a0,d2			; adresse de l'echantillon
 	lea	CUSTOM,a6
 	lea	CUSTOM+$d0,a2		; canal 3
+	bsr	CIA_Lock		; le replayer ne doit pas passer ici
 	move.w	#$0008,DMACON(a6)	; DMA coupe
 	move.l	d2,(a2)
 	move.w	4(a1),4(a2)		; longueur
@@ -465,6 +489,7 @@ SfxPlay:
 	move.l	#SfxSilence,(a2)	; puis boucle sur du silence
 	move.w	#1,4(a2)
 	move.w	10(a1),PT_SfxLock
+	bsr	CIA_Unlock
 .skip:
 	movem.l	(sp)+,d0-d3/a0-a2/a6
 .off:
@@ -1000,17 +1025,6 @@ SwapBuffers:
 	bsr	SetBplPtrs
 	rts
 
-WaitVBlank:
-	movem.l	d0/a5,-(sp)
-	lea	CUSTOM,a5
-.wait:
-	move.l	VPOSR(a5),d0
-	and.l	#$0001ff00,d0
-	cmp.l	#300<<8,d0
-	bne.s	.wait
-	movem.l	(sp)+,d0/a5
-	rts
-
 WaitBlit:
 	tst.w	DMACONR+CUSTOM
 .wb:
@@ -1137,39 +1151,95 @@ FillRect:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-; HLine : d0 = x (mult. de 8), d1 = y, d2 = longueur, d3 = couleur
+; HLine : d0 = x, d1 = y, d2 = longueur, d3 = couleur -- au pixel pres
+;
+; Elle travaillait a l'octet : le x etait arrondi a l'octet du dessous
+; et la longueur tronquee a l'octet. DrawFrame lui passe x-1 pour son
+; ombre portee, et huit pixels s'allumaient donc tout a gauche de
+; l'ecran, sur la ligne du haut du cadre comme sur celle du bas --
+; caches partout ailleurs par un fond de panneau, bien visibles sur le
+; prologue, qui est sur fond noir. Un trait de moins de huit pixels,
+; lui, ne se dessinait pas du tout.
+;
+; On pose donc un masque a chaque bord : $ff decale a droite du reste
+; du premier pixel, $ff decale a gauche du complement du dernier, et
+; les octets pleins entre les deux.
 HLine:
 	movem.l	d0-d7/a0-a2,-(sp)
 	bsr	WaitBlit
+	tst.w	d2
+	ble	.done			; longueur nulle : rien a tracer
 	move.l	DrawBuf,a2
 	move.w	d1,d4
 	mulu.w	#SCRBPL,d4
 	move.w	d0,d5
-	lsr.w	#3,d5
+	lsr.w	#3,d5			; octet du premier pixel
 	add.w	d5,d4
 	add.l	d4,a2
-	lsr.w	#3,d2			; largeur en octets
-	beq	.tooThin		; moins d'un octet : rien a tracer
-	moveq	#0,d5
+
+	move.w	d0,d6			; masque de gauche : $ff >> (x et 7)
+	and.w	#7,d6
+	move.w	#$00ff,d4
+	lsr.b	d6,d4
+
+	move.w	d0,d1			; le dernier pixel du trait
+	add.w	d2,d1
+	subq.w	#1,d1
+	move.w	d1,d5
+	lsr.w	#3,d5
+	move.w	d0,d6
+	lsr.w	#3,d6
+	sub.w	d6,d5			; d5 = nombre d'octets, moins un
+
+	move.w	d1,d6			; masque de droite : $ff << 7-(fin et 7)
+	not.w	d6
+	and.w	#7,d6
+	move.w	#$00ff,d7
+	lsl.b	d6,d7
+
+	tst.w	d5
+	bne.s	.wide
+	and.b	d7,d4			; tout tient dans un seul octet
+.wide:
+	moveq	#0,d6			; plan courant
 .planeLoop:
 	move.l	a2,a0
-	move.w	d2,d6
-	subq.w	#1,d6
-	btst	d5,d3
-	beq.s	.clear
-.setLoop:
-	move.b	#$ff,(a0)+
-	dbf	d6,.setLoop
-	bra.s	.next
-.clear:
-	clr.b	(a0)+
-	dbf	d6,.clear
+	moveq	#0,d2			; $ff si ce plan porte la couleur
+	btst	d6,d3
+	beq.s	.zero
+	moveq	#-1,d2
+.zero:
+	move.b	(a0),d0			; le premier octet, sous son masque
+	move.b	d4,d1
+	not.b	d1
+	and.b	d1,d0
+	move.b	d4,d1
+	and.b	d2,d1
+	or.b	d1,d0
+	move.b	d0,(a0)+
+	tst.w	d5
+	beq.s	.next			; il n'y en avait qu'un
+	move.w	d5,d1
+	subq.w	#2,d1			; les octets pleins du milieu
+	bmi.s	.last
+.mid:
+	move.b	d2,(a0)+
+	dbf	d1,.mid
+.last:
+	move.b	(a0),d0			; le dernier octet, sous son masque
+	move.b	d7,d1
+	not.b	d1
+	and.b	d1,d0
+	move.b	d7,d1
+	and.b	d2,d1
+	or.b	d1,d0
+	move.b	d0,(a0)
 .next:
 	lea	PLANESIZE(a2),a2
-	addq.w	#1,d5
-	cmp.w	#DEPTH,d5
+	addq.w	#1,d6
+	cmp.w	#DEPTH,d6
 	blt.s	.planeLoop
-.tooThin:
+.done:
 	movem.l	(sp)+,d0-d7/a0-a2
 	rts
 
@@ -1352,9 +1422,9 @@ DrawText:
 	moveq	#0,d4
 	move.b	(a0)+,d4
 	beq	.done
-	sub.w	#32,d4
+	sub.w	#FONT8FIRST,d4
 	bmi.s	.next
-	cmp.w	#96,d4
+	cmp.w	#FONT8LAST-FONT8FIRST+1,d4
 	bge.s	.next
 	lea	Font8Map,a1
 	move.b	(a1,d4.w),d4
@@ -1613,6 +1683,8 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_SHOP,d2
 	beq.s	.yes
+	cmp.w	#T_LEDGER,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1700,6 +1772,11 @@ DrawScene:
 	bsr	DrawShop
 	bra	.done
 .notShop:
+	cmp.w	#UI_LEDGER,d0
+	bne.s	.notLedger
+	bsr	DrawLedger
+	bra	.done
+.notLedger:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1707,7 +1784,6 @@ DrawScene:
 	moveq	#ART_BG,d0
 	moveq	#1,d1
 	bsr	BlitPiece
-	bsr	MusicPoll
 
 	tst.w	InCombat
 	beq.s	.dungeon
@@ -1788,6 +1864,13 @@ DrawScene:
 	bsr	BlitPiece
 	bra.s	.noFront
 .notShopArt:
+	cmp.w	#T_LEDGER,d4		; le pupitre du greffe
+	bne.s	.notLedgerArt
+	moveq	#ART_LEDGER,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	bra.s	.noFront
+.notLedgerArt:
 	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
 	bne.s	.noFront
 	move.w	d7,d2
@@ -1819,7 +1902,6 @@ DrawScene:
 	moveq	#0,d1
 	bsr	BlitPiece
 .noTrapArt:
-	bsr	MusicPoll
 	move.w	d7,d6
 	subq.w	#1,d6
 	tst.w	d7
@@ -1900,7 +1982,6 @@ DrawScene:
 	moveq	#1,d5
 	bra	.sideEach
 .sideDone:
-	bsr	MusicPoll
 	dbf	d6,.sideLoop
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -1912,8 +1993,13 @@ DrawScene:
 Redraw:
 	movem.l	d0-d7/a0-a6,-(sp)
 	cmp.w	#PHASE_TITLE,Phase
-	bne.s	.game
+	bne.s	.notTitle
 	bsr	DrawTitle
+	bra	.drawn
+.notTitle:
+	cmp.w	#PHASE_PROLOG,Phase
+	bne.s	.game
+	bsr	DrawProlog
 	bra	.drawn
 .game:
 	cmp.w	#PHASE_PLAY,Phase	; le releve suit le groupe
@@ -1934,7 +2020,6 @@ Redraw:
 	bsr	FillRect
 
 	bsr	DrawScene
-	bsr	MusicPoll
 
 	moveq	#8,d0
 	moveq	#8,d1
@@ -1953,7 +2038,6 @@ Redraw:
 	bsr	DrawFrame
 
 	bsr	DrawParty
-	bsr	MusicPoll
 	bsr	DrawLog
 	bsr	DrawStatus
 .drawn:
@@ -2165,45 +2249,50 @@ DrawStatus:
 	cmp.w	#UI_INV,d0
 	bne.s	.helpSpell
 	lea	TxtHelpInv,a0
-	bra.s	.help
+	bra	.help
 .helpSpell:
 	cmp.w	#UI_SPELL,d0
 	bne.s	.helpRiddle
 	lea	TxtHelpSpell,a0
-	bra.s	.help
+	bra	.help
 .helpRiddle:
 	cmp.w	#UI_RIDDLE,d0
 	bne.s	.helpMap
 	lea	TxtHelpRiddle,a0
-	bra.s	.help
+	bra	.help
 .helpMap:
 	cmp.w	#UI_MAP,d0
 	bne.s	.helpBook
 	lea	TxtHelpMap,a0
-	bra.s	.help
+	bra	.help
 .helpBook:
 	cmp.w	#UI_BOOK,d0
 	bne.s	.helpOpts
 	lea	TxtHelpBook,a0
-	bra.s	.help
+	bra	.help
 .helpOpts:
 	cmp.w	#UI_OPTS,d0
 	bne.s	.helpShop
 	lea	TxtHelpOpts,a0
-	bra.s	.help
+	bra	.help
 .helpShop:
 	cmp.w	#UI_SHOP,d0
-	bne.s	.helpOther
+	bne.s	.helpLedger
 	lea	TxtHelpShop,a0
-	bra.s	.help
+	bra	.help
+.helpLedger:
+	cmp.w	#UI_LEDGER,d0
+	bne.s	.helpOther
+	lea	TxtHelpLedger,a0
+	bra	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
-	bra.s	.help
+	bra	.help
 .helpView:
 	tst.w	InCombat
 	beq.s	.helpMove
 	lea	TxtHelpFight,a0
-	bra.s	.help
+	bra	.help
 .helpMove:
 	lea	TxtHelpMove,a0
 .help:
@@ -2515,6 +2604,21 @@ OptValue:				; d0 = ligne -> d0 = texte, 0 si aucun
 	movem.l	(sp)+,d1
 	rts
 
+; SilenceAudio : les quatre volumes a zero. Le replayer garde son etat,
+; il ne l'entend plus -- c'est ce que veut dire "musique : non", et
+; c'est aussi ce qu'il faut faire en reprenant une partie sauvee sur ce
+; reglage, sinon PT_Init rend la voix a un module qu'on avait tu.
+SilenceAudio:
+	movem.l	d1/a0,-(sp)
+	lea	CUSTOM+AUD0LCH,a0
+	moveq	#3,d1
+.chan:
+	clr.w	AUDx_VOL(a0)
+	lea	16(a0),a0
+	dbf	d1,.chan
+	movem.l	(sp)+,d1/a0
+	rts
+
 OptToggle:				; agit sur la ligne visee
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	OptCursor,d0
@@ -2523,12 +2627,7 @@ OptToggle:				; agit sur la ligne visee
 	eor.w	#1,OptMusic
 	tst.w	OptMusic
 	bne.s	.redraw
-	lea	CUSTOM+AUD0LCH,a0	; on coupe le son tout de suite
-	moveq	#3,d1
-.silence:
-	clr.w	AUDx_VOL(a0)
-	lea	16(a0),a0
-	dbf	d1,.silence
+	bsr	SilenceAudio		; on coupe le son tout de suite
 	bra.s	.redraw
 .notMusic:
 	cmp.w	#1,d0
@@ -2618,13 +2717,13 @@ DrawTitle:
 
 	lea	TxtMenuNew,a0
 	moveq	#5,d0
-	move.w	#TITLEH+14,d1
+	move.w	#TITLEH+12,d1
 	move.w	#C_HILITE,d2
 	bsr	DrawText
 
 	lea	TxtMenuLoad,a0
 	moveq	#5,d0
-	move.w	#TITLEH+28,d1
+	move.w	#TITLEH+24,d1
 	move.w	#C_HILITE,d2
 	tst.w	HasSave
 	bne.s	.hasSave
@@ -2632,18 +2731,133 @@ DrawTitle:
 .hasSave:
 	bsr	DrawText
 
+	lea	TxtMenuStory,a0
+	moveq	#5,d0
+	move.w	#TITLEH+36,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+
 	lea	TxtMenuQuit,a0
 	moveq	#5,d0
-	move.w	#TITLEH+42,d1
+	move.w	#TITLEH+48,d1
 	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 
 	lea	TxtMenuHint,a0
 	moveq	#5,d0
-	move.w	#TITLEH+58,d1
+	move.w	#TITLEH+60,d1
 	move.w	#C_TEXTLOW,d2
 	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Le prologue : ce qu'etait Faerghail, en trois pages, depuis l'accueil.
+;
+; Le texte est celui de docs/histoire.md, resserre a trente-six signes
+; -- la largeur du journal, donc celle que la police 8x8 tient dans le
+; cadre. Chaque page est une liste de lignes terminee par un long nul :
+; on ajoute une ligne sans rien recompter, et la derniere page ne
+; demande pas de cas particulier.
+;----------------------------------------------------------------------
+DrawProlog:
+	movem.l	d0-d7/a0-a6,-(sp)
+	moveq	#0,d0
+	moveq	#0,d1
+	move.w	#SCRW,d2
+	move.w	#SCRH,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	moveq	#8,d0
+	moveq	#8,d1
+	move.w	#304,d2
+	move.w	#240,d3
+	bsr	DrawFrame
+
+	lea	TxtPrologTitle,a0
+	moveq	#2,d0
+	moveq	#16,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	move.w	PrologPage,d0
+	lsl.w	#2,d0
+	lea	PrologPages,a0
+	move.l	(a0,d0.w),a3		; les lignes de la page
+	moveq	#0,d7
+.lineLoop:
+	cmp.w	#PROLOGROWS,d7		; le cadre s'arrete la : au-dela, le
+	bge.s	.linesDone		; texte deborderait dans le plan suivant
+	move.l	(a3)+,d0
+	beq.s	.linesDone
+	move.l	d0,a0
+	move.w	#C_TEXT,d2
+	cmp.b	#$2a,(a0)		; une ligne marquee d'un * passe a l'or
+	bne.s	.plain
+	addq.l	#1,a0
+	move.w	#C_HILITE,d2
+.plain:
+	moveq	#2,d0
+	move.w	d7,d1
+	mulu.w	#12,d1
+	add.w	#32,d1
+	bsr	DrawText
+	addq.w	#1,d7
+	bra.s	.lineLoop
+.linesDone:
+	lea	TmpStr,a1		; PAGE n SUR N
+	lea	TxtPrologPage,a0
+	bsr	StrCopy
+	move.w	PrologPage,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	lea	TxtPrologOf,a0
+	bsr	StrCopy
+	move.w	#PROLOGPAGES,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#2,d0
+	move.w	#226,d1
+	move.w	#C_TEXTLOW,d2
+	bsr	DrawText
+
+	lea	TxtPrologHelp,a0
+	moveq	#2,d0
+	move.w	#238,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; PrologKey : n'importe quelle touche tourne la page, les fleches
+; reviennent en arriere, ESC rend l'accueil -- et la page tournee apres
+; la derniere le rend aussi, pour qui lit sans regarder les touches.
+PrologKey:
+	movem.l	d1-d7/a0-a6,-(sp)
+	cmp.w	#KEY_ESC,d0
+	beq.s	.back
+	cmp.w	#KEY_LEFT,d0
+	beq.s	.prev
+	cmp.w	#KEY_UP,d0
+	beq.s	.prev
+	move.w	PrologPage,d1
+	addq.w	#1,d1
+	cmp.w	#PROLOGPAGES,d1
+	blt.s	.set
+.back:
+	move.w	#PHASE_TITLE,Phase
+	bra.s	.redraw
+.prev:
+	move.w	PrologPage,d1
+	subq.w	#1,d1
+	bpl.s	.set
+	moveq	#0,d1
+.set:
+	move.w	d1,PrologPage
+.redraw:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
 ; PlayMusic : d0 = 0 pour l'accueil, 1 pour le donjon. Le replayer ne
@@ -2654,6 +2868,7 @@ PlayMusic:
 	cmp.w	CurMusic,d0
 	beq.s	.done
 	move.w	d0,CurMusic
+	bsr	CIA_Lock		; PT_Init refait les quatre canaux
 	bsr	PT_Stop
 	lea	PT_TitleModule,a0
 	tst.w	d0
@@ -2663,6 +2878,7 @@ PlayMusic:
 	bsr	PT_Init
 	lea	CUSTOM,a5
 	move.w	#DMAF_SETCLR|DMAF_AUDIO,DMACON(a5)
+	bsr	CIA_Unlock
 .done:
 	movem.l	(sp)+,d0-d1/a0-a1/a5
 	rts
@@ -2704,7 +2920,7 @@ TitleKey:
 	bra.s	.redraw
 .notNew:
 	cmp.w	#KEY_1+1,d0
-	bne.s	.done
+	bne.s	.notLoad
 	tst.w	HasSave
 	beq.s	.done
 	bsr	LoadGame
@@ -2713,9 +2929,19 @@ TitleKey:
 	bsr	ClearScreens
 	moveq	#1,d0
 	bsr	PlayMusic
+	tst.w	OptMusic		; la partie reprend comme on l'a laissee
+	bne.s	.music
+	bsr	SilenceAudio
+.music:
 	move.w	#PHASE_PLAY,Phase
 	lea	TxtResumed,a0
 	bsr	LogAdd
+	bra.s	.redraw
+.notLoad:
+	cmp.w	#KEY_1+2,d0		; ce qu'etait cette crypte
+	bne.s	.done
+	clr.w	PrologPage
+	move.w	#PHASE_PROLOG,Phase
 .redraw:
 	move.w	#1,NeedRedraw
 .done:
@@ -2776,7 +3002,8 @@ SaveGame:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	DosBase,d0
 	beq	.done
-	bsr	PackSave
+	bsr	LevelStash		; l'etage courant d'abord, il n'est
+	bsr	PackSave		; dans la sauvegarde que par son etat
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
 	move.l	DosBase,a6
@@ -2829,6 +3056,9 @@ LoadGame:				; -> d0 = 1 si la partie est reprise
 	beq.s	.done
 	bsr	UnpackSave
 	move.w	d0,d5
+	tst.w	d5
+	beq.s	.done
+	bsr	LevelRestore		; la copie de travail vient de l'etat
 .done:
 	move.w	d5,d0
 	movem.l	(sp)+,d1-d7/a0-a6
@@ -3612,13 +3842,14 @@ CommitHero:
 StartAdventure:
 	move.w	#PHASE_PLAY,Phase
 	clr.w	SelHero
-	bsr	LoadLevel
+	bsr	LevelEnter
 	moveq	#17,d0			; deux potions pour la route
 	bsr	AddItem
 	moveq	#17,d0
 	bsr	AddItem
 	lea	TxtIntro,a0
 	bsr	LogAdd
+	bsr	LogFloor
 	rts
 
 CreateKey:
@@ -3931,6 +4162,12 @@ NewGame:
 	clr.w	InvCursor
 	clr.w	InvTop
 	clr.w	KeyCount
+	clr.w	Acquitted
+	lea	LevelKnown,a1		; aucun etage n'a encore ete vu
+	moveq	#LEVELS-1,d0
+.clrLevel:
+	clr.w	(a1)+
+	dbf	d0,.clrLevel
 	move.w	#20,Gold
 	lea	Heroes,a1
 	move.w	#NHEROES*hr_SIZEOF-1,d0
@@ -4096,6 +4333,8 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.gate
 	cmp.w	#T_SHOP,d0
 	beq	.shop
+	cmp.w	#T_LEDGER,d0
+	beq	.ledger
 	cmp.w	#T_TRAP,d0
 	beq	.trap
 
@@ -4107,6 +4346,8 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	and.w	#$000f,d6
 	cmp.w	#T_STAIRS,d6
 	beq	.stairs
+	cmp.w	#T_STAIRSUP,d6
+	beq	.stairsUp
 	move.w	d3,d6
 	and.w	#C_MASK,d6
 	cmp.w	#C_CHEST,d6
@@ -4143,6 +4384,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bra	.redraw
 .shop:
 	lea	TxtShopSeen,a0
+	bsr	LogAdd
+	bra	.redraw
+.ledger:
+	lea	TxtLedgerSeen,a0
 	bsr	LogAdd
 	bra	.redraw
 
@@ -4236,10 +4481,15 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	moveq	#0,d0
 .kindOk:
 	move.w	d0,MonKind
+	move.w	d4,MonX			; c'est la case ou il tient
+	move.w	d5,MonY
 	bsr	StartCombat
 	bra.s	.redraw
 .stairs:
 	bsr	Descend
+	bra.s	.redraw
+.stairsUp:
+	bsr	Ascend
 .redraw:
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -4279,6 +4529,8 @@ DoAction:
 	beq	.lever
 	cmp.w	#T_SHOP,d0
 	beq	.shopOpen
+	cmp.w	#T_LEDGER,d0
+	beq	.ledgerOpen
 	cmp.w	#T_TRAP,d0
 	beq	.trapDisarm
 	lea	TxtNothing,a0
@@ -4292,6 +4544,13 @@ DoAction:
 	moveq	#SFX_COIN,d0
 	bsr	SfxPlay
 	lea	TxtShopHello,a0
+	bsr	LogAdd
+	bra	.done
+.ledgerOpen:
+	move.w	#UI_LEDGER,UiMode
+	moveq	#SFX_CHEST,d0
+	bsr	SfxPlay
+	lea	TxtLedgerOpen,a0
 	bsr	LogAdd
 	bra	.done
 .trapDisarm:
@@ -4496,6 +4755,16 @@ MapColour:
 	move.w	#C_STONE+12,d0		; niche
 	bra.s	.done
 .notNiche:
+	cmp.w	#T_LEDGER,d2
+	bne.s	.notLedgerMap
+	move.w	#C_PARCH,d0		; le greffe : on y revient
+	bra.s	.done
+.notLedgerMap:
+	cmp.w	#T_STAIRSUP,d2
+	bne.s	.notUpMap
+	move.w	#C_BONE+N_BONE-2,d0	; l'escalier qui remonte
+	bra.s	.done
+.notUpMap:
 	cmp.w	#T_WALL,d2
 	bne.s	.floor
 	move.w	#C_STONE+4,d0		; mur reconnu
@@ -4581,7 +4850,7 @@ DrawMap:
 	blt	.rowLoop
 
 	lea	LegendTab,a2		; la legende, chacun dans sa couleur
-	moveq	#5,d7
+	moveq	#6,d7
 .legLoop:
 	move.l	(a2)+,a0
 	moveq	#0,d0
@@ -5317,29 +5586,554 @@ DisarmTrap:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
+
+;----------------------------------------------------------------------
+; Le grand registre, au greffe du dernier etage
+;
+; La maison de garde tenait ses comptes ici : un nom, une promesse, un
+; gage, et la ligne rayee le jour ou le deposant revenait le chercher.
+; Personne n'est revenu depuis un siecle, et la maison recouvre sur les
+; heritiers -- c'est pour cela que le groupe est descendu.
+;
+; Le registre montre les quatre noms du groupe, qui sont les quatre
+; colonnes de signature d'une quittance. Rayer la ligne ouvre la porte
+; des quittances, tout en bas : sans cela, l'escalier du dernier etage
+; ne mene nulle part (voir Descend).
+;----------------------------------------------------------------------
+DrawLedger:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+
+	lea	TxtLedgerTitle,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	TxtLedgerHouse,a0
+	moveq	#3,d0
+	moveq	#32,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtLedgerFloor,a0
+	moveq	#3,d0
+	moveq	#42,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+
+	lea	TxtLedgerHead,a0	; l'en-tete suit l'etat de la ligne
+	tst.w	Acquitted
+	beq.s	.headOk
+	lea	TxtLedgerHeadOk,a0
+.headOk:
+	moveq	#3,d0
+	moveq	#58,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+
+	lea	Heroes,a6		; les quatre colonnes de signature
+	moveq	#0,d7
+.nameLoop:
+	lea	TmpStr,a1
+	move.w	d7,d0
+	addq.w	#1,d0
+	bsr	StrNum
+	lea	TxtLedgerDot,a0
+	bsr	StrCopy
+	tst.w	hr_HpMax(a6)
+	beq.s	.empty
+	move.l	a6,a0
+	bra.s	.copyName
+.empty:
+	lea	TxtEmptySlot,a0
+.copyName:
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#5,d0
+	move.w	d7,d1
+	mulu.w	#10,d1
+	add.w	#70,d1
+	move.w	#C_TEXT,d2
+	tst.w	Acquitted
+	beq.s	.notPaid
+	move.w	#C_TEXTLOW,d2		; raye : la ligne s'eteint
+.notPaid:
+	bsr	DrawText
+	lea	hr_SIZEOF(a6),a6
+	addq.w	#1,d7
+	cmp.w	#NHEROES,d7
+	blt.s	.nameLoop
+
+	tst.w	Acquitted		; le pied de la page
+	bne.s	.struck
+	lea	TxtLedgerQuill,a0
+	moveq	#3,d0
+	move.w	#118,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtLedgerAsk,a0
+	moveq	#3,d0
+	move.w	#132,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	bra.s	.done
+.struck:
+	lea	TxtLedgerDone,a0
+	moveq	#3,d0
+	move.w	#118,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	TxtLedgerFree,a0
+	moveq	#3,d0
+	move.w	#132,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; LedgerKey : ENTREE raye la ligne, et on ne la raye qu'une fois.
+LedgerKey:
+	movem.l	d0-d7/a0-a6,-(sp)
+	cmp.w	#KEY_RETURN,d0
+	bne	.done
+	tst.w	Acquitted
+	bne	.done
+	move.w	#1,Acquitted
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtLedgerStruck,a0
+	bsr	LogAdd
+	lea	TxtLedgerOut,a0
+	bsr	LogAdd
+	lea	Heroes,a6		; signer, c'est comprendre ou l'on est
+	moveq	#NHEROES-1,d6
+.xpLoop:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpNext
+	add.w	#60,hr_Xp(a6)
+	bsr	CheckLevel
+.xpNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.xpLoop
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
 Descend:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	Level,d0
 	addq.w	#1,d0
 	cmp.w	#LEVELS,d0
 	blt.s	.next
+	tst.w	Acquitted		; la porte des quittances ne s'ouvre
+	beq.s	.unpaid			; qu'a qui a raye sa ligne
 	move.w	#1,GameOver
 	moveq	#SFX_LEVEL,d0
 	bsr	SfxPlay
 	lea	TxtWin,a0
 	bsr	LogAdd
 	bra.s	.done
+.unpaid:
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtDoorHeld,a0
+	bsr	LogAdd
+	lea	TxtDoorHeld2,a0
+	bsr	LogAdd
+	bra.s	.done
 .next:
+	bsr	LevelStash		; l'etage quitte reste comme on le laisse
 	move.w	d0,Level
-	bsr	LoadLevel
+	bsr	LevelEnter
 	bsr	PartyRest
 	bsr	SaveGame		; un etage franchi, une partie sauvee
 	moveq	#SFX_DOOR,d0
 	bsr	SfxPlay
 	lea	TxtDescend,a0
 	bsr	LogAdd
+	bsr	LogFloor
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+
+;----------------------------------------------------------------------
+; L'etat d'un etage, d'une visite a l'autre
+;
+; Le jeu ne tenait qu'un etage a la fois : descendre le relisait depuis
+; DgnMap, et l'etage quitte etait oublie. Tant qu'on ne redescendait
+; jamais, cela ne se voyait pas. Depuis qu'un escalier remonte, il
+; faudrait sans cela retrouver l'etage neuf a chaque passage -- coffres
+; pleins, monstres debout, echoppe regarnie -- et le donjon se
+; moissonnerait en boucle.
+;
+; On garde donc les trois etats cote a cote : terrain, parametres,
+; releve de la carte et etal, LVSTATE octets par etage.
+;----------------------------------------------------------------------
+LevelSlot:				; -> a0 = l'etat de l'etage courant
+	move.w	d0,-(sp)
+	move.w	Level,d0
+	mulu.w	#LVSTATE,d0
+	lea	LevelStore,a0
+	add.l	d0,a0
+	move.w	(sp)+,d0
+	rts
+
+LevelStash:				; la copie de travail part dans l'etat
+	movem.l	d0/a0-a2,-(sp)
+	bsr	LevelSlot
+	move.l	a0,a1
+	lea	MapTerrain,a2
+	bsr	.copy
+	lea	MapParam,a2
+	bsr	.copy
+	lea	MapSeen,a2
+	bsr	.copy
+	lea	ShopStock,a2
+	move.w	#NSHOP-1,d0
+.stock:
+	move.b	(a2)+,(a1)+
+	dbf	d0,.stock
+	move.w	Level,d0		; cet etage est desormais connu
+	add.w	d0,d0
+	lea	LevelKnown,a0
+	move.w	#1,(a0,d0.w)
+	movem.l	(sp)+,d0/a0-a2
+	rts
+.copy:
+	move.w	#MAPBYTES-1,d0
+.one:
+	move.b	(a2)+,(a1)+
+	dbf	d0,.one
+	rts
+
+LevelRestore:				; et l'etat revient dans la copie
+	movem.l	d0/a0-a2,-(sp)
+	bsr	LevelSlot
+	move.l	a0,a1
+	lea	MapTerrain,a2
+	bsr	.copy
+	lea	MapParam,a2
+	bsr	.copy
+	lea	MapSeen,a2
+	bsr	.copy
+	lea	ShopStock,a2
+	move.w	#NSHOP-1,d0
+.stock:
+	move.b	(a1)+,(a2)+
+	dbf	d0,.stock
+	movem.l	(sp)+,d0/a0-a2
+	rts
+.copy:
+	move.w	#MAPBYTES-1,d0
+.one:
+	move.b	(a1)+,(a2)+
+	dbf	d0,.one
+	rts
+
+; LevelEnter : met en place l'etage courant. Deja visite, on le reprend
+; ou on l'avait laisse ; sinon on le lit dans DgnMap et on le garde.
+LevelEnter:
+	movem.l	d0/a0,-(sp)
+	move.w	Level,d0
+	add.w	d0,d0
+	lea	LevelKnown,a0
+	tst.w	(a0,d0.w)
+	beq.s	.neuf
+	bsr	LevelRestore
+	bra.s	.done
+.neuf:
+	bsr	LoadLevel
+	bsr	LevelStash
+.done:
+	movem.l	(sp)+,d0/a0
+	rts
+
+; Ascend : on remonte par ou l'on est venu, donc sur l'escalier qui
+; descend de l'etage du dessus.
+Ascend:
+	movem.l	d0-d7/a0-a6,-(sp)
+	tst.w	Level
+	beq	.jour
+	bsr	LevelStash
+	subq.w	#1,Level
+	bsr	LevelEnter
+	moveq	#0,d7			; retrouver l'escalier descendant
+.rowLoop:
+	moveq	#0,d6
+.colLoop:
+	move.w	d6,d0
+	move.w	d7,d1
+	bsr	MapCell
+	and.w	#$000f,d0
+	cmp.w	#T_STAIRS,d0
+	bne.s	.nextCell
+	move.w	d6,PosX
+	move.w	d7,PosY
+	bra.s	.placed
+.nextCell:
+	addq.w	#1,d6
+	cmp.w	#MAPW,d6
+	blt.s	.colLoop
+	addq.w	#1,d7
+	cmp.w	#MAPH,d7
+	blt.s	.rowLoop
+.placed:
+	bsr	MarkSeen
+	bsr	SaveGame
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtAscend,a0
+	bsr	LogAdd
+	bsr	LogFloor
+	bra.s	.done
+.jour:
+	lea	TxtNoWayUp,a0		; au-dessus du premier, c'est le jour
+	bsr	LogAdd
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; LogFloor : une ligne de journal propre a l'etage. La crypte etait une
+; maison de garde -- un etage par generation de greffiers, et la
+; profondeur vaut l'anciennete des dettes (voir docs/histoire.md).
+LogFloor:
+	movem.l	d0/a0,-(sp)
+	move.w	Level,d0
+	cmp.w	#LEVELS,d0
+	bcc.s	.done
+	lsl.w	#2,d0
+	lea	FloorLore,a0
+	move.l	(a0,d0.w),a0
+	bsr	LogAdd
+.done:
+	movem.l	(sp)+,d0/a0
+	rts
+
+
+;----------------------------------------------------------------------
+; Les monstres marchent
+;
+; Ils tenaient leur case et attendaient qu'on leur rentre dedans. Un
+; couloir vide etait sur, et le donjon n'avait pas de nerf. Ils font
+; maintenant un pas toutes les MONSTEP trames vers le groupe, s'il est
+; a moins de MONRANGE cases -- de loin, ils n'ont rien entendu.
+;
+; Un pas ne se pose que sur du dallage nu, sans rien dessus et sans
+; parametre : ni porte, ni piege, ni escalier, ni la case d'un autre
+; monstre. Celui qui arrive sur le groupe engage le combat lui-meme.
+;
+; Le bit MON_MOVED marque ceux qui ont deja bouge : sans lui, un
+; monstre qui avance dans le sens du balayage serait rencontre une
+; seconde fois par la meme boucle et traverserait l'etage d'un coup.
+; La marque est effacee avant de sortir, pour qu'elle ne parte jamais
+; dans une sauvegarde.
+;----------------------------------------------------------------------
+MonWalk:
+	movem.l	d0-d7/a0-a6,-(sp)
+	cmp.w	#PHASE_PLAY,Phase
+	bne	.done
+	tst.w	InCombat
+	bne	.done
+	tst.w	GameOver
+	bne	.done
+	addq.w	#1,MonClock
+	move.w	MonClock,d0
+	cmp.w	#MONSTEP,d0
+	blt	.done
+	clr.w	MonClock
+	clr.w	MonMoved
+
+	moveq	#0,d7
+.rowLoop:
+	moveq	#0,d6
+.colLoop:
+	move.w	d6,d0
+	move.w	d7,d1
+	bsr	MapCell
+	btst	#MON_MOVED,d0
+	bne.s	.nextCell
+	and.w	#C_MASK,d0
+	cmp.w	#C_MONSTER,d0
+	bne.s	.nextCell
+	bsr	MonStep
+	tst.w	InCombat		; il a aborde le groupe : on s'arrete
+	bne.s	.sweep
+.nextCell:
+	addq.w	#1,d6
+	cmp.w	#MAPW,d6
+	blt.s	.colLoop
+	addq.w	#1,d7
+	cmp.w	#MAPH,d7
+	blt.s	.rowLoop
+.sweep:
+	bsr	MonUnmark
+	tst.w	MonMoved
+	beq.s	.done
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; MonUnmark : efface les marques de travail sur toute la carte.
+MonUnmark:
+	movem.l	d0-d2/a0,-(sp)
+	lea	MapTerrain,a0
+	move.w	#MAPBYTES-1,d0
+.loop:
+	move.b	(a0),d1
+	bclr	#MON_MOVED,d1
+	move.b	d1,(a0)+
+	dbf	d0,.loop
+	movem.l	(sp)+,d0-d2/a0
+	rts
+
+; MonStep : d6,d7 = case du monstre. Un pas vers le groupe, sur l'axe
+; ou l'ecart est le plus grand ; si ce pas est bouche, sur l'autre.
+MonStep:
+	movem.l	d0-d5/a0,-(sp)
+	move.w	PosX,d0
+	sub.w	d6,d0			; ecart en x
+	move.w	PosY,d1
+	sub.w	d7,d1			; ecart en y
+	move.w	d0,d2
+	bpl.s	.absX
+	neg.w	d2
+.absX:
+	move.w	d1,d3
+	bpl.s	.absY
+	neg.w	d3
+.absY:
+	move.w	d2,d4
+	add.w	d3,d4
+	cmp.w	#MONRANGE,d4
+	bgt	.done			; trop loin : il n'a rien entendu
+
+	moveq	#0,d4			; le pas horizontal, -1, 0 ou +1
+	tst.w	d0
+	beq.s	.noX
+	moveq	#1,d4
+	tst.w	d0
+	bpl.s	.noX
+	moveq	#-1,d4
+.noX:
+	moveq	#0,d5			; et le pas vertical
+	tst.w	d1
+	beq.s	.noY
+	moveq	#1,d5
+	tst.w	d1
+	bpl.s	.noY
+	moveq	#-1,d5
+.noY:
+	cmp.w	d3,d2			; quel axe mene le pas
+	blt.s	.vertFirst
+	move.w	d4,d0
+	moveq	#0,d1
+	bsr	MonTry
+	tst.w	d0
+	bne.s	.done
+	moveq	#0,d0
+	move.w	d5,d1
+	bsr	MonTry
+	bra.s	.done
+.vertFirst:
+	moveq	#0,d0
+	move.w	d5,d1
+	bsr	MonTry
+	tst.w	d0
+	bne.s	.done
+	move.w	d4,d0
+	moveq	#0,d1
+	bsr	MonTry
+.done:
+	movem.l	(sp)+,d0-d5/a0
+	rts
+
+; MonTry : d0,d1 = pas a tenter, d6,d7 = case du monstre.
+;          -> d0 = 1 si le monstre a bouge ou aborde le groupe.
+MonTry:
+	movem.l	d1-d5/a0,-(sp)
+	move.w	d0,d2
+	or.w	d1,d2
+	beq	.no			; pas de pas du tout
+	add.w	d6,d0
+	move.w	d0,MonToX
+	add.w	d7,d1
+	move.w	d1,MonToY
+
+	cmp.w	PosX,d0			; le groupe est la : il l'aborde
+	bne.s	.notParty
+	cmp.w	PosY,d1
+	bne.s	.notParty
+	move.w	d6,d0
+	move.w	d7,d1
+	bsr	MapGetParam
+	cmp.w	#NMONSTERS,d0
+	blt.s	.kindOk
+	moveq	#0,d0
+.kindOk:
+	move.w	d0,MonKind
+	move.w	d6,MonX			; c'est lui qui tient la case
+	move.w	d7,MonY
+	bsr	StartCombat
+	bra	.yes
+.notParty:
+	move.w	MonToX,d0		; du dallage nu, et rien dessus
+	move.w	MonToY,d1
+	bsr	MapCell
+	tst.w	d0
+	bne	.no
+	move.w	MonToX,d0
+	move.w	MonToY,d1
+	bsr	MapGetParam
+	tst.w	d0
+	bne.s	.no
+
+	move.w	d6,d0			; l'espece suit le monstre
+	move.w	d7,d1
+	bsr	MapGetParam
+	move.w	d0,d5
+	move.w	d6,d0			; la case quittee redevient nue
+	move.w	d7,d1
+	bsr	MapCell
+	and.w	#$000f,d0
+	move.w	d0,d2
+	move.w	d6,d0
+	move.w	d7,d1
+	bsr	MapSet
+	move.w	d6,d0
+	move.w	d7,d1
+	moveq	#0,d2
+	bsr	MapSetParam
+
+	move.w	MonToX,d0		; et la case atteinte le porte
+	move.w	MonToY,d1
+	bsr	MapCell
+	or.w	#C_MONSTER,d0
+	bset	#MON_MOVED,d0		; il a fait son pas pour ce tour
+	move.w	d0,d2
+	move.w	MonToX,d0
+	move.w	MonToY,d1
+	bsr	MapSet
+	move.w	MonToX,d0
+	move.w	MonToY,d1
+	move.w	d5,d2
+	bsr	MapSetParam
+	move.w	#1,MonMoved
+.yes:
+	movem.l	(sp)+,d1-d5/a0
+	moveq	#1,d0
+	rts
+.no:
+	movem.l	(sp)+,d1-d5/a0
+	moveq	#0,d0
 	rts
 
 ; SetGates : d6 = numero du mecanisme, d3 = terrain a poser sur ses
@@ -5752,13 +6546,13 @@ MonsterDies:
 	lea	TmpStr,a0
 	bsr	LogAdd
 
-	move.w	PosX,d0			; la case est nettoyee
-	move.w	PosY,d1
-	bsr	MapCell
-	move.w	d0,d2
-	and.w	#$000f,d2
-	move.w	PosX,d0
-	move.w	PosY,d1
+	move.w	MonX,d0			; sa case est nettoyee -- la sienne, et
+	move.w	MonY,d1			; pas celle du groupe : depuis que les
+	bsr	MapCell			; monstres marchent, c'est parfois lui
+	move.w	d0,d2			; qui est venu, et le groupe n'a pas
+	and.w	#$000f,d2		; bouge
+	move.w	MonX,d0
+	move.w	MonY,d1
 	bsr	MapSet
 
 	lea	Heroes,a6		; experience et bonus de fin de combat
@@ -6383,6 +7177,11 @@ HandleKey:
 	bsr	AnswerRiddle
 	bra	.done
 .notRiddleUi:
+	cmp.w	#UI_LEDGER,d1		; --- le grand registre
+	bne.s	.notLedgerUi
+	bsr	LedgerKey
+	bra	.done
+.notLedgerUi:
 	cmp.w	#UI_SPELL,d1		; --- choix d'un sort
 	bne.s	.notSpellUi
 	move.w	d0,d2
@@ -6600,7 +7399,24 @@ HandleKey:
 	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
-; --- replayer ProTracker, dans la meme section de code ---
+; VBI_Mid : ce programme ne coupe pas son image en bandes -- le copper
+; ne reveille personne, et le gestionnaire ne passera jamais par ici.
+VBI_Mid:
+	rts
+
+; CIA_Tick : le tic du module, appele par le timer A. Coupee dans les
+; reglages, la musique n'avance plus du tout -- ce n'est pas seulement
+; le volume qui tombe.
+CIA_Tick:
+	tst.w	OptMusic
+	beq.s	.muted
+	bsr	PT_Tick
+.muted:
+	rts
+
+; --- retour trame, timer et replayer, dans la meme section ---
+	include	"vblank.i"
+	include	"ciatimer.i"
 PT_SCORE	= 1			; musique heroique du donjon
 	include	"ptreplay.i"
 
@@ -6684,13 +7500,13 @@ ZeroWord:	dc.w	0
 
 ; Ce qu'une partie contient : adresse et longueur de chaque bloc.
 SaveList:
-	dc.l	PosX,12			; PosX, PosY, Dir, Level, Gold, KeyCount
+	dc.l	PosX,14			; PosX, PosY, Dir, Level, Gold, KeyCount,
+					; Acquitted
 	dc.l	Heroes,NHEROES*hr_SIZEOF
 	dc.l	Inventory,INVSIZE
-	dc.l	MapTerrain,MAPBYTES
-	dc.l	MapParam,MAPBYTES
-	dc.l	MapSeen,MAPBYTES
-	dc.l	ShopStock,NSHOP
+	dc.l	LevelStore,LVSTORE	; les trois etages, chacun dans son etat
+	dc.l	LevelKnown,LEVELS*2	; et ceux que le groupe a deja vus
+	dc.l	OptMusic,6		; musique, bruitages, disposition
 	dc.l	0,0
 
 	include	"surfgrad.i"
@@ -6724,10 +7540,144 @@ LegendTab:
 	dc.b	3,140,14,0
 	dc.l	TxtLegMonster
 	dc.b	12,140,3,0
+	dc.l	TxtLegLedger
+	dc.b	20,140,C_PARCH,0
 
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
 	dc.l	TxtCls4,TxtCls5,TxtCls6,TxtCls7
+
+; Le prologue, page par page : chaque page est une liste de lignes
+; terminee par un long nul. Une ligne marquee d'une etoile passe a
+; l'or -- il n'y en a qu'une, la derniere.
+PrologPages:
+	dc.l	PrologP0,PrologP1,PrologP2,PrologP3
+
+PrologP0:
+	dc.l	TxtPr0L00
+	dc.l	TxtPr0L01
+	dc.l	TxtPr0L02
+	dc.l	TxtPr0L03
+	dc.l	TxtPr0L04
+	dc.l	TxtPr0L05
+	dc.l	TxtPr0L06
+	dc.l	TxtPr0L07
+	dc.l	TxtPr0L08
+	dc.l	TxtPr0L09
+	dc.l	TxtPr0L10
+	dc.l	TxtPr0L11
+	dc.l	TxtPr0L12
+	dc.l	TxtPr0L13
+	dc.l	0
+PrologP1:
+	dc.l	TxtPr1L00
+	dc.l	TxtPr1L01
+	dc.l	TxtPr1L02
+	dc.l	TxtPr1L03
+	dc.l	TxtPr1L04
+	dc.l	TxtPr1L05
+	dc.l	TxtPr1L06
+	dc.l	TxtPr1L07
+	dc.l	TxtPr1L08
+	dc.l	TxtPr1L09
+	dc.l	TxtPr1L10
+	dc.l	TxtPr1L11
+	dc.l	TxtPr1L12
+	dc.l	TxtPr1L13
+	dc.l	0
+PrologP2:
+	dc.l	TxtPr2L00
+	dc.l	TxtPr2L01
+	dc.l	TxtPr2L02
+	dc.l	TxtPr2L03
+	dc.l	TxtPr2L04
+	dc.l	TxtPr2L05
+	dc.l	TxtPr2L06
+	dc.l	TxtPr2L07
+	dc.l	TxtPr2L08
+	dc.l	TxtPr2L09
+	dc.l	TxtPr2L10
+	dc.l	TxtPr2L11
+	dc.l	0
+PrologP3:
+	dc.l	TxtPr3L00
+	dc.l	TxtPr3L01
+	dc.l	TxtPr3L02
+	dc.l	TxtPr3L03
+	dc.l	TxtPr3L04
+	dc.l	TxtPr3L05
+	dc.l	TxtPr3L06
+	dc.l	TxtPr3L07
+	dc.l	TxtPr3L08
+	dc.l	TxtPr3L09
+	dc.l	TxtPr3L10
+	dc.l	TxtPr3L11
+	dc.l	TxtPr3L12
+	dc.l	TxtPr3L13
+	dc.l	TxtPr3L14
+	dc.l	TxtPr3L15
+	dc.l	0
+
+TxtPr0L00:	dc.b	"FAERGHAIL N'EST PAS UN NOM D'HOMME.",0
+TxtPr0L01:	dc.b	"C'EST UN MOT DE CONTRAT : FAERGH,",0
+TxtPr0L02:	dc.b	"LE GAGE -- CE QU'ON LAISSE POUR",0
+TxtPr0L03:	dc.b	"GARANTIR CE QU'ON PROMET -- ET GAIL,",0
+TxtPr0L04:	dc.b	"LE SEUIL. LE SEUIL DU GAGE.",0
+TxtPr0L05:	dc.b	"",0
+TxtPr0L06:	dc.b	"IL Y A QUATRE SIÈCLES, LA VALLÉE",0
+TxtPr0L07:	dc.b	"N'AVAIT NI PRINCE NI JUGE. UNE",0
+TxtPr0L08:	dc.b	"PAROLE VALAIT CE QUE VALAIT CELUI",0
+TxtPr0L09:	dc.b	"QUI L'ENTENDAIT ; À SA MORT, ELLE",0
+TxtPr0L10:	dc.b	"NE VALAIT PLUS RIEN.",0
+TxtPr0L11:	dc.b	"",0
+TxtPr0L12:	dc.b	"ON A DONC BÂTI UNE MAISON QUI NE",0
+TxtPr0L13:	dc.b	"MEURT PAS.",0
+TxtPr1L00:	dc.b	"CE QUI EST PROMIS EST DÉPOSÉ : UN",0
+TxtPr1L01:	dc.b	"OBJET LAISSE EN GAGE, UN GREFFIER",0
+TxtPr1L02:	dc.b	"QUI L'INSCRIT AU REGISTRE, ET LA",0
+TxtPr1L03:	dc.b	"LIGNE RAYÉE QUAND ON REVIENT LE",0
+TxtPr1L04:	dc.b	"CHERCHER. SINON, LE GAGE RESTE,",0
+TxtPr1L05:	dc.b	"ET LA LIGNE AUSSI.",0
+TxtPr1L06:	dc.b	"",0
+TxtPr1L07:	dc.b	"LA MAISON N'A PAS ÉTÉ CONSTRUITE :",0
+TxtPr1L08:	dc.b	"ELLE A ÉTÉ REPRISE. SOUS LA COLLINE",0
+TxtPr1L09:	dc.b	"COURAIT UNE CARRIÈRE DE SCHISTE,",0
+TxtPr1L10:	dc.b	"TROIS NIVEAUX DE GALERIES. UN ÉTAGE",0
+TxtPr1L11:	dc.b	"PAR GÉNÉRATION DE GREFFIERS : PLUS",0
+TxtPr1L12:	dc.b	"ON DESCEND, PLUS LES DETTES SONT",0
+TxtPr1L13:	dc.b	"VIEILLES.",0
+TxtPr2L00:	dc.b	"LE DERNIER GREFFIER N'AVAIT PAS",0
+TxtPr2L01:	dc.b	"D'HÉRITIER. LA COUTUME PRÉVOYAIT LE",0
+TxtPr2L02:	dc.b	"CAS, ET ELLE PRÉVOYAIT MAL :",0
+TxtPr2L03:	dc.b	"L'EMMUREMENT DE GARDE. ON L'A",0
+TxtPr2L04:	dc.b	"ENFERMÉ VIVANT DERRIÈRE SON",0
+TxtPr2L05:	dc.b	"COMPTOIR, AVEC LE REGISTRE ET DE",0
+TxtPr2L06:	dc.b	"QUOI ÉCRIRE.",0
+TxtPr2L07:	dc.b	"",0
+TxtPr2L08:	dc.b	"IL A CESSÉ D'ÊTRE UN HOMME POUR",0
+TxtPr2L09:	dc.b	"DEVENIR UNE CLAUSE DE LA MAISON.",0
+TxtPr2L10:	dc.b	"C'EST LA VOIX QUE VOUS ENTENDREZ",0
+TxtPr2L11:	dc.b	"DERRIÈRE LE MUR, À CHAQUE ÉTAGE.",0
+TxtPr3L00:	dc.b	"DEPUIS UN SIÈCLE, PLUS PERSONNE NE",0
+TxtPr3L01:	dc.b	"DESCEND PAYER. LA MAISON RECOUVRE",0
+TxtPr3L02:	dc.b	"CE QU'ON LUI DOIT LÀ OÙ ELLE LE",0
+TxtPr3L03:	dc.b	"TROUVE : SUR LES HÉRITIERS.",0
+TxtPr3L04:	dc.b	"",0
+TxtPr3L05:	dc.b	"L'HIVER DERNIER, À AMBELUNE, DES",0
+TxtPr3L06:	dc.b	"NOMS DE VIVANTS SONT APPARUS À LA",0
+TxtPr3L07:	dc.b	"CRAIE SUR LES PORTES DE GRANGES.",0
+TxtPr3L08:	dc.b	"LES GENS DONT ON LISAIT LE NOM SE",0
+TxtPr3L09:	dc.b	"SONT MIS A MANQUER.",0
+TxtPr3L10:	dc.b	"",0
+TxtPr3L11:	dc.b	"QUATRE PERSONNES DESCENDENT : LE",0
+TxtPr3L12:	dc.b	"REGISTRE A QUATRE COLONNES DE",0
+TxtPr3L13:	dc.b	"SIGNATURE AU BAS D'UNE QUITTANCE.",0
+TxtPr3L14:	dc.b	"",0
+TxtPr3L15:	dc.b	"*ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
+	even
+
+FloorLore:				; l'inscription de chaque etage
+	dc.l	TxtFloor0,TxtFloor1,TxtFloor2
 
 RiddleTable:				; trois lignes, trois reponses, la bonne
 	dc.l	TxtR0Q1,TxtR0Q2,TxtR0Q3,TxtR0A1,TxtR0A2,TxtR0A3
@@ -6742,13 +7692,13 @@ StatOffsets:
 	dc.w	hr_Str,hr_Dex,hr_Con,hr_Int,hr_Wis,hr_Cha
 
 TxtCls0:	dc.b	"SOLIDE, FRAPPE FORT",0
-TxtCls1:	dc.b	"TRES ROBUSTE, BRUTAL",0
+TxtCls1:	dc.b	"TRÈS ROBUSTE, BRUTAL",0
 TxtCls2:	dc.b	"AGILE, FUIT PLUS VITE",0
 TxtCls3:	dc.b	"ARC ET SORTS DES BOIS",0
 TxtCls4:	dc.b	"LA LAME ET LA FOI",0
 TxtCls5:	dc.b	"SOINS ET SORTS DIVINS",0
 TxtCls6:	dc.b	"FRAGILE, MAGIE VASTE",0
-TxtCls7:	dc.b	"MAGIE INNEE ET CHARME",0
+TxtCls7:	dc.b	"MAGIE INNÉE ET CHARME",0
 TxtFor:		dc.b	"FOR ",0
 TxtDex:		dc.b	"DEX ",0
 TxtCon:		dc.b	"CON ",0
@@ -6756,28 +7706,31 @@ TxtInt:		dc.b	"INT ",0
 TxtSag:		dc.b	"SAG ",0
 TxtCha:		dc.b	"CHA ",0
 
-TxtIntro:	dc.b	"LA CRYPTE DE FAERGHAIL VOUS ATTEND.",0
-TxtCreate1:	dc.b	"CREEZ VOS QUATRE AVENTURIERS.",0
+TxtIntro:	dc.b	"ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
+TxtFloor0:	dc.b	"LE GREFFE. LES GAGES SONT RÉCENTS.",0
+TxtFloor1:	dc.b	"PLUS BAS : LES VIEILLES ÉCHÉANCES.",0
+TxtFloor2:	dc.b	"LE FOND. PLUS PERSONNE N'A PAYÉ.",0
+TxtCreate1:	dc.b	"CRÉEZ VOS QUATRE AVENTURIERS.",0
 TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
-TxtCreateTitle:	dc.b	"CREATION DU GROUPE",0
+TxtCreateTitle:	dc.b	"CRÉATION DU GROUPE",0
 TxtEmptySlot:	dc.b	"-----",0
-TxtHero:	dc.b	"HEROS ",0
+TxtHero:	dc.b	"HÉROS ",0
 TxtOn4:		dc.b	" SUR 4",0
 TxtDash:	dc.b	" - ",0
 TxtHyphen:	dc.b	"-",0
 TxtNivShort:	dc.b	"N",0
-TxtPickClass:	dc.b	"FLECHES, ENTREE OU 1-8",0
-TxtRoll:	dc.b	"R RELANCER  ENTREE OK",0
+TxtPickClass:	dc.b	"FLÈCHES, ENTRÉE OU 1-8",0
+TxtRoll:	dc.b	"R RELANCER  ENTRÉE OK",0
 TxtName:	dc.b	"NOM : ",0
-TxtNameHelp:	dc.b	"TAPEZ OU FLECHES",0
+TxtNameHelp:	dc.b	"TAPEZ OU FLÈCHES",0
 TxtAzerty:	dc.b	"TAB : AZERTY",0
 TxtQwerty:	dc.b	"TAB : QWERTY",0
 TxtWall:	dc.b	"UN MUR BLOQUE LE PASSAGE.",0
-TxtDoorShut:	dc.b	"PORTE FERMEE. ESPACE POUR OUVRIR.",0
-TxtDoorOpen:	dc.b	"LA PORTE S'OUVRE EN GRINCANT.",0
-TxtLocked:	dc.b	"CETTE PORTE EST VERROUILLEE.",0
-TxtNeedKey:	dc.b	"IL VOUS FAUT UNE CLE.",0
-TxtUnlock:	dc.b	"LA CLE TOURNE. LA PORTE CEDE.",0
+TxtDoorShut:	dc.b	"PORTE FERMÉE. ESPACE POUR OUVRIR.",0
+TxtDoorOpen:	dc.b	"LA PORTE S'OUVRE EN GRINÇANT.",0
+TxtLocked:	dc.b	"CETTE PORTE EST VERROUILLÉE.",0
+TxtNeedKey:	dc.b	"IL VOUS FAUT UNE CLÉ.",0
+TxtUnlock:	dc.b	"LA CLÉ TOURNE. LA PORTE CÈDE.",0
 TxtNothing:	dc.b	"RIEN A FAIRE ICI.",0
 TxtNiche:	dc.b	"DANS LA NICHE : ",0
 TxtNicheEmpty:	dc.b	"LA NICHE EST VIDE.",0
@@ -6787,11 +7740,13 @@ TxtFound:	dc.b	"VOUS TROUVEZ ",0
 TxtDrops:	dc.b	"VOUS JETEZ ",0
 TxtBagFull:	dc.b	"LE SAC EST PLEIN.",0
 TxtDescend:	dc.b	"UN ESCALIER. VOUS DESCENDEZ.",0
-TxtWin:		dc.b	"LA SORTIE ! VOUS REVOYEZ LE JOUR.",0
+TxtAscend:	dc.b	"UN ESCALIER. VOUS REMONTEZ.",0
+TxtNoWayUp:	dc.b	"AU-DESSUS, C'EST LE JOUR.",0
+TxtWin:		dc.b	"ACQUITTÉS. VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
 TxtYouHit:	dc.b	"LE GROUPE INFLIGE ",0
-TxtDamage:	dc.b	" DEGATS.",0
+TxtDamage:	dc.b	" DÉGÂTS.",0
 TxtAllMiss:	dc.b	"TOUS LES COUPS SE PERDENT.",0
 TxtHits:	dc.b	" TOUCHE ",0
 TxtFor2:	dc.b	" : ",0
@@ -6801,51 +7756,68 @@ TxtDies:	dc.b	" TOMBE ! +",0
 TxtXpGold:	dc.b	" PX, ",0
 TxtLevelUp:	dc.b	" PASSE UN NIVEAU !",0
 TxtFlee:	dc.b	"VOUS PRENEZ LA FUITE.",0
-TxtFleeFail:	dc.b	"LA FUITE ECHOUE !",0
-TxtWiped:	dc.b	"LE GROUPE EST ANEANTI.",0
-TxtMonStunned:	dc.b	"LE MONSTRE RECULE, TERRIFIE.",0
+TxtFleeFail:	dc.b	"LA FUITE ÉCHOUE !",0
+TxtWiped:	dc.b	"LE GROUPE EST ANÉANTI.",0
+TxtMonStunned:	dc.b	"LE MONSTRE RECULE, TERRIFIÉ.",0
 TxtCasts:	dc.b	" LANCE ",0
 TxtSpellHit:	dc.b	"LE SORT INFLIGE ",0
-TxtHealed:	dc.b	" RECUPERE ",0
+TxtHealed:	dc.b	" RÉCUPÈRE ",0
 TxtPvSuffix:	dc.b	" PV.",0
-TxtShopSeen:	dc.b	"UNE ECHOPPE ! ESPACE POUR ENTRER.",0
-TxtShopHello:	dc.b	"BIENVENUE, DIT LE MARCHAND.",0
-TxtShopTitle:	dc.b	"ECHOPPE",0
+TxtLedgerSeen:	dc.b	"UN PUPITRE. UN LIVRE ENCHAINE.",0
+TxtLedgerOpen:	dc.b	"LE GRAND REGISTRE DE FAERGHAIL.",0
+TxtLedgerTitle:	dc.b	"LE GRAND REGISTRE",0
+TxtLedgerHouse:	dc.b	"MAISON DE GARDE",0
+TxtLedgerFloor:	dc.b	"GREFFE DU FOND",0
+TxtLedgerHead:	dc.b	"LIGNE NON RAYÉE :",0
+TxtLedgerHeadOk: dc.b	"LIGNE RAYÉE :",0
+TxtLedgerDot:	dc.b	". ",0
+TxtLedgerQuill:	dc.b	"LA PLUME EST À PORTÉE.",0
+TxtLedgerAsk:	dc.b	"ENTRÉE : RAYER LA LIGNE",0
+TxtLedgerDone:	dc.b	"LA LIGNE EST RAYÉE.",0
+TxtLedgerFree:	dc.b	"VOUS ÊTES ACQUITTÉS.",0
+TxtLedgerStruck: dc.b	"LA PLUME RAYE LA LIGNE.",0
+TxtLedgerOut:	dc.b	"LA MAISON NE VOUS DOIT PLUS RIEN.",0
+TxtDoorHeld:	dc.b	"L'ESCALIER DESCEND SUR UNE PORTE.",0
+TxtDoorHeld2:	dc.b	"ELLE NE CÈDE PAS : RIEN N'EST RAYÉ.",0
+TxtHelpLedger:	dc.b	"ENTRÉE RAYE LA LIGNE   ESC REFERME",0
+TxtShopSeen:	dc.b	"UNE ÉCHOPPE ! ESPACE POUR ENTRER.",0
+TxtShopHello:	dc.b	"UNE VOIX DERRIÈRE LE MUR : BIENVENUE",0
+TxtShopTitle:	dc.b	"ÉCHOPPE",0
 TxtShopBuy:	dc.b	"ACHAT",0
 TxtShopSell:	dc.b	"VENTE",0
-TxtShopHelp:	dc.b	"TAB CHANGE DE COTE",0
-TxtShopHelp2:	dc.b	"ENTREE CONCLUT, ESC SORT",0
+TxtShopHelp:	dc.b	"TAB CHANGE DE CÔTÉ",0
+TxtShopHelp2:	dc.b	"ENTRÉE CONCLUT ESC SORT",0
 TxtShopGold:	dc.b	"OR ",0
-TxtShopEmpty:	dc.b	"L'ETAL EST VIDE.",0
+TxtShopEmpty:	dc.b	"L'ÉTAL EST VIDE.",0
 TxtShopNoSell:	dc.b	"VOTRE SAC EST VIDE.",0
 TxtShopPoor:	dc.b	"PAS ASSEZ D'OR.",0
 TxtShopFull:	dc.b	"LE SAC EST PLEIN.",0
-TxtShopBought:	dc.b	"ACHETE : ",0
+TxtShopBought:	dc.b	"ACHETÉ : ",0
 TxtShopSold:	dc.b	"VENDU : ",0
 TxtShopFor:	dc.b	", ",0
 TxtShopOr:	dc.b	" OR.",0
-TxtTrapSpot:	dc.b	"PIEGE REPERE : ",0
-TxtTrapFires:	dc.b	" SE DECLENCHE !",0
+TxtTrapSpot:	dc.b	"PIÈGE REPÉRÉ : ",0
+TxtTrapFires:	dc.b	" SE DÉCLENCHE !",0
 TxtTrapHurt:	dc.b	"LE GROUPE PERD ",0
 TxtTrapMiss:	dc.b	"LE GROUPE S'EN TIRE INDEMNE.",0
-TxtTrapOff:	dc.b	" DESAMORCE LE PIEGE.",0
+TxtTrapOff:	dc.b	" DÉSAMORCE LE PIÈGE.",0
 TxtTrapSlip:	dc.b	"LA MAIN TREMBLE. RIEN N'EST FAIT.",0
-TxtTrapDown:	dc.b	"CE HEROS N'EST PLUS EN ETAT.",0
-TxtShieldUp:	dc.b	"UNE AURA PROTEGE LE GROUPE.",0
-TxtFear:	dc.b	"LE MONSTRE EST TERRIFIE !",0
+TxtTrapDown:	dc.b	"CE HÉROS N'EST PLUS EN ÉTAT.",0
+TxtShieldUp:	dc.b	"UNE AURA PROTÈGE LE GROUPE.",0
+TxtFear:	dc.b	"LE MONSTRE EST TERRIFIÉ !",0
 TxtUnknownSpell: dc.b	"CE SORT VOUS EST INCONNU.",0
 TxtNoSlot:	dc.b	"PLUS D'EMPLACEMENT A CE NIVEAU.",0
 TxtHalfSave:	dc.b	"IL ESQUIVE EN PARTIE !",0
-TxtResisted:	dc.b	"LE MONSTRE RESISTE AU SORT.",0
-TxtBlessed:	dc.b	"UNE BENEDICTION GUIDE VOS COUPS.",0
-TxtHeroDown:	dc.b	"CE HEROS EST HORS DE COMBAT.",0
-TxtEquips:	dc.b	" EQUIPE ",0
-TxtCannotEquip:	dc.b	"CELA NE S'EQUIPE PAS.",0
+TxtResisted:	dc.b	"LE MONSTRE RÉSISTE AU SORT.",0
+TxtBlessed:	dc.b	"UNE BÉNÉDICTION GUIDE VOS COUPS.",0
+TxtHeroDown:	dc.b	"CE HÉROS EST HORS DE COMBAT.",0
+TxtEquips:	dc.b	" ÉQUIPE ",0
+TxtCannotEquip:	dc.b	"CELA NE S'ÉQUIPE PAS.",0
 TxtCannotUse:	dc.b	"CELA NE S'UTILISE PAS.",0
 TxtLearns:	dc.b	" APPREND ",0
-TxtAlreadyKnown: dc.b	"CE SORT EST DEJA CONNU.",0
-TxtNoMagic:	dc.b	"CE HEROS N'EST PAS MAGICIEN.",0
-TxtNoHero:	dc.b	"AUCUN HEROS ICI.",0
+TxtAlreadyKnown: dc.b	"CE SORT EST DÉJÀ CONNU.",0
+TxtNoMagic:	dc.b	"CE HÉROS N'EST PAS MAGICIEN.",0
+TxtNoHero:	dc.b	"AUCUN HÉROS ICI.",0
 TxtBag:		dc.b	"SAC A DOS",0
 TxtChooseSpell:	dc.b	"QUEL SORT ?",0
 TxtPmSuffix:	dc.b	"PM",0
@@ -6866,48 +7838,53 @@ TxtSpells:	dc.b	"SORTS : ",0
 TxtSavesLbl:	dc.b	"VIG/REF/VOL ",0
 TxtNiveau:	dc.b	"NIVEAU ",0
 TxtOr:		dc.b	"   OR ",0
-TxtKeys:	dc.b	"   CLES ",0
+TxtKeys:	dc.b	"   CLÉS ",0
 TxtRuneDoor:	dc.b	"UNE PORTE COUVERTE DE RUNES.",0
-TxtLeverSeen:	dc.b	"UN LEVIER SCELLE DANS LE MUR.",0
+TxtLeverSeen:	dc.b	"UN LEVIER SCELLÉ DANS LE MUR.",0
 TxtGateShut:	dc.b	"UNE HERSE DE FER BARRE LE PASSAGE.",0
-TxtLeverDown:	dc.b	"LE LEVIER CEDE. UNE HERSE SE LEVE.",0
+TxtLeverDown:	dc.b	"LE LEVIER CÈDE. UNE HERSE SE LÈVE.",0
 TxtLeverUp:	dc.b	"LE LEVIER REMONTE. LA HERSE RETOMBE.",0
-TxtRuneTitle:	dc.b	"LA PORTE VOUS PARLE",0
-TxtRuneAsk:	dc.b	"REPONDEZ : 1, 2 OU 3",0
+TxtRuneTitle:	dc.b	"LA PORTE VÉRIFIE VOTRE DROIT",0
+TxtRuneAsk:	dc.b	"RÉPONDEZ : 1, 2 OU 3",0
 TxtRuneOk:	dc.b	"LES RUNES S'EFFACENT. PASSAGE !",0
-TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLERE.",0
-TxtRuneBurn:	dc.b	" EST BRULE, ",0
+TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLÈRE.",0
+TxtRuneBurn:	dc.b	" EST BRÛLÉ, ",0
 TxtR0Q1:	dc.b	"JE PARLE SANS BOUCHE",0
 TxtR0Q2:	dc.b	"ET J'ENTENDS SANS",0
 TxtR0Q3:	dc.b	"OREILLE. QUI SUIS-JE ?",0
-TxtR0A1:	dc.b	"L'ECHO",0
+TxtR0A1:	dc.b	"L'ÉCHO",0
 TxtR0A2:	dc.b	"LE VENT",0
 TxtR0A3:	dc.b	"LA PIERRE",0
 TxtR1Q1:	dc.b	"PLUS ON EN PREND,",0
 TxtR1Q2:	dc.b	"PLUS ON EN LAISSE",0
-TxtR1Q3:	dc.b	"DERRIERE SOI. QUOI ?",0
-TxtR1A1:	dc.b	"DES PIECES D'OR",0
+TxtR1Q3:	dc.b	"DERRIÈRE SOI. QUOI ?",0
+TxtR1A1:	dc.b	"DES PIÈCES D'OR",0
 TxtR1A2:	dc.b	"DES PAS",0
-TxtR1A3:	dc.b	"DES ANNEES",0
+TxtR1A3:	dc.b	"DES ANNÉES",0
 TxtR2Q1:	dc.b	"J'AI UN OEIL",0
 TxtR2Q2:	dc.b	"MAIS JE NE VOIS RIEN.",0
 TxtR2Q3:	dc.b	"QUI SUIS-JE ?",0
 TxtR2A1:	dc.b	"LE BORGNE",0
 TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
-TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR REPONDRE  ESC",0
-TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTREE OK  ESC",0
-TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P REGLAGES",0
-TxtRaised:	dc.b	" SE RELEVE.",0
-TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RECUPERE.",0
+TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR RÉPONDRE  ESC",0
+TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTRÉE OK  ESC",0
+TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P RÉGLAGES",0
+TxtRaised:	dc.b	" SE RELÈVE.",0
+TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RÉCUPÈRE.",0
 TxtNoTarget:	dc.b	"AUCUNE CIBLE ICI.",0
 TxtMenuNew:	dc.b	"1   COMMENCER UNE NOUVELLE PARTIE",0
-TxtMenuLoad:	dc.b	"2   REPRENDRE LA PARTIE SAUVEE",0
+TxtMenuLoad:	dc.b	"2   REPRENDRE LA PARTIE SAUVÉE",0
+TxtMenuStory:	dc.b	"3   CE QU'ÉTAIT CETTE CRYPTE",0
 TxtMenuQuit:	dc.b	"ESC QUITTER",0
-TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ETAGE",0
+TxtPrologTitle:	dc.b	"LE SEUIL DU GAGE",0
+TxtPrologPage:	dc.b	"PAGE ",0
+TxtPrologOf:	dc.b	" SUR ",0
+TxtPrologHelp:	dc.b	"UNE TOUCHE TOURNE LA PAGE   ESC SORT",0
+TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ÉTAGE",0
 TxtResumed:	dc.b	"VOUS REPRENEZ VOTRE DESCENTE.",0
-TxtSaved:	dc.b	"LA PARTIE EST SAUVEE.",0
-TxtOptTitle:	dc.b	"REGLAGES",0
+TxtSaved:	dc.b	"LA PARTIE EST SAUVÉE.",0
+TxtOptTitle:	dc.b	"RÉGLAGES",0
 TxtOptMusic:	dc.b	"MUSIQUE       ",0
 TxtOptSfx:	dc.b	"BRUITAGES     ",0
 TxtOptKb:	dc.b	"CLAVIER       ",0
@@ -6917,28 +7894,28 @@ TxtOptOn:	dc.b	"OUI",0
 TxtOptOff:	dc.b	"NON",0
 TxtOptAzerty:	dc.b	"AZERTY",0
 TxtOptQwerty:	dc.b	"QWERTY",0
-TxtHelpOpts:	dc.b	"FLECHES  ENTREE CHANGE  P OU ESC",0
+TxtHelpOpts:	dc.b	"FLÈCHES  ENTRÉE CHANGE  P OU ESC",0
 TxtBookTitle:	dc.b	"GRIMOIRE DE ",0
 TxtBookMark:	dc.b	">",0
 TxtBookLevel:	dc.b	"NIV ",0
 TxtBookSchool:	dc.b	" ",0
 TxtBookPerLvl:	dc.b	" PAR NIV. ",0
 TxtBookSave:	dc.b	"JET ",0
-TxtBookHalf:	dc.b	", MOITIE",0
+TxtBookHalf:	dc.b	", MOITIÉ",0
 TxtBookNoSave:	dc.b	"SANS JET",0
 TxtBookSlots:	dc.b	"  RESTE ",0
 TxtSchoolArc:	dc.b	"PROFANE",0
 TxtSchoolDiv:	dc.b	"DIVIN",0
 TxtSchoolBoth:	dc.b	"MIXTE",0
-TxtKindDmg:	dc.b	"DEGATS ",0
+TxtKindDmg:	dc.b	"DÉGÂTS ",0
 TxtKindHeal:	dc.b	"SOINS ",0
 TxtKindWard:	dc.b	"PROTECTION +",0
 TxtKindFear:	dc.b	"TERREUR ",0
-TxtKindBless:	dc.b	"BENEDICTION +",0
+TxtKindBless:	dc.b	"BÉNÉDICTION +",0
 TxtSaveFort:	dc.b	"VIGUEUR",0
-TxtSaveRef:	dc.b	"REFLEXES",0
-TxtSaveWill:	dc.b	"VOLONTE",0
-TxtHelpBook:	dc.b	"FLECHES  1-4 HEROS  L OU ESC FERMER",0
+TxtSaveRef:	dc.b	"RÉFLEXES",0
+TxtSaveWill:	dc.b	"VOLONTÉ",0
+TxtHelpBook:	dc.b	"FLÈCHES  1-4 HÉROS  L OU ESC FERMER",0
 TxtMapTitle:	dc.b	"CARTE NIVEAU ",0
 TxtDash2:	dc.b	" - ",0
 TxtNord:	dc.b	"NORD",0
@@ -6947,18 +7924,19 @@ TxtSud:		dc.b	"SUD",0
 TxtOuest:	dc.b	"OUEST",0
 TxtLegDoor:	dc.b	"PORTE",0
 TxtLegRune:	dc.b	"RUNE",0
-TxtLegShut:	dc.b	"FERMEE",0
+TxtLegShut:	dc.b	"FERMÉE",0
 TxtLegYou:	dc.b	"VOUS",0
 TxtLegStairs:	dc.b	"ESCALIER",0
 TxtLegMonster:	dc.b	"MONSTRE",0
+TxtLegLedger:	dc.b	"GREFFE",0
 TxtHelpMap:	dc.b	"M OU ESC POUR REFERMER LA CARTE",0
 TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
 TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
-TxtHelpInv:	dc.b	"E EQUIPER U UTILISER D JETER 1-4",0
+TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-4",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
-TxtHelpSheet:	dc.b	"1-4 HEROS  I SAC  L LIVRE  P REGLAGES",0
-TxtHelpShop:	dc.b	"FLECHES  TAB COTE  ENTREE  ESC SORT",0
+TxtHelpSheet:	dc.b	"1-4 HÉROS  I SAC  L LIVRE  P RÉGLAGES",0
+TxtHelpShop:	dc.b	"FLÈCHES  TAB COTE  ENTRÉE  ESC SORT",0
 	even
 
 ;======================================================================
@@ -6997,12 +7975,22 @@ MonPtr:		ds.l	1
 RngSeed:	ds.l	1
 OldIntena:	ds.w	1
 OldDmacon:	ds.w	1
+VBI_Vbr:	ds.l	1
+VBI_OldLvl3:	ds.l	1
+VBI_Count:	ds.w	1
+VBI_Flag:	ds.w	1
+VBI_Mids:	ds.w	1
+CIA_Vbr:	ds.l	1
+CIA_OldLvl6:	ds.l	1
+CIA_Count:	ds.w	1
+CIA_Bpm:	ds.w	1
 PosX:		ds.w	1
 PosY:		ds.w	1
 Dir:		ds.w	1
 Level:		ds.w	1
 Gold:		ds.w	1
 KeyCount:	ds.w	1
+Acquitted:	ds.w	1		; la ligne du registre est rayee
 InCombat:	ds.w	1
 MonKind:	ds.w	1
 MonArt:		ds.w	1
@@ -7015,8 +8003,9 @@ HasSave:	ds.w	1
 BookCursor:	ds.w	1
 BookTop:	ds.w	1
 OptCursor:	ds.w	1
-OptMusic:	ds.w	1
-OptSfx:	ds.w	1
+OptMusic:	ds.w	1		; les trois reglages se suivent : ils
+OptSfx:	ds.w	1		; partent ensemble dans la sauvegarde
+KbLayout:	ds.w	1
 CurMusic:	ds.w	1
 CopSurf:	ds.l	1
 SurfPhase:	ds.w	1
@@ -7036,8 +8025,14 @@ AnimCount:	ds.w	1
 GameOver:	ds.w	1
 Quit:		ds.w	1
 NeedRedraw:	ds.w	1
+PrologPage:	ds.w	1		; page lue du prologue
 DrawReady:	ds.w	1
-MusicLine:	ds.w	1
+MonClock:	ds.w	1		; trames depuis le dernier pas
+MonMoved:	ds.w	1		; quelque chose a bouge : on redessine
+MonToX:		ds.w	1		; la case visee par le pas en cours
+MonToY:		ds.w	1
+MonX:		ds.w	1		; la case du monstre que l'on combat
+MonY:		ds.w	1
 Phase:		ds.w	1
 UiMode:		ds.w	1
 SelHero:	ds.w	1
@@ -7054,7 +8049,6 @@ CreHp:		ds.w	1
 CreMp:		ds.w	1
 CreNameLen:	ds.w	1
 CreNameIdx:	ds.w	1
-KbLayout:	ds.w	1
 CreStr:		ds.w	1		; les six caracteristiques tirees
 CreDex:		ds.w	1
 CreCon:		ds.w	1
@@ -7069,6 +8063,8 @@ Inventory:	ds.b	INVSIZE
 MapTerrain:	ds.b	MAPBYTES
 MapParam:	ds.b	MAPBYTES
 MapSeen:	ds.b	MAPBYTES
+LevelStore:	ds.b	LVSTORE		; l'etat garde de chaque etage
+LevelKnown:	ds.w	LEVELS		; celui-ci a-t-il deja ete visite
 ShopStock:	ds.b	NSHOP
 	even
 	even

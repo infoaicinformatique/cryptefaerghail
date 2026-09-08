@@ -75,17 +75,21 @@ make preview       # écrit docs/preview.png
 ## Disquette prête à l'emploi
 
 `dist/AGADemos.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
-de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source du jeu
-(`crawl.s` et les deux fichiers écrits à la main dont il dépend), un
+de Kickstart 1.3 à 3.x) contenant les trois exécutables, le source des deux
+démos et les trois fichiers écrits à la main dont le jeu dépend, un
 `Lisezmoi.txt` et un `S/Startup-Sequence` qui lance le jeu au démarrage.
 
 Elle ne peut plus tout porter : à huit bitplanes le jeu pèse à lui seul plus
 d'un demi-mégaoctet — six cent mille octets une fois sur la disquette, où un
 bloc de 512 n'en porte que 488 — et les trois programmes en occupent six cent
-trente mille sur huit cent quatre-vingt. Le reste — le source des deux démos,
-les données générées, et les tables en `dc.w` dont `surfgrad.i` qui pèse à lui
-seul quatre-vingt mille octets — vit dans **`dist/AGADemos.lha`**, qui porte
-tout. Les générateurs Python refont les tables en une seconde.
+quarante mille sur huit cent quatre-vingt. **`crawl.s` ne tient plus** : cent
+quarante-huit mille octets, trois cents blocs, et il n'en reste pas dix. Le
+script écrit donc ce qui rentre, dans un ordre fixé, et dit ce qu'il laisse.
+
+Le reste — `crawl.s`, les données générées, et les tables en `dc.w` dont
+`surfgrad.i` qui pèse à lui seul quatre-vingt mille octets — vit dans
+**`dist/AGADemos.lha`**, qui porte tout. Les générateurs Python refont les
+tables en une seconde.
 
 ```sh
 make disk          # refabrique les deux -- nécessite pip install amitools
@@ -122,6 +126,8 @@ src/font8.i      police 8x8 de l'interface                   (généré)
 data/dgnart.bin  décors en perspective et monstres           (généré)
 data/dgnmap.bin  les trois niveaux                           (généré)
 src/ptreplay.i   replayer ProTracker 4 voies pour Paula
+src/vblank.i     interruption de retour trame (niveau 3, VERTB et COPER)
+src/ciatimer.i   timer A du CIA-B : le tempo du module (niveau 6)
 data/music.mod   module ProTracker, samples et partition     (généré)
 tools/gen_data.py    générateur des quatre .i de données
 tools/gen_module.py  générateur du module ProTracker
@@ -138,10 +144,12 @@ tools/play_game.py   pilote le jeu vers les monstres, les objets, l'escalier
 tools/shot68k.py     photographie les écrans dessinés par le processeur émulé
 tools/test_sfx.py    vérifie les bruitages aux registres de Paula
 tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
+tools/test_demos.py  fait tourner les deux démos dans le 68020 émulé
 tools/gen_score.py   générateur des deux musiques (accueil et donjon)
 tools/palette.py     la palette 256 couleurs AGA, décrite matière par matière
 tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
 tools/test_layout.py contrôle qu'aucun panneau ne déborde de la vue
+docs/histoire.md     le fond de fiction : ce qu'était Faerghail
 disk/                fichiers écrits à la main pour la disquette
 scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
@@ -151,6 +159,54 @@ scripts/get-toolchain.sh  installation de vasm + vlink
 
 Un crawler dans l'esprit de Black Crypt : on avance case par case, on tourne
 de 90°, et le donjon est dessiné en vue subjective.
+
+### L'histoire
+
+La crypte a un fond, écrit dans [docs/histoire.md](docs/histoire.md).
+
+`Faerghail` n'est pas un nom d'homme mais un mot de contrat : **faergh**, le
+gage, et **gail**, le seuil. *Le seuil du gage.* C'était une **maison de
+garde** — l'endroit où, faute de juge et de prince, on descendait déposer un
+objet pour garantir une promesse, et où un greffier tenait le registre des
+échéances. Trois étages, un par génération de greffiers, creusés dans une
+ancienne carrière de schiste : d'où la forme du lieu, qui n'est ni un tombeau
+ni un donjon de guerre mais un **classement**, et d'où la sortie tout en bas,
+là où la carrière débouche sur la vallée.
+
+Le fond n'a pas été inventé à côté du jeu, mais à partir de lui : chaque règle
+déjà écrite y trouve sa raison.
+
+| Ce que le jeu fait | Pourquoi la maison le fait |
+|---|---|
+| Le grand registre, au fond du dernier étage | C'est un greffe : la maison tient ses comptes, et la ligne se raye là où elle est écrite |
+| Les quatre noms du groupe y font les quatre colonnes | Une quittance porte quatre signatures |
+| La sortie ne s'ouvre qu'une fois la ligne rayée | On ne sort de Faerghail qu'acquitté |
+| Un marchand scellé dans un mur, un par étage | L'emmurement de garde du dernier greffier : il est devenu une clause de la maison, et un guichet est un endroit, pas un homme |
+| Il rachète à moitié prix | Le taux d'un dépôt refait |
+| Une porte à runes par étage, **trois** réponses | Le contrôle par question — une clé se vole, pas une réponse — et les trois colonnes du registre |
+| Une réponse fausse brûle un aventurier | La rune ne punit pas : elle inscrit |
+| Des dalles piégées, deux fois plus en bas | Une dette impayée, un ressort tendu ; en bas, les échéances sont plus vieilles |
+| Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
+| Une croix à la craie sur la dalle repérée | La marque des greffiers, sur un compte à examiner |
+| Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
+| La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
+
+Dans le jeu, cela se lit à l'accueil — **touche 3**, quatre pages tournées à
+n'importe quelle touche, les flèches pour revenir, `ESC` pour ressortir ; la
+page d'après la dernière rend l'accueil, pour qui lit sans regarder les
+touches. Et cela affleure en jouant : la ligne d'ouverture, une inscription
+par étage dans le journal, la voix derrière le mur à l'échoppe, et la
+quittance en guise de victoire — **on ne sort de Faerghail qu'acquitté**.
+
+![Le prologue](docs/emu-prologue.png)
+
+Les quatre pages sont des listes de lignes terminées par un long nul : on en
+ajoute une sans rien recompter, et la dernière page ne demande pas de cas
+particulier. Une ligne marquée d'une étoile passe à l'or — il n'y en a
+qu'une. `PROLOGROWS` borne le dessin à ce que le cadre tient : une ligne de
+trop déborderait du plan et retomberait en haut du suivant, ce que
+`tools/test_layout.py` va justement chercher, page par page, en regardant la
+bordure de l'écran et la bande laissée entre le texte et le pied de page.
 
 ### Création du groupe
 
@@ -209,10 +265,13 @@ niveau de donjon selon leur facteur de puissance.
 
 ### Commandes
 
+À l'accueil : `1` commence une partie, `2` reprend la partie sauvée, `3`
+ouvre le prologue, `ESC` quitte.
+
 | Touche | Effet |
 |---|---|
-| Flèches | avancer, reculer, tourner |
-| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, désamorcer un piège |
+| Flèches | avancer, reculer, tourner (l'escalier montant est sur la case d'arrivée) |
+| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
 | 1 à 4 | choisir le héros courant |
 | A / S / F | attaquer, lancer un sort, fuir (en combat) |
@@ -226,10 +285,63 @@ niveau de donjon selon leur facteur de puissance.
 
 Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
 clés, trésors), 4 monstres animés sur deux poses, coffres, objets au sol,
-niches creusées dans les murs, portes ordinaires, portes verrouillées — et
+niches creusées dans les murs, portes ordinaires, portes verrouillées, le
+grand registre au fond du dernier étage — et
 une **porte à runes** par niveau, qui pose une énigme à trois réponses :
 juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
 un aventurier.
+
+**Les monstres marchent.** Ils tenaient leur case et attendaient qu'on leur
+rentre dedans : un couloir vide était sûr, et le donjon n'avait pas de nerf.
+Ils font maintenant un pas toutes les quatorze trames vers le groupe, s'il est
+à moins de six cases — de plus loin, ils n'ont rien entendu. Le pas se pose
+sur du dallage nu et rien d'autre : ni porte, ni dalle piégée, ni escalier, ni
+la case d'un autre. Celui qui arrive sur le groupe engage le combat lui-même,
+et **meurt chez lui** : la case nettoyée à sa mort est la sienne, plus celle
+du groupe — les deux étaient la même tant que c'était toujours nous qui
+entrions dedans.
+
+Un bit de travail marque ceux qui ont déjà bougé pendant le balayage de la
+carte : sans lui, un monstre qui avance dans le sens du balayage serait
+rencontré une seconde fois par la même boucle et traverserait l'étage d'un
+coup. La marque est effacée avant de sortir, pour qu'elle ne parte jamais dans
+une sauvegarde.
+
+**On remonte.** Chaque étage sous le premier a son escalier montant, sur la
+case d'arrivée : on redescend par où l'on est venu, et l'on retombe sur
+l'escalier descendant de l'étage du dessus. Au-dessus du premier, c'est le
+jour, et la crypte ne se quitte que par le bas.
+
+Cela demandait de **garder l'état de chaque étage** : le jeu n'en tenait qu'un
+à la fois et relisait `dgnmap.bin` en descendant. Tant qu'on ne remontait
+jamais, cela ne se voyait pas ; sinon on retrouverait l'étage neuf à chaque
+passage — coffres pleins, monstres debout, échoppe regarnie — et le donjon se
+moissonnerait en boucle. Les trois états (terrain, paramètres, relevé de la
+carte, étal) tiennent maintenant côte à côte, et c'est eux que la sauvegarde
+emporte.
+
+**Le grand registre**, au greffe du dernier étage. Scellé dans un mur comme
+l'échoppe, mais loin du départ : il faut le chercher. `ESPACE` ouvre la page,
+qui porte les quatre noms du groupe — ce sont les quatre colonnes de signature
+d'une quittance. `ENTRÉE` raye la ligne, une fois pour toutes, et vaut de
+l'expérience à tout le monde.
+
+Le pupitre donne sur une **petite salle** creusée devant lui : le générateur
+n'ouvre que du mur nu, et jamais au contact d'un levier ou d'une herse — ceux
+-là comptent sur le tracé pour couper la route, et une salle percée à côté
+leur ferait un contournement.
+
+Sans cela, **l'escalier du dernier étage ne mène nulle part** : la porte des
+quittances ne cède qu'à qui a rayé sa ligne. Le troisième étage a donc un
+objet, et pas seulement une sortie — trouver le greffe, puis trouver
+l'escalier. Le générateur place le registre dans un mur bordé par un couloir
+atteignable **sans forcer une serrure**, jamais collé à l'escalier, et le
+contrôle par parcours en largeur, comme il le fait déjà pour les clés ; il
+tient aussi les dalles piégées à distance de son pupitre. La quittance est
+dans la partie sauvée — d'où un nouveau nombre magique, `FAE2` : une
+sauvegarde d'avant le registre n'a plus le bon compte et se refuse.
+
+![Le grand registre](docs/emu-registre.png)
 
 **Une échoppe par étage.** L'or ramassé dans les coffres et sur les cadavres
 ne servait à rien : chaque objet portait pourtant un prix dans `ItemTable`, et
@@ -255,6 +367,36 @@ Le générateur **vérifie que chaque niveau reste finissable** : il place les
 serrures loin du départ et les clés près, puis contrôle par parcours en
 largeur qu'on atteint l'escalier ou au moins une clé sans forcer une serrure.
 Ce contrôle a déjà attrapé un niveau coupé en deux dès la deuxième case.
+
+### Les accents
+
+Le jeu est en français et s'écrit tout en capitales. Il criait donc `ETAGE`,
+`PIEGE`, `CLE` et `RAYEE` : la police n'avait que `A-Z`, les chiffres et une
+poignée de signes — 49 glyphes.
+
+Une cellule de 8×8 ne laisse **pas** de place au-dessus d'une capitale de sept
+lignes. Les capitales accentuées sont donc redessinées sur six lignes, l'accent
+occupant la première : **la ligne de base ne bouge pas**, un `É` reste aligné
+sur le `E` d'à côté. La cédille, elle, descend sous la ligne de base, où la
+huitième ligne l'attendait déjà.
+
+```
+E : #####  É : ...#.    l'accent, une ligne
+    #....      #####    puis la lettre sur six
+    #....      #....
+    ###..      ###..
+    #....      #....
+    #....      #####
+    #####
+```
+
+Douze capitales accentuées — `À Â Ç È É Ê Ë Î Ï Ô Ù Û` — et une table de
+glyphes qui couvre Latin-1 de 32 à 255 au lieu de l'ASCII 32 à 127, dans les
+deux polices. Les minuscules d'un texte y prennent le glyphe de leur capitale.
+
+Les sources qui portent du texte — `src/crawl.s`, `src/scroll.s`,
+`src/tables.i` — sont donc **en Latin-1**, un octet par signe, comme la police
+les attend ; les outils Python qui les relisent le savent.
 
 ### La souris
 
@@ -459,8 +601,129 @@ et les trois barres sont additionnées puis saturées, d'où le blanc à leurs
 croisements. Le texte reste en couleur 1, donc lisible par-dessus.
 
 **La police** est une 5×7 doublée en 16×16, générée par `tools/gen_data.py`
-avec sa table ASCII → glyphe. Le texte lui-même est en clair dans `scroll.s`,
+avec sa table Latin-1 → glyphe. Le texte lui-même est en clair dans `scroll.s`,
 donc modifiable sans rien régénérer.
+
+## Points techniques — le retour trame (`src/vblank.i`)
+
+Les trois programmes attendaient la trame en surveillant `VPOSR` dans une
+boucle, et faisaient tout le reste à la file : échange de copperlist, tic de
+musique, rendu. Cela marche tant que la boucle tient dans une image. Le jeu ne
+tenait pas : un redessin à huit bitplanes dépasse la trame, et le module
+perdait des tics dès qu'on se déplaçait — le hoquet qu'on entendait en
+marchant. On avait colmaté en semant des appels au replayer au milieu du
+redessin ; ce n'était qu'un rattrapage.
+
+Le travail cadencé se fait maintenant dans une **interruption de niveau 3**,
+armée sur `VERTB` :
+
+```
+INTENA = INTF_SETCLR | INTF_INTEN | INTF_VERTB
+```
+
+**Le VBR.** Sur 68000 la table des vecteurs est en `$000000` ; dès le 68010
+elle se déplace, et le Kickstart d'un 1200 la recopie en Fast RAM. On demande
+donc son adresse au processeur — `movec vbr,d0`, instruction privilégiée,
+d'où le détour par `exec/Supervisor()` — après avoir vérifié le bit `68010`
+d'`AttnFlags`. L'ancien vecteur est rendu au système en quittant.
+
+**Le gestionnaire** vérifie d'abord que la cause est bien le retour trame : le
+niveau 3 est partagé (VERTB, COPER, BLIT), et une interruption d'un autre
+appareil serait comptée comme une image. L'acquittement s'écrit **deux fois** —
+le custom chip met un cycle à voir la valeur, et sans la seconde écriture le
+processeur peut sortir avant que `INTREQ` ne soit retombé, et rentrer aussitôt
+dans la même interruption.
+
+**Le jeton d'échange.** L'interruption ne met une copperlist (ou un tampon) à
+l'affiche que si la boucle principale a signalé l'avoir finie, sinon une trame
+en avance montrerait un dégradé à moitié écrit. La boucle pose `SwapReq` /
+`DrawReady`, l'interruption le consomme.
+
+**L'attente** n'est plus une surveillance du balayage mais la consommation
+d'un drapeau posé par l'interruption : si une trame est passée pendant que la
+boucle travaillait, l'attente est nulle. Et comme le drapeau ne compte pas,
+trois trames perdues n'en rendent qu'une — la boucle reprend au présent au
+lieu de rattraper dans le vide.
+
+**Les sections critiques.** Lancer un bruitage emprunte un canal de Paula au
+replayer ; coupé en deux par une interruption, il laisserait un canal à moitié
+armé. `VBI_Disable` / `VBI_Enable` encadrent ces passages — le lancement d'un
+effet, et le changement de module entre l'accueil et le donjon.
+
+**Le banc en tient compte** : `machine68k` n'a pas de ligne d'IRQ, donc
+`tools/run68k.py` empile lui-même le cadre d'exception (format 0 du 68020 :
+SR, PC, mot de format) et détourne le processeur vers le vecteur, comme le
+ferait Paula. `INTENA` et `INTREQ` y sont modélisés comme les registres à
+bascule qu'ils sont — bit 15 pose, sinon efface. Les appels directs de
+routines depuis le banc, eux, restent à l'abri de l'interruption : c'est le
+test qui tient l'horloge, et un tic de musique par-dessus le bruitage que l'on
+mesure fausserait la mesure.
+
+## Points techniques — l'image coupée en deux (COPER)
+
+Le copper sait changer une palette à mi-écran ; c'est même ce qu'il fait de
+mieux. Mais la palette doit alors être **écrite dans la copperlist** : 256
+couleurs en 24 bits, c'est 816 mots par bande, et il en faut une par bande.
+
+L'autre voie est un `MOVE` vers `INTREQ` posé à la ligne voulue, avec le bit
+`COPER` armé : le copper réveille le processeur, qui fait le travail lui-même.
+`AGAScroll` en pose un à la ligne 140.
+
+```
+	dc.w	(BANDLINE<<8)|$07, $fffe	; WAIT ligne 140
+	dc.w	INTREQ, $8010			; et réveille le 68000
+```
+
+Ce que le processeur écrit alors tient en **un registre** : `BPLAM`, les huit
+bits de poids fort de `BPLCON4`, que le matériel ajoute par ou-exclusif à
+chaque pixel avant de lire la palette. Avec `BPLAM = $80`, la bande du bas va
+chercher ses couleurs dans l'autre moitié des 256 — sans qu'une seule couleur
+ait été écrite, ni dans la copperlist ni ailleurs. L'en-tête de la liste remet
+`BPLCON4` en haut de l'image suivante : il n'y a rien à défaire.
+
+Le niveau 3 est **partagé** : `VERTB` et `COPER` frappent au même vecteur. Le
+gestionnaire lit donc `INTREQR` et sert les deux causes — elles peuvent tomber
+ensemble — au lieu de supposer que c'est le retour trame.
+
+Le banc n'émule pas le copper. Il **lit sa liste** : un `MOVE` vers `$09c`
+avec le bit `COPER` armé, c'est un réveil demandé, et le banc l'accorde à
+mi-trame. Sans cette lecture il réveillerait aussi les programmes qui n'ont
+rien demandé, et leur gestionnaire y verrait une cause qui n'existe pas.
+
+## Points techniques — le tempo (`src/ciatimer.i`)
+
+Un module ProTracker ne se joue pas à 50 Hz. Il se joue à **BPM × 2 / 5 tics
+par seconde** — 50 Hz n'est que le cas du tempo par défaut, 125. L'effet `Fxx`
+avec un paramètre d'au moins 32 change ce tempo, et le replayer n'avait aucun
+moyen de l'honorer tant qu'il était attelé au balayage : le code l'ignorait,
+avec un commentaire qui le disait.
+
+Il est maintenant attelé au **timer A du CIA-B**, dont l'horloge vaut
+709 379 Hz en PAL. Un compte de `709379 × 5 / (2 × BPM)` donne exactement la
+bonne cadence : 14 187 à 125 BPM, soit 50,00 Hz. L'interruption est de
+**niveau 6** (`INTF_EXTER`), son vecteur pris et rendu comme celui du retour
+trame.
+
+**L'ordre d'acquittement compte.** On efface `INTREQ` *avant* de lire l'ICR du
+CIA : la lecture efface les drapeaux du CIA et fait retomber sa ligne, et
+l'ordre inverse laisserait passer une interruption fantôme.
+
+**Ce que l'on ne rend pas** en sortant : le compte du timer, qui est en
+écriture seule — on ne peut pas savoir ce qu'il valait. On rend le vecteur, le
+masque du CIA et `INTENA` ; le timer reste sur notre tempo, muet.
+
+**Le retour trame garde l'image**, le timer garde la musique : `VBI_Frame` ne
+fait plus que l'échange de copperlist ou de tampons, `CIA_Tick` le tic du
+module. Les sections critiques du son — lancement d'un bruitage, changement de
+module — passent par `CIA_Lock`.
+
+**Un bug est tombé avec.** Le replayer arme le point de boucle d'une note au
+tic suivant son lancement, comme Paula l'exige. Il le faisait aussi sur le
+canal 3 quand un bruitage venait de l'emprunter : deux écritures qui posaient
+la boucle du module sur un canal en train de jouer autre chose. Le banc des
+bruitages l'a vu dès que la musique a changé de cadence — il vérifiait
+exactement cela depuis toujours, mais l'état du module ne tombait jamais au
+bon endroit.
 
 ## Points techniques — musique (`src/ptreplay.i`)
 
@@ -513,20 +776,27 @@ injouable serait invisible à la relecture du code — et
 données pour produire les captures ci-dessus.
 
 Côté musique, `tools/render_mod.py` rejoue le module avec exactement la même
-sémantique que le replayer 68k (mêmes effets, même cadence 50 Hz, mêmes règles
-de boucle) et produit un WAV : c'est ce qui vérifie le module et la logique de
-rejeu.
+sémantique que le replayer 68k (mêmes effets, même cadence — `BPM × 2 / 5`
+tics par seconde —, mêmes règles de boucle) et produit un WAV : c'est ce qui
+vérifie le module et la logique de rejeu.
 
-En revanche **rien n'a encore tourné sur Amiga réel ni sous émulateur** : les
-modèles valident l'arithmétique et la logique du code, pas le comportement du
-chipset ni celui de Paula.
+**Les trois programmes tournent pour de bon** : `tools/run68k.py` charge
+l'exécutable hunk, le relocalise, remplace `exec.library` et
+`graphics.library` par des souches, et exécute le vrai code dans un 68020
+émulé — chipset simulé au strict nécessaire (balayage, blitter rectangulaire,
+souris et clavier au CIA-A, timer A du CIA-B, retour trame au niveau 3 et
+timer au niveau 6, les deux avec leur vrai cadre d'exception). Sept bancs
+s'appuient dessus : invariants du jeu, bruitages relus aux registres de Paula,
+replayer, copperlist, sauvegarde, largeur des panneaux, les deux démos, plus
+un parcours dirigé de quatre cents pas.
+
+En revanche **rien n'a encore tourné sur Amiga réel** : les modèles valident
+l'arithmétique et la logique du code, pas le comportement du chipset ni celui
+de Paula.
 
 ## Pistes pour la suite
 
 - Scrolling infini : bitmap de la largeur de l'écran + 16 pixels, avec une
   colonne redessinée au blitter à chaque franchissement de mot.
-- Blitter : effacement, dessin de bobs avec masque (cookie-cut), lignes.
-- Interruption niveau 3 (VERTB / COPER) plutôt qu'une attente active.
-- Cadencer le replayer par une interruption CIA-B (tempo BPM réel) plutôt que
-  par le VBlank.
-- Scroller sinusoïdal avec police 8×8 et copper text.
+- Une phrase d'accueil par étage pour la voix derrière le comptoir : voir la
+  fin de [docs/histoire.md](docs/histoire.md).

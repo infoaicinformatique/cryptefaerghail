@@ -53,6 +53,8 @@ PANY_AMP	= 128
 
 ; --- bande de scrolltext, en bas de l'ecran ---
 SPLITLINE	= 236			; le playfield occupe 44..235
+BANDLINE	= 140			; ou le copper reveille le processeur
+BANDBPLAM	= $80			; ce qu'il ajoute a chaque pixel en bas
 SCRTEXTH	= 64			; hauteur de la bande
 SCRBPL		= 48			; 384 pixels de large, un seul plan
 SCRMOD		= SCRBPL-FETCHBYTES
@@ -131,20 +133,16 @@ Start:
 	bsr	PT_Init
 
 	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_SPRITE|DMAF_BLITTER|DMAF_AUDIO,DMACON(a5)
+	bsr	VBI_Install		; a partir d'ici, la trame nous appelle
+	move.w	#INTF_SETCLR|INTF_COPER,INTENA(a5)	; et le copper aussi
+	bsr	CIA_Install		; et le timer A bat la mesure
 
+;----------------------------------------------------------------------
+; Boucle principale : on batit la liste cachee, puis on l'offre a
+; l'interruption de retour trame, qui seule la met a l'affiche et
+; avance la musique (VBI_Frame, plus bas).
+;----------------------------------------------------------------------
 MainLoop:
-	bsr	WaitVBlank
-
-	move.l	BackRec,a0		; la liste preparee devient visible
-	move.l	li_Cop(a0),d0
-	move.l	d0,COP1LCH(a5)
-	move.w	d0,COPJMP1(a5)
-
-	move.l	FrontRec,d0		; echange front / back
-	move.l	BackRec,d1
-	move.l	d1,FrontRec
-	move.l	d0,BackRec
-
 	addq.w	#1,FrameCnt
 	move.w	PalRot,d0		; rotation de la palette
 	addq.w	#1,d0
@@ -154,8 +152,6 @@ MainLoop:
 .rotOk:
 	move.w	d0,PalRot
 
-	bsr	PT_Tick			; un tick de musique par image
-
 	move.l	BackRec,a0
 	bsr	UpdateBitplanes		; pointeurs + scroll fin
 	move.l	BackRec,a0
@@ -164,10 +160,18 @@ MainLoop:
 	bsr	UpdateBars
 	bsr	MoveSprite
 	bsr	ScrollUpdate
+	move.w	#1,SwapReq		; la liste est prete a etre montree
+
+.wait:
+	bsr	VBI_Wait		; une trame passe
+	tst.w	SwapReq			; l'a-t-elle prise ?
+	bne.s	.wait
 
 	btst	#6,CIAAPRA
 	bne	MainLoop
 
+	bsr	CIA_Remove
+	bsr	VBI_Remove
 	bsr	PT_Stop
 	bsr	RestoreSystem
 	move.l	4.w,a6
@@ -349,6 +353,17 @@ BuildCopperList:
 	move.w	#BPLCON1,(a2)+		; scroll fin (mis a jour par image)
 	move.l	a2,li_Con1(a0)
 	clr.w	(a2)+
+
+	; --- a mi-playfield, le copper reveille le processeur ---
+	; Un MOVE vers INTREQ, et c'est tout : le reste du travail se fait
+	; dans VBI_Mid, au niveau 3. C'est la seule facon de changer de
+	; palette en cours d'image sans ecrire la nouvelle dans la
+	; copperlist -- ici, un BPLAM qui envoie la bande du bas chercher
+	; ses couleurs dans l'autre moitie de la palette.
+	move.w	#(BANDLINE<<8)|$07,(a2)+
+	move.w	#$fffe,(a2)+
+	move.w	#INTREQ,(a2)+
+	move.w	#INTF_SETCLR|INTF_COPER,(a2)+
 
 	; --- bascule vers la bande de scrolltext ---
 	; A partir de SPLITLINE le copper repasse a un seul bitplane, celui
@@ -884,9 +899,9 @@ ScrollUpdate:
 	move.w	d6,d0
 	moveq	#0,d1
 	move.b	(a0,d0.w),d1
-	sub.w	#32,d1			; hors table : rien a dessiner
+	sub.w	#FONTCHARS,d1		; hors table : rien a dessiner
 	bmi.s	.skip
-	cmp.w	#96,d1
+	cmp.w	#FONTLAST-FONTCHARS+1,d1
 	bge.s	.skip
 	lea	FontMap,a1
 	moveq	#0,d2
@@ -976,17 +991,49 @@ WaitBlit:
 	rts
 
 ;----------------------------------------------------------------------
-WaitVBlank:
-	move.l	d0,-(sp)
-.wait:
-	move.l	VPOSR(a5),d0
-	and.l	#$0001ff00,d0
-	cmp.l	#300<<8,d0
-	bne.s	.wait
-	move.l	(sp)+,d0
+; VBI_Frame : le travail cadence, appele depuis l'interruption de
+; retour trame. a5 = CUSTOM, tous les registres sont libres.
+;
+; L'echange n'a lieu que si la boucle principale a fini sa liste
+; (SwapReq) : une trame en avance montrerait sinon des barres a moitie
+; posees et un scroll a cheval sur deux images.
+;----------------------------------------------------------------------
+VBI_Frame:
+	tst.w	SwapReq
+	beq.s	.noSwap
+	clr.w	SwapReq
+	move.l	BackRec,a0		; la liste preparee devient visible
+	move.l	li_Cop(a0),d0
+	move.l	d0,COP1LCH(a5)
+	move.w	d0,COPJMP1(a5)
+
+	move.l	FrontRec,d0		; echange front / back
+	move.l	BackRec,d1
+	move.l	d1,FrontRec
+	move.l	d0,BackRec
+.noSwap:
+	rts				; la musique, elle, suit le timer A
+
+; VBI_Mid : le copper a atteint BANDLINE et nous a reveilles.
+;
+; Un seul registre : BPLAM, les huit bits de poids fort de BPLCON4, que
+; le materiel ajoute par ou-exclusif a chaque pixel avant de lire la
+; palette. La bande du bas va donc chercher ses couleurs dans l'autre
+; moitie des 256, sans qu'une seule couleur ait ete ecrite. L'en-tete
+; de la copperlist remet BPLCON4 en haut de l'image suivante : il n'y a
+; rien a defaire.
+VBI_Mid:
+	move.w	#(BANDBPLAM<<8)|$00ff,BPLCON4(a5)
 	rts
 
-; --- replayer ProTracker : son code reste dans cette section ---
+; CIA_Tick : le tic du module, appele par le timer A.
+CIA_Tick:
+	bsr	PT_Tick
+	rts
+
+; --- retour trame, timer et replayer : dans cette meme section ---
+	include	"vblank.i"
+	include	"ciatimer.i"
 	include	"ptreplay.i"
 
 ;======================================================================
@@ -1012,7 +1059,7 @@ BarDefs:
 ScrollText:
 	dc.b	"   BIENVENUE SUR AMIGA 1200 !   "
 	dc.b	"8 BITPLANES AGA, 256 COULEURS EN 24 BITS VRAIES, "
-	dc.b	"SCROLLING 100 POUR 100 MATERIEL, "
+	dc.b	"SCROLLING 100 POUR 100 MATÉRIEL, "
 	dc.b	"UN SPRITE, UN PLASMA ET PROTRACKER SUR PAULA...   "
 	dc.b	"LE COPPER FAIT LE RESTE.   "
 	dc.b	"BOUTON GAUCHE POUR SORTIR.        ",0
@@ -1046,6 +1093,16 @@ Rec2:		ds.b	li_SIZEOF
 OldIntena:	ds.w	1
 OldDmacon:	ds.w	1
 FrameCnt:	ds.w	1
+SwapReq:	ds.w	1
+VBI_Vbr:	ds.l	1
+VBI_OldLvl3:	ds.l	1
+VBI_Count:	ds.w	1
+VBI_Flag:	ds.w	1
+VBI_Mids:	ds.w	1
+CIA_Vbr:	ds.l	1
+CIA_OldLvl6:	ds.l	1
+CIA_Count:	ds.w	1
+CIA_Bpm:	ds.w	1
 PalRot:		ds.w	1
 BarCenters:	ds.w	NBARS
 BarTab1:	ds.l	SCRTEXTH

@@ -19,14 +19,14 @@ SFX_SWORD, SFX_AXE, SFX_BOW = 0, 1, 2
 # nom, type, des/CA, faces, bonus, valeur, bruitage
 ITEMS = [
     ("DAGUE",            W, 1, 4, 0, 2, SFX_SWORD, 19, 2),
-    ("EPEE COURTE",      W, 1, 6, 0, 10, SFX_SWORD, 19, 2),
-    ("EPEE LONGUE",      W, 1, 8, 0, 15, SFX_SWORD, 19, 2),
+    ("ÉPÉE COURTE",      W, 1, 6, 0, 10, SFX_SWORD, 19, 2),
+    ("ÉPÉE LONGUE",      W, 1, 8, 0, 15, SFX_SWORD, 19, 2),
     ("HACHE",            W, 1, 8, 0, 12, SFX_AXE, 20, 3),
     ("HACHE DE GUERRE",  W, 1, 12, 0, 20, SFX_AXE, 20, 3),
     ("MASSE",            W, 1, 8, 0, 12, SFX_AXE, 20, 2),
     ("ARC COURT",        W, 1, 6, 0, 30, SFX_BOW, 20, 3),
     ("BATON",            W, 1, 6, 0, 5, SFX_SWORD, 20, 2),
-    ("EPEE LONGUE +1",   W, 1, 8, 1, 100, SFX_SWORD, 19, 2),
+    ("ÉPÉE LONGUE +1",   W, 1, 8, 1, 100, SFX_SWORD, 19, 2),
     ("HACHE RUNIQUE +2", W, 1, 12, 2, 200, SFX_AXE, 20, 3),
     ("DAGUE DE FEU +1",  W, 2, 4, 1, 120, SFX_SWORD, 19, 2),
     ("ROBE",             A, 0, 0, 0, 5, 0, 20, 2),
@@ -38,12 +38,12 @@ ITEMS = [
     ("POTION MAJEURE",   PO, 3, 8, 3, 70, 0, 20, 2),
     ("PARCH. TRAIT",     SC, 0, 0, 0, 40, 0, 20, 2),
     ("PARCH. SOINS",     SC, 1, 0, 0, 40, 0, 20, 2),
-    ("PARCH. BRULURE",   SC, 2, 0, 0, 60, 0, 20, 2),
+    ("PARCH. BRÛLURE",   SC, 2, 0, 0, 60, 0, 20, 2),
     ("PARCH. ARMURE",    SC, 3, 0, 0, 60, 0, 20, 2),
     ("PARCH. EFFROI",    SC, 4, 0, 0, 80, 0, 20, 2),
-    ("PARCH. ECLAIR",    SC, 5, 0, 0, 120, 0, 20, 2),
-    ("CLE DE FER",       KE, 0, 0, 0, 10, 0, 20, 2),
-    ("CLE D'ARGENT",     KE, 0, 0, 0, 25, 0, 20, 2),
+    ("PARCH. ÉCLAIR",    SC, 5, 0, 0, 120, 0, 20, 2),
+    ("CLÉ DE FER",       KE, 0, 0, 0, 10, 0, 20, 2),
+    ("CLÉ D'ARGENT",     KE, 0, 0, 0, 25, 0, 20, 2),
     ("GEMME",            TR, 0, 0, 0, 120, 0, 20, 2),
     ("COURONNE",         TR, 0, 0, 0, 400, 0, 20, 2),
 ]
@@ -51,11 +51,11 @@ ITEMS = [
 # nom, cout, genre (0 degats, 1 soin, 2 armure, 3 effroi), des, faces, bonus
 SPELLS = [
     ("TRAIT MAGIQUE",   2, 0, 1, 4, 1),
-    ("SOINS LEGERS",    2, 1, 1, 8, 1),
-    ("MAINS BRULANTES", 3, 0, 2, 4, 0),
+    ("SOINS LÉGERS",    2, 1, 1, 8, 1),
+    ("MAINS BRÛLANTES", 3, 0, 2, 4, 0),
     ("ARMURE DE MAGE",  3, 2, 0, 0, 4),
     ("EFFROI",          4, 3, 0, 0, 0),
-    ("ECLAIR",          6, 0, 3, 6, 0),
+    ("ÉCLAIR",          6, 0, 3, 6, 0),
 ]
 
 # --- Bestiaire, d'apres le SRD 3.5 (Open Game License) ---------------
@@ -80,9 +80,9 @@ MONSTERS = [
     ("WORG", 4, 10, 8, 14, 7, 1, 6, 4, 20, 2, 6, 6, 3, 2.0, 0, 0),
     ("OMBRE", 3, 12, 0, 13, 3, 1, 6, 0, 20, 2, 1, 3, 4, 3.0, 0, 5),
     ("OGRE", 4, 8, 11, 16, 8, 2, 8, 7, 20, 2, 6, 0, 1, 3.0, 45, 4),
-    ("HOMME-LEZARD", 2, 8, 2, 15, 3, 1, 8, 1, 20, 2, 3, 3, 0, 1.0, 12, 3),
+    ("HOMME-LÉZARD", 2, 8, 2, 15, 3, 1, 8, 1, 20, 2, 3, 3, 0, 1.0, 12, 3),
     ("GARGOUILLE", 4, 8, 19, 16, 6, 1, 4, 2, 20, 2, 5, 6, 4, 4.0, 30, 7),
-    ("OMBRE BLEME", 4, 12, 0, 15, 3, 1, 4, 1, 20, 2, 1, 2, 5, 3.0, 25, 5),
+    ("OMBRE BLÊME", 4, 12, 0, 15, 3, 1, 4, 1, 20, 2, 1, 2, 5, 3.0, 25, 5),
     ("OURSALOUP", 5, 10, 25, 15, 9, 1, 6, 5, 20, 2, 9, 5, 2, 4.0, 0, 0),
     ("HARPIE", 7, 8, 0, 15, 7, 1, 6, 0, 20, 2, 2, 7, 6, 4.0, 40, 7),
     ("MINOTAURE", 6, 8, 12, 15, 9, 3, 6, 6, 20, 3, 6, 5, 5, 4.0, 60, 4),
@@ -90,7 +90,7 @@ MONSTERS = [
     ("SPECTRE", 7, 12, 0, 15, 6, 1, 8, 0, 20, 2, 2, 5, 7, 7.0, 70, 5),
     ("MOMIE", 8, 12, 3, 20, 11, 1, 6, 10, 20, 2, 4, 2, 8, 5.0, 90, 6),
     ("HYDRE", 5, 10, 28, 15, 6, 1, 10, 3, 20, 2, 9, 5, 3, 5.0, 80, 8),
-    ("GEANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4),
+    ("GÉANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4),
 ]
 
 # Ce que rapporte une victoire, selon le facteur de puissance (FP) :
@@ -107,7 +107,7 @@ CLASSES = [
     ("GUERRIER",  10, 0, (1, 0, 0), 0),
     ("BARBARE",   12, 0, (1, 0, 0), 0),
     ("ROUBLARD",   6, 1, (0, 1, 0), 0),
-    ("RODEUR",     8, 0, (1, 1, 0), 2),
+    ("RÔDEUR",     8, 0, (1, 1, 0), 2),
     ("PALADIN",   10, 0, (1, 0, 1), 2),
     ("CLERC",      8, 1, (1, 0, 1), 2),
     ("MAGICIEN",   4, 2, (0, 0, 1), 1),
@@ -134,9 +134,9 @@ START_GEAR = [
 SPELLS = [
     ("RAYON DE GIVRE",   0, 0, 0, 3, 0, 1, 0, 0, 1),
     ("PROJECTILE MAGIQUE", 1, 0, 0, 4, 1, 5, 0, 0, 1),
-    ("MAINS BRULANTES",  1, 0, 1, 4, 0, 5, 2, 1, 1),
+    ("MAINS BRÛLANTES",  1, 0, 1, 4, 0, 5, 2, 1, 1),
     ("ARMURE DE MAGE",   1, 2, 0, 0, 4, 0, 0, 0, 1),
-    ("SOINS LEGERS",     1, 1, 0, 8, 1, 5, 0, 0, 2),
+    ("SOINS LÉGERS",     1, 1, 0, 8, 1, 5, 0, 0, 2),
     ("BENEDICTION",      1, 4, 0, 0, 1, 0, 0, 0, 2),
     ("TERREUR",          1, 3, 0, 0, 0, 0, 3, 0, 3),
     ("FLECHE ACIDE",     2, 0, 0, 4, 0, 2, 0, 0, 1),
@@ -144,7 +144,7 @@ SPELLS = [
     ("SOINS MODERES",    2, 1, 0, 8, 1, 10, 0, 0, 2),
     ("IMMOBILISATION",   2, 3, 0, 0, 0, 0, 3, 0, 3),
     ("BOULE DE FEU",     3, 0, 1, 6, 0, 10, 2, 1, 1),
-    ("ECLAIR",           3, 0, 1, 6, 0, 10, 2, 1, 1),
+    ("ÉCLAIR",           3, 0, 1, 6, 0, 10, 2, 1, 1),
     ("SOINS IMPORTANTS", 3, 1, 0, 8, 1, 15, 0, 0, 2),
     ("FLEAU",            3, 0, 1, 8, 0, 5, 1, 1, 2),
     ("BOUCLIER DE FOI",  1, 2, 0, 0, 2, 0, 0, 0, 2),
@@ -187,7 +187,9 @@ def keymap(label, rows):
     return out
 
 
-with open(OUT, "w") as f:
+# Les noms portent des capitales accentuees : le fichier s'ecrit en
+# Latin-1, un octet par signe, comme la police les attend.
+with open(OUT, "w", encoding="latin-1") as f:
     f.write(";----------------------------------------------------------\n")
     f.write("; tables.i - GENERE PAR tools/gen_tables.py\n")
     f.write(";----------------------------------------------------------\n\n")

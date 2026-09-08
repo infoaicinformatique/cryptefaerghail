@@ -10,7 +10,7 @@
 #                    police, tables d'objets et de sorts, bruitages)
 #   make wav         rend la musique en WAV pour l'ecouter sans Amiga
 #   make check       verifie l'arithmetique du scroll et de la copperlist
-#   make test        fait tourner le jeu dans un 68020 emule
+#   make test        fait tourner le jeu et les demos dans un 68020 emule
 #   make shots       photographie les ecrans du jeu emule
 #   make preview     rend une image de AGAScroll dans docs/preview.png
 #   make disk        fabrique dist/AGADemos.adf (disquette amorcable) et
@@ -24,7 +24,7 @@ VASM    ?= $(if $(wildcard tools/bin/vasmm68k_mot),tools/bin/vasmm68k_mot,vasmm6
 VLINK   ?= $(if $(wildcard tools/bin/vlink),tools/bin/vlink,vlink)
 
 INCS    := src/hardware.i src/sine.i src/sprite.i src/palette.i \
-           src/ptreplay.i data/music.mod
+           src/ptreplay.i src/vblank.i data/music.mod
 TARGETS := bin/AGADemo bin/AGAScroll bin/AGACrawl
 
 .PHONY: all clean data music score wav dungeon check preview disk \
@@ -45,7 +45,8 @@ build/AGAScroll.o: src/scroll.s $(INCS)
 	@mkdir -p build
 	$(VASM) $(CPU) -Fhunk -I src -I . -o $@ src/scroll.s
 
-build/AGACrawl.o: src/crawl.s src/hardware.i src/ptreplay.i src/dgnpal.i \
+build/AGACrawl.o: src/crawl.s src/hardware.i src/ptreplay.i src/vblank.i \
+                  src/dgnpal.i \
                   src/font8.i src/tables.i data/dgnart.bin data/dgnmap.bin \
                   data/sfx.bin data/crawlmus.mod data/titlemus.mod
 	@mkdir -p build
@@ -74,9 +75,10 @@ wav:
 check:
 	python3 tools/preview.py 40 /dev/null
 
-# Fait tourner le jeu dans un 68020 emule et verifie son comportement.
+# Fait tourner le jeu et les deux demos dans un 68020 emule.
 test:
 	python3 tools/test_game.py
+	python3 tools/test_demos.py
 	python3 tools/test_sfx.py
 	python3 tools/test_replay.py
 	python3 tools/test_copper.py

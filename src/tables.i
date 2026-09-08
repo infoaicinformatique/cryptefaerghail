@@ -8,11 +8,11 @@ ItemTable:
 	; 1 DAGUE
 	dc.b	"DAGUE",0,0,0,0,0,0,0,0,0,0,0,0,0
 	dc.w	0,1,4,0,2,0,19,2
-	; 2 EPEE COURTE
-	dc.b	"EPEE COURTE",0,0,0,0,0,0,0
+	; 2 ÉPÉE COURTE
+	dc.b	"ÉPÉE COURTE",0,0,0,0,0,0,0
 	dc.w	0,1,6,0,10,0,19,2
-	; 3 EPEE LONGUE
-	dc.b	"EPEE LONGUE",0,0,0,0,0,0,0
+	; 3 ÉPÉE LONGUE
+	dc.b	"ÉPÉE LONGUE",0,0,0,0,0,0,0
 	dc.w	0,1,8,0,15,0,19,2
 	; 4 HACHE
 	dc.b	"HACHE",0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -29,8 +29,8 @@ ItemTable:
 	; 8 BATON
 	dc.b	"BATON",0,0,0,0,0,0,0,0,0,0,0,0,0
 	dc.w	0,1,6,0,5,0,20,2
-	; 9 EPEE LONGUE +1
-	dc.b	"EPEE LONGUE +1",0,0,0,0
+	; 9 ÉPÉE LONGUE +1
+	dc.b	"ÉPÉE LONGUE +1",0,0,0,0
 	dc.w	0,1,8,1,100,0,19,2
 	; 10 HACHE RUNIQUE +2
 	dc.b	"HACHE RUNIQUE +2",0,0
@@ -65,8 +65,8 @@ ItemTable:
 	; 20 PARCH. SOINS
 	dc.b	"PARCH. SOINS",0,0,0,0,0,0
 	dc.w	4,1,0,0,40,0,20,2
-	; 21 PARCH. BRULURE
-	dc.b	"PARCH. BRULURE",0,0,0,0
+	; 21 PARCH. BRÛLURE
+	dc.b	"PARCH. BRÛLURE",0,0,0,0
 	dc.w	4,2,0,0,60,0,20,2
 	; 22 PARCH. ARMURE
 	dc.b	"PARCH. ARMURE",0,0,0,0,0
@@ -74,14 +74,14 @@ ItemTable:
 	; 23 PARCH. EFFROI
 	dc.b	"PARCH. EFFROI",0,0,0,0,0
 	dc.w	4,4,0,0,80,0,20,2
-	; 24 PARCH. ECLAIR
-	dc.b	"PARCH. ECLAIR",0,0,0,0,0
+	; 24 PARCH. ÉCLAIR
+	dc.b	"PARCH. ÉCLAIR",0,0,0,0,0
 	dc.w	4,5,0,0,120,0,20,2
-	; 25 CLE DE FER
-	dc.b	"CLE DE FER",0,0,0,0,0,0,0,0
+	; 25 CLÉ DE FER
+	dc.b	"CLÉ DE FER",0,0,0,0,0,0,0,0
 	dc.w	5,0,0,0,10,0,20,2
-	; 26 CLE D'ARGENT
-	dc.b	"CLE D'ARGENT",0,0,0,0,0,0
+	; 26 CLÉ D'ARGENT
+	dc.b	"CLÉ D'ARGENT",0,0,0,0,0,0
 	dc.w	5,0,0,0,25,0,20,2
 	; 27 GEMME
 	dc.b	"GEMME",0,0,0,0,0,0,0,0,0,0,0,0,0
@@ -97,11 +97,11 @@ SpellTable:
 	dc.w	0,0,0,3,0,1,0,0,1
 	dc.b	"PROJECTILE MAGIQUE",0,0
 	dc.w	1,0,0,4,1,5,0,0,1
-	dc.b	"MAINS BRULANTES",0,0,0,0,0
+	dc.b	"MAINS BRÛLANTES",0,0,0,0,0
 	dc.w	1,0,1,4,0,5,2,1,1
 	dc.b	"ARMURE DE MAGE",0,0,0,0,0,0
 	dc.w	1,2,0,0,4,0,0,0,1
-	dc.b	"SOINS LEGERS",0,0,0,0,0,0,0,0
+	dc.b	"SOINS LÉGERS",0,0,0,0,0,0,0,0
 	dc.w	1,1,0,8,1,5,0,0,2
 	dc.b	"BENEDICTION",0,0,0,0,0,0,0,0,0
 	dc.w	1,4,0,0,1,0,0,0,2
@@ -117,7 +117,7 @@ SpellTable:
 	dc.w	2,3,0,0,0,0,3,0,3
 	dc.b	"BOULE DE FEU",0,0,0,0,0,0,0,0
 	dc.w	3,0,1,6,0,10,2,1,1
-	dc.b	"ECLAIR",0,0,0,0,0,0,0,0,0,0,0,0,0,0
+	dc.b	"ÉCLAIR",0,0,0,0,0,0,0,0,0,0,0,0,0,0
 	dc.w	3,0,1,6,0,10,2,1,1
 	dc.b	"SOINS IMPORTANTS",0,0,0,0
 	dc.w	3,1,0,8,1,15,0,0,2
@@ -159,11 +159,11 @@ MonTypes:
 	dc.w	3,12,0,13,3,1,6,0,20,2,1,3,4,225,0,5
 	dc.b	"OGRE",0,0,0,0,0,0,0,0,0,0,0,0
 	dc.w	4,8,11,16,8,2,8,7,20,2,6,0,1,225,45,4
-	dc.b	"HOMME-LEZARD",0,0,0,0
+	dc.b	"HOMME-LÉZARD",0,0,0,0
 	dc.w	2,8,2,15,3,1,8,1,20,2,3,3,0,75,12,3
 	dc.b	"GARGOUILLE",0,0,0,0,0,0
 	dc.w	4,8,19,16,6,1,4,2,20,2,5,6,4,300,30,7
-	dc.b	"OMBRE BLEME",0,0,0,0,0
+	dc.b	"OMBRE BLÊME",0,0,0,0,0
 	dc.w	4,12,0,15,3,1,4,1,20,2,1,2,5,225,25,5
 	dc.b	"OURSALOUP",0,0,0,0,0,0,0
 	dc.w	5,10,25,15,9,1,6,5,20,2,9,5,2,300,0,0
@@ -179,7 +179,7 @@ MonTypes:
 	dc.w	8,12,3,20,11,1,6,10,20,2,4,2,8,375,90,6
 	dc.b	"HYDRE",0,0,0,0,0,0,0,0,0,0,0
 	dc.w	5,10,28,15,6,1,10,3,20,2,9,5,3,375,80,8
-	dc.b	"GEANT COLLINE",0,0,0
+	dc.b	"GÉANT COLLINE",0,0,0
 	dc.w	12,8,48,17,16,2,8,10,20,2,12,3,4,525,200,4
 NMONSTERS	= 25
 
@@ -207,7 +207,7 @@ ClassTable:
 	dc.w	12,0,1,0,0,0
 	dc.b	"ROUBLARD",0,0,0,0
 	dc.w	6,1,0,1,0,0
-	dc.b	"RODEUR",0,0,0,0,0,0
+	dc.b	"RÔDEUR",0,0,0,0,0,0
 	dc.w	8,0,1,1,0,2
 	dc.b	"PALADIN",0,0,0,0,0
 	dc.w	10,0,1,0,1,2

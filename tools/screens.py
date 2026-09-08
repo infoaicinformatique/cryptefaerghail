@@ -21,7 +21,8 @@ SCRW, SCRH, SCRBPL = 320, 256, 40
 
 # --- lecture des tables generees --------------------------------------
 def parse_table(label, name_len, nwords):
-    src = open(os.path.join(ROOT, "src", "tables.i")).read()
+    src = open(os.path.join(ROOT, "src", "tables.i"),
+               encoding="latin-1").read()
     body = src.split(label + ":", 1)[1]
     rows, name = [], None
     for line in body.splitlines():
@@ -128,7 +129,7 @@ def screen_dungeon(path):
     s = blank()
     sx, sy, sd, grid = LEVELS[0]
     D.draw_view(s, RAW, PIECES, grid, 3, 1, 1)
-    chrome(s, PARTY, ["LA CRYPTE DE FAERGHAIL VOUS ATTEND.",
+    chrome(s, PARTY, ["ON NE SORT DE FAERGHAIL QU'ACQUITTE.",
                       "VOUS TROUVEZ COTTE DE MAILLES.",
                       "ALDER EQUIPE COTTE DE MAILLES.",
                       "UNE PORTE COUVERTE DE RUNES."],

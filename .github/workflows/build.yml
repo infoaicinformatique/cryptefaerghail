@@ -1,0 +1,71 @@
+# Assemble les trois programmes et fait tourner les bancs.
+#
+# Tout ce depot se verifie par programme -- le jeu tourne dans un 68020
+# emule, les bruitages se relisent aux registres de Paula, les panneaux
+# se photographient -- mais rien de cela ne sert si personne ne le
+# lance. C'est le role de ce fichier.
+name: build
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # vasm et vlink se compilent depuis les sources de Frank Wille :
+      # deux minutes la premiere fois, rien ensuite.
+      - name: Cache de la chaine d'outils
+        id: toolchain
+        uses: actions/cache@v4
+        with:
+          path: tools/bin
+          key: toolchain-${{ runner.os }}-${{ hashFiles('scripts/get-toolchain.sh') }}
+
+      - name: Chaine d'outils (vasm + vlink)
+        if: steps.toolchain.outputs.cache-hit != 'true'
+        run: make toolchain
+
+      - name: Dependances Python
+        run: python3 -m pip install --quiet amitools machine68k
+
+      - name: Assemblage
+        run: make
+
+      # Les binaires du depot sont suivis : s'ils ne correspondent plus
+      # au source, la disquette et les captures ne correspondent pas non
+      # plus, et les bancs eprouvent autre chose que ce qui est publie.
+      - name: Les binaires suivis correspondent-ils au source
+        run: |
+          if ! git diff --quiet -- bin; then
+            echo "bin/ ne correspond pas au source :" >&2
+            git diff --stat -- bin >&2
+            echo "relancez 'make' et validez les binaires." >&2
+            exit 1
+          fi
+
+      - name: Donnees generees
+        run: |
+          make dungeon
+          if ! git diff --quiet -- data src; then
+            echo "les donnees generees ne correspondent plus aux generateurs :" >&2
+            git diff --stat -- data src >&2
+            exit 1
+          fi
+
+      - name: Bancs
+        run: make test
+
+      - name: Modele de la copperlist et du scroll
+        run: make check

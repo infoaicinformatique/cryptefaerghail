@@ -21,6 +21,7 @@ MAPW = MAPH = 24
 T_FLOOR, T_WALL, T_DOOR, T_STAIRS, T_LOCKED, T_NICHE, T_RUNE = range(7)
 T_LEVER, T_GATE = 7, 8
 T_SHOP, T_TRAP = 9, 10
+T_LEDGER = 11                            # le grand registre du dernier etage
 C_CHEST, C_MONSTER, C_ITEM, C_MASK = 0x10, 0x20, 0x30, 0x30
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]     # meme ordre que DirTable
 
@@ -122,6 +123,37 @@ def visit_shop(g, fails, stats):
         fails.append("l'echoppe ne se referme pas")
 
 
+def sign_ledger(g, fails, stats):
+    """Le greffe du dernier etage : sans la ligne rayee, la porte des
+    quittances ne s'ouvre pas et le parcours ne peut pas finir."""
+    grid = terrain(g)
+    seats = find(grid, T_LEDGER)
+    if not seats:
+        fails.append("aucun grand registre au dernier etage")
+        return
+    lx, ly = seats[0]
+    spot = next(((lx + dx, ly + dy) for dx, dy in DIRS
+                 if 0 <= lx + dx < MAPW and 0 <= ly + dy < MAPH
+                 and passable(grid[ly + dy][lx + dx])), None)
+    if spot is None or not goto(g, spot, on_combat=lambda gg:
+                               fight(gg, fails, stats)):
+        return                            # inabordable d'ici : on continue
+    if not face(g, DIRS.index((lx - spot[0], ly - spot[1])), []):
+        return
+    g.key(T.K_SPACE)
+    if g.w("UiMode") != 9:
+        fails.append(f"le registre ne s'ouvre pas (UiMode={g.w('UiMode')})")
+        return
+    g.key(T.K_RET)
+    if not g.w("Acquitted"):
+        fails.append("ENTREE ne raye pas la ligne du registre")
+    else:
+        stats["registre"] += 1
+    g.key(T.K_ESC)
+    if g.w("UiMode"):
+        fails.append("le registre ne se referme pas")
+
+
 def pull_levers(g, fails=None, stats=None):
     """Va tirer chaque levier, et verifie que sa herse se leve."""
     done = 0
@@ -170,7 +202,7 @@ def terrain(g):
 
 def passable(cell):
     t = cell & 0x0f
-    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP)
+    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER)
 
 
 def bfs(grid, start, want):
@@ -350,6 +382,7 @@ def fight(g, fails, stats):
     guard = 0
     while g.w("InCombat") and guard < 60:
         hp0 = g.sw("MonHp")
+        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
         guard += 1
         if guard % 4 == 2:
             g.key(T.K_1 + random.randrange(4))
@@ -358,7 +391,11 @@ def fight(g, fails, stats):
                 continue
         g.key(T.K_A)
         stats["rounds"] += 1
-        if g.w("InCombat") and g.sw("MonHp") > hp0:
+        # Depuis que les monstres marchent, le suivant peut arriver dans
+        # la trame ou le precedent tombe : des PV qui remontent ne sont
+        # une anomalie que si c'est le meme monstre.
+        encore = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
+        if g.w("InCombat") and encore == qui and g.sw("MonHp") > hp0:
             fails.append(f"PV du monstre en hausse : {hp0} -> {g.sw('MonHp')}")
         for i in range(4):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
@@ -377,7 +414,8 @@ def main():
     fails, log = [], []
     stats = {"rounds": 0, "fights": 0, "steps": 0, "items": 0,
              "spells": 0, "menus": 0, "heals": 0,
-             "levers": 0, "achats": 0, "ventes": 0, "pieges": 0}
+             "levers": 0, "achats": 0, "ventes": 0, "pieges": 0,
+             "registre": 0}
     g = T.Game()
     T.create_party(g)
     if g.w("Phase") != 1:
@@ -396,6 +434,8 @@ def main():
     if levers and not stats["levers"]:
         fails.append(f"{levers} levier(s) sur le niveau, aucun tire")
     for tour in range(40):
+        if g.w("Level") == 2 and not g.w("Acquitted") and not g.w("GameOver"):
+            sign_ledger(g, fails, stats)  # sinon la sortie ne cede pas
         grid = terrain(g)
         here = (g.w("PosX"), g.w("PosY"))
         path = None
@@ -432,7 +472,7 @@ def main():
           f"objets {inv_count(g)}, sorts {stats['spells']}, "
           f"soins {stats['heals']}, leviers {stats['levers']}, "
           f"achats {stats['achats']}, ventes {stats['ventes']}, "
-          f"pieges {stats['pieges']}, "
+          f"pieges {stats['pieges']}, registre {stats['registre']}, "
           f"fin {g.w('GameOver')}")
     for i in range(4):
         print(f"  {g.name(i):8s} PV {g.hero(i,'hr_Hp')}/{g.hero(i,'hr_HpMax')} "

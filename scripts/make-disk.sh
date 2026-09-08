@@ -51,16 +51,33 @@ xdftool "$ADF" create + format "AGADemos" \
 # Il ne reste plus la place de tout mettre. A huit bitplanes le jeu
 # pese a lui seul plus d'un demi-megaoctet -- six cent mille octets une
 # fois sur la disquette, ou un bloc de 512 n'en porte que 488 -- et les
-# trois programmes en occupent six cent trente mille sur huit cent
+# trois programmes en occupent six cent quarante mille sur huit cent
 # quatre-vingt.
 #
-# On y met donc les trois programmes, et le source du jeu : crawl.s
-# avec les deux fichiers ecrits a la main dont il depend. Le reste --
-# le source des deux demos, leurs tables, et toutes les tables
-# generees, dont surfgrad.i qui pese a lui seul quatre-vingt mille
-# octets -- vit dans l'archive LhA, qui porte tout.
-for f in crawl.s hardware.i ptreplay.i; do
-	xdftool "$ADF" write "$STAGE/Src/$f" "Src/$f"
+# Le source du jeu ne tient donc plus : crawl.s pese cent quarante-huit
+# mille octets, trois cents blocs, et il n'en reste pas dix. On ecrit
+# ce qui rentre, dans l'ordre ci-dessous, et on dit ce qu'on laisse --
+# l'archive LhA, elle, porte tout. Les tables generees ne sont sur
+# aucune des deux : surfgrad.i pese a lui seul quatre-vingt mille
+# octets, et les generateurs Python les refont en une seconde.
+blocks_free() {
+	xdftool "$ADF" info | awk '/^free:/ { print $2 }'
+}
+
+blocks_for() {			# blocs OFS d'un fichier : donnees, extensions,
+	python3 -c '		# et l en-tete -- 488 octets par bloc, 72 par liste
+import math, sys
+data = max(1, math.ceil(int(sys.argv[1]) / 488))
+print(data + max(0, math.ceil(data / 72) - 1) + 1)' "$1"
+}
+
+for f in hardware.i vblank.i ptreplay.i demo.s scroll.s crawl.s; do
+	size=$(wc -c < "$STAGE/Src/$f" | tr -d ' ')
+	if [ "$(blocks_for "$size")" -le "$(blocks_free)" ]; then
+		xdftool "$ADF" write "$STAGE/Src/$f" "Src/$f"
+	else
+		echo "    Src/$f reste dans l'archive LhA (pas la place)"
+	fi
 done
 xdftool "$ADF" boot install			# bootblock DOS0 : la disquette demarre
 

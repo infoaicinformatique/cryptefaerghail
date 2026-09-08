@@ -21,7 +21,8 @@ import test_game as T
 def read_equ(name, default):
     """Une constante lue dans le source : le banc doit suivre le jeu
     quand il passe de quatre a huit bitplanes."""
-    for line in open(os.path.join(ROOT, "src", "crawl.s")):
+    for line in open(os.path.join(ROOT, "src", "crawl.s"),
+                     encoding="latin-1"):
         m = re.match(r"%s\s*=\s*(\d+)" % name, line)
         if m:
             return int(m.group(1))
@@ -176,6 +177,12 @@ def shoot(g, name):
 if __name__ == "__main__":
     g = T.Game()
     shoot(g, "titre")
+    g.key(T.K_1 + 2)                      # 3 : le prologue
+    shoot(g, "prologue")
+    for _ in range(3):                    # jusqu'a la derniere page
+        g.key(T.K_SPACE)
+    shoot(g, "prologue-fin")
+    g.key(T.K_ESC)                        # retour a l'accueil
     g.key(T.K_1)                          # 1 : commencer une partie
     shoot(g, "creation")
     g.key(T.K_1 + 6)                      # magicien : les jets s'affichent
@@ -272,3 +279,42 @@ if __name__ == "__main__":
     g.key(0x37)                           # M : la carte du niveau
     shoot(g, "carte")
     g.key(0x37)
+
+    # Le greffe du dernier etage. Y arriver en jouant prendrait tout le
+    # banc : on descend d'autorite, et on deblaie la traversee -- ce
+    # qu'on veut photographier, c'est le pupitre et sa page.
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    for i in range(4):
+        base = g.addr("Heroes") + i * T.HR["hr_SIZEOF"]
+        g.mem.w16(base + T.HR["hr_Hp"], g.hero(i, "hr_HpMax"))
+    g.setw("Level", 2)
+    g.call(g.addr("LoadLevel"))
+    g.setw("Acquitted", 0)
+    ter = g.addr("MapTerrain")
+    for y in range(P.MAPH):
+        for x in range(P.MAPW):
+            cell = g.mem.r8(ter + y * P.MAPW + x)
+            if cell & 0x0f in (10, 8):        # dalles piegees et herses
+                g.mem.w8(ter + y * P.MAPW + x, cell & 0xf0)
+            elif cell & 0x30 == 0x20:
+                g.mem.w8(ter + y * P.MAPW + x, cell & 0x0f)
+    g.setw("NeedRedraw", 1)
+    g.key(T.K_1)
+    grid = P.terrain(g)
+    seats = P.find(grid, 11)
+    if seats:
+        lx, ly = seats[0]
+        spot = next(((lx + dx, ly + dy) for dx, dy in P.DIRS
+                     if 0 <= lx + dx < P.MAPW and 0 <= ly + dy < P.MAPH
+                     and P.passable(grid[ly + dy][lx + dx])), None)
+        if spot and P.goto(g, spot):
+            P.face(g, P.DIRS.index((lx - spot[0], ly - spot[1])), [])
+            shoot(g, "greffe")            # le pupitre, vu du couloir
+            g.key(T.K_SPACE)
+            if g.w("UiMode") == 9:
+                shoot(g, "registre")
+                g.key(T.K_RET)            # la ligne rayee
+                shoot(g, "registre-raye")
+                g.key(T.K_ESC)

@@ -26,11 +26,23 @@ BMW, BMH, DEPTH = 640, 384, 8
 BMWB = BMW // 8
 PLSIZE = BMWB * BMH
 SCRW, SCRH = 320, 256
+INTREQ = 0x09c
+
+
+def equ(name, src="scroll.s"):
+    """Une constante lue dans le source : le modele suit le programme."""
+    for line in open(os.path.join(ROOT, "src", src), encoding="latin-1"):
+        m = re.match(r"%s\s*=\s*(\$?[0-9a-fA-F]+)" % name, line)
+        if m:
+            v = m.group(1)
+            return int(v[1:], 16) if v.startswith("$") else int(v)
+    raise KeyError(name)
 MAINH = 192                              # lignes de playfield avant le split
 SCRBPL, SCRTEXTH = 48, 64                # bande de scrolltext
 SCROLL_XOFF, SCROLL_SPEED = 16, 2
 SCROLL_CHARS, CHARW, SCROLL_BASEY = 22, 16, 24
 SPLITLINE = 236
+BANDLINE = None                          # lu dans scroll.s, plus bas
 NBARS, BARSTEPS, BAR_CENTER, BAR_AMP = 3, 32, 32, 26
 BARDEFS = ((2, 0), (3, 85), (5, 170))    # vitesse, dephasage
 FETCHWORDS = 21                      # DDFSTRT recule de 8 => un mot de plus
@@ -70,17 +82,20 @@ FONTMAP = parse_bytes(os.path.join(ROOT, "src", "font.i"))
 _bars = parse_bytes(os.path.join(ROOT, "src", "bars.i"))
 BARGRAD = [_bars[b * BARSTEPS * 4:(b + 1) * BARSTEPS * 4] for b in range(NBARS)]
 assert len(_bars) == NBARS * BARSTEPS * 4
-assert len(SIN) == 256 and len(PAL) == 512 and len(FONTMAP) == 96
+assert len(SIN) == 256 and len(PAL) == 512 and len(FONTMAP) == 224
 
 
 def scroll_text():
     """Recupere le message directement dans src/scroll.s."""
-    src = open(os.path.join(ROOT, "src", "scroll.s")).read()
+    src = open(os.path.join(ROOT, "src", "scroll.s"),
+               encoding="latin-1").read()
     block = src.split("ScrollText:", 1)[1].split(",0", 1)[0]
     return "".join(re.findall(r'"([^"]*)"', block))
 
 
 TEXT = scroll_text()
+BANDLINE = equ("BANDLINE")               # ou le copper reveille le 68000
+assert SPLITLINE == equ("SPLITLINE"), "SPLITLINE a bouge dans scroll.s"
 
 
 # --- 1. copperlist : on rejoue BuildCopperList ------------------------
@@ -118,6 +133,11 @@ def build_copper():
     w.append(BPLCON1)
     li_con1 = len(w) * 2
     w.append(0)
+
+    # A mi-playfield, le copper reveille le processeur : un MOVE vers
+    # INTREQ, et rien d'autre. C'est VBI_Mid qui change de palette.
+    w += [(BANDLINE << 8) | 0x07, 0xfffe]
+    move(INTREQ, 0x8010)
 
     w += [(SPLITLINE << 8) | 0x07, 0xfffe]           # bascule scrolltext
     move(BPLCON0, 0x1201)
@@ -170,6 +190,16 @@ def check_layout():
         assert w[(base + 2) // 2 - 1] == BPL1PTH + p * 4
         assert w[(base + 6) // 2 - 1] == BPL1PTH + p * 4 + 2
     assert w[li_con1 // 2 - 1] == BPLCON1
+
+    # Le reveil du processeur a mi-playfield : un WAIT sur BANDLINE, puis
+    # un MOVE vers INTREQ avec le bit COPER arme. C'est tout ce que la
+    # copperlist porte de la bande du bas -- la palette, elle, change
+    # depuis le processeur, dans VBI_Mid.
+    i = li_con1 // 2 + 1
+    assert w[i] == (BANDLINE << 8) | 0x07, f"WAIT de bande {w[i]:#06x}"
+    assert w[i + 1] == 0xfffe
+    assert w[i + 2] == INTREQ, f"MOVE de bande vers {w[i + 2]:#06x}"
+    assert w[i + 3] == 0x8010, f"valeur INTREQ {w[i + 3]:#06x}"
 
     # UpdateBars : chaque adresse memorisee suit bien un MOVE de COLOR00,
     # et le mot des quartets bas est huit octets plus loin
@@ -258,7 +288,7 @@ def scroll_band(frame):
     x = SCROLL_XOFF - fine
     for i in range(SCROLL_CHARS):
         code = ord(TEXT[(char0 + i) % len(TEXT)])
-        glyph = FONTMAP[code - 32] if 32 <= code < 128 else 0xff
+        glyph = FONTMAP[code - 32] if 32 <= code < 256 else 0xff
         y = SCROLL_BASEY + (((SIN[(2 * x + phase) & 255] - 128) * 3) >> 4)
         assert 0 <= y <= SCRTEXTH - 16, f"glyphe hors bande : y={y}"
         assert 0 <= x and (x >> 4) * 2 + 4 <= SCRBPL, f"glyphe hors bitmap : x={x}"

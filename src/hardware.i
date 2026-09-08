@@ -132,3 +132,33 @@ _LVODisownBlitter = -462
 ; --- offsets GfxBase ---
 gb_ActiView     = 34
 gb_copinit      = 38
+
+; --- CIA-B : le timer A cadence le replayer (niveau 6) ---
+; Les registres sont espaces de 256 octets. L'horloge du CIA vaut
+; 709379 Hz en PAL ; un module joue BPM x 2 / 5 tics par seconde, d'ou
+; un compte de 709379 x 5 / (2 x BPM) = 1773447 / BPM.
+CIABTALO        = $bfd400       ; compte du timer A, poids faible
+CIABTAHI        = $bfd500       ; poids fort -- l'ecrire recharge le timer
+CIABICR         = $bfdd00       ; masque d'interruption (lecture = efface)
+CIABCRA         = $bfde00       ; commande du timer A
+CIA_CLOCK5      = 1773447       ; 709379 x 5 / 2, a diviser par le BPM
+CIACRA_RUN      = $11           ; demarre, continu, recharge tout de suite
+CIAICR_CLEAR    = $7f           ; toutes les sources coupees
+CIAICR_TA       = $81           ; interruption sur le timer A
+
+; --- bits INTENA / INTREQ ---
+INTF_SETCLR     = $8000
+INTF_INTEN      = $4000         ; interrupteur general (maitre)
+INTF_COPER      = $0010         ; copper (COPPER MOVE vers INTREQ)
+INTF_VERTB      = $0020         ; debut du retour trame -- niveau 3
+INTB_VERTB      = 5
+INTF_EXTER      = $2000         ; CIA-B et port d'extension -- niveau 6
+
+; --- vecteurs d'exception (autovecteurs), depuis le VBR ---
+LVL3_VECTOR     = $6c
+LVL6_VECTOR     = $78
+
+; --- exec.library : passage en mode superviseur, drapeaux processeur ---
+_LVOSupervisor  = -30
+AttnFlags       = 296           ; word : bit 0 = 68010 ou mieux (donc VBR)
+AFB_68010       = 0

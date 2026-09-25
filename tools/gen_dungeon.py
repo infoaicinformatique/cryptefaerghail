@@ -90,48 +90,94 @@ def noise(a, b, seed=0):
     return ((h >> 16) & 0xff) / 255.0
 
 
+def vnoise(x, y, seed=0):
+    """Bruit lisse : interpolation du bruit stable entre les noeuds
+    d'une grille. Sert aux taches, aux coulures, aux joints qui ondulent."""
+    xi, yi = math.floor(x), math.floor(y)
+    fx, fy = x - xi, y - yi
+    fx, fy = fx * fx * (3 - 2 * fx), fy * fy * (3 - 2 * fy)
+    a, b = noise(xi, yi, seed), noise(xi + 1, yi, seed)
+    c, d = noise(xi, yi + 1, seed), noise(xi + 1, yi + 1, seed)
+    return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
+
+
+def course(x, row, seed, spread=0.34):
+    """Decoupe une rangee en blocs de largeurs inegales.
+
+    x est la position le long de la rangee, en blocs. Chaque joint est
+    deplace d'une fraction de bloc, differemment a chaque rangee :
+    -> (numero du bloc, position 0..1 dans le bloc)."""
+    def joint(c):
+        return c + spread * (noise(c, row, seed) - 0.5)
+    c = math.floor(x)
+    if x < joint(c):
+        c -= 1
+    a, b = joint(c), joint(c + 1)
+    return c, (x - a) / (b - a)
+
+
 def brick(u, v, dist, side):
-    """Blocs de pierre : joints en creux, rangees decalees, aretes
-    eclairees, grain, fissures et mousse dans les angles humides."""
+    """Blocs de pierre uses : largeurs inegales, joints qui ondulent,
+    aretes ebrechees, blocs casses, coulures d'humidite, suie en haut
+    et crasse en bas, fissures et mousse dans les angles humides."""
     row = int((v + 8.0) / BRICK_H)
-    uu = u + (BRICK_W / 2 if row & 1 else 0.0)
-    col = int((uu + 8.0) / BRICK_W)
-    du = ((uu + 8.0) / BRICK_W) % 1.0
     dv = ((v + 8.0) / BRICK_H) % 1.0
+    shift = 0.5 * (row & 1) + 0.3 * (noise(row, 0, 41) - 0.5)
+    col, du = course((u + 8.0) / BRICK_W + shift, row, 43)
 
-    # joint, avec une epaisseur legerement irreguliere
-    jx = 0.07 + 0.03 * noise(col, row, 3)
-    jy = 0.12 + 0.04 * noise(col, row, 4)
-    if du < jx or dv < jy:
-        return pal.lit("MORTAR", min(1.0, 0.62 + 0.22 * (dist - 1.0)))
+    # joints : epaisseur inegale, trace qui ondule
+    jx = 0.05 + 0.03 * noise(col, row, 3) + 0.05 * (vnoise(v * 48, col * 5, 45) - 0.5)
+    jy = 0.08 + 0.04 * noise(col, row, 4) + 0.07 * (vnoise(u * 40, row * 5, 46) - 0.5)
+    ex, ey = min(du, 1.0 - du), min(dv, 1.0 - dv)
+    if ex < jx or ey < jy:
+        return pal.lit("MORTAR", min(1.0, 0.58 + 0.22 * (dist - 1.0)))
 
-    t = wall_tone(dist, side) + 0.030 * jitter(col, row) \
-        + 0.09 * min(1.0, abs(u) / 3.0)              # la torche s'eteint
+    t = wall_tone(dist, side) + 0.18                 # la pierre a noirci
+    t += 0.09 * min(1.0, abs(u) / 3.0)               # la torche s'eteint
+    t += 0.10 * (noise(col, row, 9) - 0.5)           # chaque bloc sa teinte
+    t += 0.10 * (vnoise(u * 22, v * 22, 50) - 0.5)   # taches larges
+    t += 0.07 * (noise(int((u + 8) * 90), int((v + 8) * 90), 1) - 0.5)
 
-    if dv < 0.28:                                    # arete eclairee du bloc
-        t -= 0.055
-    elif dv > 0.82 or du > 0.93:                     # arete a l'ombre
-        t += 0.055
+    # arete ebrechee : le bord du bloc, ronge, passe dans l'ombre
+    chip = 0.08 * vnoise(u * 70, v * 70, 47)
+    if ex < jx + chip or ey < jy + chip * 1.4:
+        t += 0.20
+    elif dv < 0.30:                                  # arete eclairee
+        t -= 0.05
+    elif dv > 0.80:                                  # arete a l'ombre
+        t += 0.05
 
-    n = noise(int((u + 8) * 90), int((v + 8) * 90), 1)   # grain de la pierre
-    t += (n - 0.5) * 0.075
+    # bloc casse : un coin arrache, le creux dans l'ombre
+    if noise(col, row, 48) > 0.82:
+        cu = 0.0 if noise(col, row, 49) > 0.5 else 1.0
+        cv = 0.0 if noise(col, row, 52) > 0.5 else 1.0
+        r = math.hypot((du - cu) * 2.0, dv - cv)
+        if r < 0.50 + 0.12 * vnoise(du * 9, dv * 9, 53):
+            t += 0.24 if r > 0.38 else 0.34
 
-    # veinures claires : la pierre n'est pas unie
-    if noise(col, row, 17) > 0.62:
-        w = abs((du - 0.5) * 0.9 - (dv - 0.5) * 2.2)
-        if w < 0.10:
-            t -= 0.045
+    # piqures de la pierre
+    if noise(int((u + 8) * 60), int((v + 8) * 60), 54) > 0.96:
+        t += 0.18
 
-    # fissure : une diagonale par bloc, sur une partie des blocs seulement
-    if noise(col, row, 7) > 0.72:
-        crack = abs((du - 0.5) * 1.7 + (dv - 0.5))
-        if crack < 0.06 + 0.05 * noise(int(dv * 60), col, 8):
-            t += 0.16
+    # fissure qui serpente, sur une partie des blocs
+    if noise(col, row, 7) > 0.62:
+        crack = abs((du - 0.5) * 1.6 + (dv - 0.5)
+                    + 0.35 * (vnoise(dv * 8, col, 8) - 0.5))
+        if crack < 0.05:
+            t += 0.22
+
+    # coulures d'humidite : elles descendent depuis les joints
+    wet = vnoise(u * 16, v * 1.6, 51)
+    if wet > 0.70:
+        t += 0.14 * min(1.0, (wet - 0.70) / 0.12)
+
+    t += 0.10 * max(0.0, -v - 0.28) / 0.22           # suie sous la voute
+    t += 0.14 * max(0.0, v - 0.12) / 0.38            # crasse au pied du mur
 
     # mousse : bas des blocs, plutot pres du sol et sur les murs lateraux
-    if v > 0.18 and noise(col, row, 11) > (0.55 if side else 0.72):
-        if dv > 0.55 + 0.2 * noise(int(du * 40), row, 12):
-            return pal.lit("MOSS", min(1.0, 0.20 + 0.22 * (dist - 1.0)
+    if v > 0.12 and noise(col, row, 11) > (0.50 if side else 0.66):
+        if dv > 0.50 + 0.25 * vnoise(du * 12, row, 12):
+            return pal.lit("MOSS", min(1.0, 0.24 + 0.22 * (dist - 1.0)
                                        + 0.25 * noise(col, row, 13)))
     # salpetre : trainees pales pres du sol
     if v > 0.30 and noise(col, row, 19) > 0.80 and dv > 0.4:
@@ -286,24 +332,43 @@ def make_background():
             side = 0.11 * min(1.0, abs(lat) / 3.0)   # les bords s'eteignent
 
             if floor:
-                local = 0.05                         # le sol prend la lumiere
-                if edge < 0.05:                      # joint garni de terre
+                # dalles posees en quinconce, de tailles inegales
+                row = int((dist + 8.0) / slab)
+                gv = ((dist + 8.0) / slab) % 1.0
+                col, gu = course((lat + 8.0) / slab + 0.5 * (row & 1),
+                                 row, 61, 0.45)
+                wob = 0.05 * (vnoise(lat * 30, dist * 30, 62) - 0.5)
+                edge = min(gu, 1.0 - gu, gv, 1.0 - gv) + wob
+                if edge < 0.045:                     # joint garni de terre
                     p.set(x, y, surf_earth(side))
                     continue
-                if abs(lat) < 0.55:                  # le passage, use et poli
-                    local -= 0.05
+                local = 0.16 + 0.14 * (noise(col, row, 63) - 0.5)
+                local += 0.08 * (vnoise(lat * 10, dist * 10, 64) - 0.5)
                 local += 0.06 * (noise(int(lat * 42), int(dist * 42), 21) - 0.5)
+                if edge < 0.10:                      # bord de dalle ecorne
+                    local += 0.10
+                if noise(col, row, 65) > 0.70 and \
+                        abs((gu - 0.5) + (gv - 0.5) * 1.4
+                            + 0.4 * (vnoise(gv * 6, col, 66) - 0.5)) < 0.04:
+                    local += 0.22                    # dalle fendue
+                if noise(col, row, 67) > 0.85 and \
+                        vnoise(lat * 14, dist * 14, 68) > 0.58:
+                    p.set(x, y, surf_earth(side))    # la terre a gagne
+                    continue
                 if abs(lat) > 0.7 and \
                         noise(int(lat * 16), int(dist * 16), 23) > 0.90:
                     p.set(x, y, surf_moss(side))
                     continue
-            else:                                    # la voute
-                local = 0.24
-                if edge < 0.06:                      # nervure, elle accroche
-                    local -= 0.09                    # la lumiere
+            else:
+                # la voute : roche brute, taillee a gros coups, sans
+                # appareil -- elle ne doit pas renvoyer le dallage
+                local = 0.40 + 0.14 * (vnoise(lat * 3, dist * 3, 71) - 0.5)
+                local += 0.08 * (vnoise(lat * 11, dist * 11, 72) - 0.5)
                 local += 0.05 * (noise(int(lat * 38), int(dist * 38), 27) - 0.5)
-                if noise(int(lat * 9), int(dist * 9), 29) > 0.90:
-                    local += 0.13                    # suie des torches
+                if abs(vnoise(lat * 5, dist * 5, 73) - 0.5) < 0.025:
+                    local += 0.14                    # faille dans la roche
+                if noise(int(lat * 9), int(dist * 9), 29) > 0.88:
+                    local += 0.10                    # suie des torches
             p.set(x, y, surf_stone(local + side))
     return p
 
@@ -316,7 +381,7 @@ def make_background():
 # ligne. La gamme de pierre en comptait vingt : la profondeur se lisait
 # en vingt marches sur cinquante-sept lignes. Elle en compte maintenant
 # autant que de lignes.
-SURF_STEP = 0.05                         # pas de la variation locale
+SURF_STEP = 0.065                        # pas de la variation locale
 COP_BLOCK = 2                            # une reecriture toutes les N lignes
 # La torche ne brule pas d'un feu egal : on prepare quelques degrades a
 # des clartes voisines, et le jeu passe de l'un a l'autre au fil des

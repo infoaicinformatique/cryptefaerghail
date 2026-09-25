@@ -1,8 +1,8 @@
 #!/bin/sh
 # Fabrique les deux disquettes 880 Ko du jeu :
 #
-#   dist/Faerghail1.adf   amorcable, en FFS : le jeu, son Lisezmoi, son
-#                         Startup-Sequence
+#   dist/Faerghail1.adf   amorcable, en FFS : le jeu, le paquet de son
+#                         donjon, son Lisezmoi, son Startup-Sequence
 #   dist/Faerghail2.adf   le source : tout ce qui s'assemble, ecrit a la
 #                         main ou genere, et les donnees qui tiennent
 #
@@ -32,7 +32,9 @@ cp "$ROOT/disk/Lisezmoi.txt" "$STAGE/"
 cp "$ROOT/disk/S/Startup-Sequence" "$STAGE/S/"
 cp "$ROOT/bin/AGACrawl" "$STAGE/"
 cp "$ROOT"/src/*.s "$ROOT"/src/*.i "$STAGE/Src/"
-cp "$ROOT/data/dgnart.bin" "$ROOT/data/dgnmap.bin" "$ROOT/data/sfx.bin" \
+mkdir -p "$STAGE/Donjons"
+cp "$ROOT/bin/Donjons/Crypte.dgn" "$STAGE/Donjons/"
+cp "$ROOT/data/dgnart.bin" "$ROOT/data/crypte.dgn" "$ROOT/data/sfx.bin" \
 	"$ROOT/data/crawlmus.mod" "$ROOT/data/titlemus.mod" "$STAGE/Src/data/"
 
 # --- disquette 1 : le jeu -------------------------------------------------
@@ -43,7 +45,9 @@ xdftool "$ADF1" create + format "Faerghail" ffs \
 	+ write "$STAGE/AGACrawl" \
 	+ write "$STAGE/Lisezmoi.txt" \
 	+ makedir S \
-	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence
+	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence \
+	+ makedir Donjons \
+	+ write "$STAGE/Donjons/Crypte.dgn" Donjons/Crypte.dgn
 xdftool "$ADF1" boot install			# bootblock DOS1 : la disquette demarre
 
 # --- disquette 2 : le source ---------------------------------------------
@@ -86,7 +90,7 @@ for f in "$STAGE"/Src/*.i; do			# les tables generees
 	*) put "$f" "Src/$n" ;;
 	esac
 done
-for f in dgnmap.bin sfx.bin titlemus.mod crawlmus.mod dgnart.bin; do
+for f in sfx.bin titlemus.mod crawlmus.mod crypte.dgn dgnart.bin; do
 	put "$STAGE/Src/data/$f" "Src/data/$f"
 done
 

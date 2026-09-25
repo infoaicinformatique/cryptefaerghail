@@ -2,7 +2,7 @@
 """Genere les donnees du dungeon crawler :
 
     data/dgnart.bin   decors en perspective, monstres, tous en 4 plans
-    data/dgnmap.bin   les trois niveaux du donjon
+    data/crypte.dgn   le paquet du donjon : ses trois niveaux, son bestiaire
     src/dgnpal.i      palette 16 couleurs, en 24 bits AGA
     src/font8.i       police 8x8 pour l'interface
 
@@ -1511,17 +1511,9 @@ def build_art():
     pieces += [make_side(i, 0.5) for i in range(DEPTHS)]
     ART_INDEX["ART_DOOR"] = len(pieces)
     pieces += [make_front(k, door=True) for k in (1, 2, 3)]
-    ART_INDEX["ART_MONSTER"] = len(pieces)
-    monfar = []
-    for k in range(NMONSTERART):                   # trois poses : deux qui
-        near = [make_monster(k, p) for p in range(NMONPOSES)]   # respirent,
-        pieces += [trim(p) for p in near]          # une qui frappe
-        # La meme creature dans le couloir, une et deux cases plus loin :
-        # la case d'en face est a un pas et demi, les suivantes a deux et
-        # demi et trois et demi -- tout se rapproche du point de fuite
-        # d'autant.
-        monfar += [trim(shrink(near[0], 2.5 / 1.5)),
-                   trim(shrink(near[0], 3.5 / 1.5))]
+    # Le bestiaire ne part plus avec l'executable : il est dans le paquet
+    # du donjon (voir build_bestiary), a la suite des morceaux communs.
+    # Ses indices continuent ceux d'ici ; BlitPiece sait ou chercher.
     # de quoi habiller les passages lateraux : la face du fond du passage
     # et son mur exterieur, sans quoi une ouverture n'est qu'un trou noir
     ART_INDEX["ART_FRONTL"] = len(pieces)
@@ -1532,8 +1524,6 @@ def build_art():
     pieces += [make_side(i, -1.5) for i in (2, 3)]
     ART_INDEX["ART_OUTERR"] = len(pieces)
     pieces += [make_side(i, 1.5) for i in (2, 3)]
-    ART_INDEX["ART_MONFAR"] = len(pieces)          # deux par famille
-    pieces += monfar
     ART_INDEX["ART_TITLE"] = len(pieces)
     pieces += [make_title()]
     ART_INDEX["ART_GATE"] = len(pieces)
@@ -1575,6 +1565,14 @@ def build_art():
     ART_INDEX["ART_ICON"] = len(pieces)
     pieces += [make_icon(k) for k in range(5)]
 
+    ART_INDEX["ART_BANK"] = len(pieces)            # le bestiaire commence la
+    return encode_bank(pieces), pieces
+
+
+def encode_bank(pieces):
+    """Un banc de morceaux : leur nombre, un descripteur de douze octets
+    par morceau (decalage depuis le debut du banc, largeur en mots,
+    hauteur, destination a l'ecran), puis leurs plans."""
     blobs, descs = [], []
     offset = 2 + len(pieces) * 12
     for p in pieces:
@@ -1583,8 +1581,48 @@ def build_art():
         descs.append(struct.pack(">IHHHH", offset, wwords, p.h, dst, 0))
         blobs.append(data)
         offset += len(data)
-    return (struct.pack(">H", len(pieces)) + b"".join(descs) + b"".join(blobs),
-            pieces)
+    return struct.pack(">H", len(pieces)) + b"".join(descs) + b"".join(blobs)
+
+
+def build_bestiary():
+    """Le bestiaire d'un donjon : trois poses par famille, puis deux vues
+    lointaines. Il se range dans le paquet du donjon, pas dans
+    l'executable : chaque donjon aura le sien, comme dans les jeux de
+    l'epoque ou un donjon etait un jeu de fichiers sur la disquette."""
+    base = ART_INDEX["ART_BANK"]
+    pieces, far = [], []
+    for k in range(NMONSTERART):                   # trois poses : deux qui
+        near = [make_monster(k, p) for p in range(NMONPOSES)]   # respirent,
+        pieces += [trim(p) for p in near]          # une qui frappe
+        # La meme creature dans le couloir, une et deux cases plus loin :
+        # la case d'en face est a un pas et demi, les suivantes a deux et
+        # demi et trois et demi -- tout se rapproche du point de fuite
+        # d'autant.
+        far += [trim(shrink(near[0], 2.5 / 1.5)),
+                trim(shrink(near[0], 3.5 / 1.5))]
+    ART_INDEX["ART_MONSTER"] = base
+    ART_INDEX["ART_MONFAR"] = base + len(pieces)
+    pieces += far
+    return encode_bank(pieces), pieces
+
+
+PACKMAGIC = b"FDG1"
+
+
+def build_pack(maps, bank):
+    """Le paquet d'un donjon, tel que LoadDungeon le lit : une en-tete
+    (magique, puis decalage et taille des cartes, puis du bestiaire),
+    les cartes, et le banc de morceaux cale sur quatre octets -- le
+    blitter lit des mots, et le paquet est charge tel quel en Chip."""
+    head = 4 + 4 * 4
+    map_off = head
+    art_off = (map_off + len(maps) + 3) & ~3
+    out = bytearray(PACKMAGIC)
+    out += struct.pack(">IIII", map_off, len(maps), art_off, len(bank))
+    out += maps
+    out += bytes(art_off - len(out))
+    out += bank
+    return bytes(out)
 
 
 
@@ -2315,6 +2353,10 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
     art, pieces = build_art()
     open(os.path.join(ROOT, "data", "dgnart.bin"), "wb").write(art)
+    bank, beasts = build_bestiary()
+    maps, levels = build_maps()
+    pack = build_pack(maps, bank)
+    open(os.path.join(ROOT, "data", "crypte.dgn"), "wb").write(pack)
     with open(os.path.join(ROOT, "src", "artidx.i"), "w") as f:
         f.write(";----------------------------------------------------------\n")
         f.write("; artidx.i - GENERE PAR tools/gen_dungeon.py\n")
@@ -2329,8 +2371,9 @@ if __name__ == "__main__":
             f.write(f"{k}\t= {v}\n")
         f.write(f"NMONSTERART\t= {NMONSTERART}\n")
         f.write(f"NMONPOSES\t= {NMONPOSES}\n")
-    maps, levels = build_maps()
-    open(os.path.join(ROOT, "data", "dgnmap.bin"), "wb").write(maps)
+        # La place du paquet en Chip : celui-ci, et de quoi en accueillir
+        # un plus gros le jour ou un autre donjon le sera.
+        f.write(f"DGNPACKMAX\t= {(len(pack) * 5 // 4 + 4095) & ~4095}\n")
     write_palette(os.path.join(ROOT, "src", "dgnpal.i"))
     n = write_font8(os.path.join(ROOT, "src", "font8.i"))
     ph = write_pointer(os.path.join(ROOT, "src", "pointer.i"))
@@ -2342,7 +2385,8 @@ if __name__ == "__main__":
         print(f"  niveau {i + 1} : depart {start}, escalier {stairs}, "
               f"{reach} cases ; sans forcer les serrures {open_cells} cases, "
               f"{keys} cles, escalier {'direct' if direct else 'derriere une porte'}")
-    print(f"dgnmap.bin : {len(levels)} niveaux, {len(maps)} octets")
+    print(f"crypte.dgn : {len(levels)} niveaux ({len(maps)} octets), "
+          f"{len(beasts)} morceaux de bestiaire, {len(pack)} octets")
     print(f"font8.i    : {n} glyphes")
     print(f"pointer.i  : sprite de 16 x {ph}")
     print(f"surfgrad.i : {sg} blocs de degrade, {sg * 12} couleurs par trame")

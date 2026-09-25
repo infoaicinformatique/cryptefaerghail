@@ -292,7 +292,11 @@ Start:
 	moveq	#0,d0
 	jsr	_LVOOpenLibrary(a6)
 	move.l	d0,DosBase
+	bsr	LoadDungeon		; le paquet du donjon, depuis la disquette
+	tst.w	d0
+	beq	ExitNoDungeon
 	bsr	CheckSave
+	move.l	4.w,a6
 	jsr	_LVOForbid(a6)
 
 	move.l	GfxBase,a6
@@ -451,6 +455,91 @@ ExitNoGfx:
 	movem.l	(sp)+,d0-d7/a0-a6
 	moveq	#0,d0
 	rts
+
+; Sans son donjon, le jeu n'a rien a montrer : on le dit dans le Shell
+; et l'on rend la main avec un code d'echec, avant d'avoir touche a
+; l'ecran ou aux interruptions.
+ExitNoDungeon:
+	move.l	DosBase,d0
+	beq.s	.noDos
+	move.l	d0,a6
+	jsr	_LVOOutput(a6)
+	move.l	d0,d1
+	beq.s	.silent
+	move.l	#TxtNoDungeon,d2
+	move.l	#TXTNODUNGEON_LEN,d3
+	jsr	_LVOWrite(a6)
+.silent:
+	move.l	DosBase,a1
+	move.l	4.w,a6
+	jsr	_LVOCloseLibrary(a6)
+.noDos:
+	move.l	4.w,a6
+	move.l	GfxBase,a1
+	jsr	_LVOCloseLibrary(a6)
+	movem.l	(sp)+,d0-d7/a0-a6
+	moveq	#20,d0
+	rts
+
+;----------------------------------------------------------------------
+; LoadDungeon : le paquet du donjon, lu depuis la disquette
+;
+; Tout etait incorpore a l'executable : les decors, les cartes, le
+; bestiaire. Un donjon est maintenant un fichier a part, comme dans
+; les jeux de l'epoque ou chaque donjon avait ses fichiers sur la
+; disquette -- c'est ce qui permettra d'en avoir plusieurs sans que
+; l'executable grossisse d'autant. Le paquet porte les cartes de ses
+; etages et son bestiaire ; il est lu tel quel en Chip, le blitter y
+; prend les creatures directement.
+;
+; Format : "FDG1", puis decalage et taille des cartes, decalage et
+; taille du banc de morceaux (quatre mots longs), puis les donnees.
+; -> d0 = 1 si le donjon est charge
+;----------------------------------------------------------------------
+LoadDungeon:
+	movem.l	d1-d7/a0-a6,-(sp)
+	moveq	#0,d5
+	move.l	DosBase,d0
+	beq.s	.done
+	move.l	d0,a6
+	move.l	#DungeonName,d1
+	move.l	#MODE_OLDFILE,d2
+	jsr	_LVOOpen(a6)
+	move.l	d0,d4
+	beq.s	.done
+	move.l	d4,d1
+	move.l	#DgnPack,d2
+	move.l	#DGNPACKMAX,d3
+	jsr	_LVORead(a6)
+	move.l	d0,d6			; ce qui a ete lu
+	move.l	d4,d1
+	jsr	_LVOClose(a6)
+	cmp.l	#20,d6			; au moins l'en-tete
+	blt.s	.done
+	lea	DgnPack,a0
+	cmp.l	#DGNMAGIC,(a0)
+	bne.s	.done
+	move.l	4(a0),d0		; les cartes
+	move.l	d0,d1
+	add.l	8(a0),d1
+	cmp.l	d6,d1			; le fichier doit les contenir
+	bgt.s	.done
+	add.l	a0,d0
+	move.l	d0,DgnMapPtr
+	move.l	12(a0),d0		; le bestiaire
+	move.l	d0,d1
+	add.l	16(a0),d1
+	cmp.l	d6,d1
+	bgt.s	.done
+	add.l	a0,d0
+	move.l	d0,DgnBank
+	moveq	#1,d5
+.done:
+	move.l	d5,d0
+	movem.l	(sp)+,d1-d7/a0-a6
+	rts
+
+DGNMAGIC	= $46444731		; "FDG1"
 
 RestoreSystem:
 	lea	CUSTOM,a5
@@ -1075,7 +1164,12 @@ BlitPiece:
 BlitPieceAt:
 	movem.l	d0-d7/a0-a6,-(sp)
 	lea	CUSTOM,a6
-	lea	DgnArt,a0
+	lea	DgnArt,a0		; les morceaux communs, dans l'executable
+	cmp.w	#ART_BANK,d0
+	blo.s	.common
+	move.l	DgnBank,a0		; ceux du donjon, dans son paquet
+	sub.w	#ART_BANK,d0
+.common:
 	move.w	d0,d3
 	mulu.w	#12,d3
 	lea	2(a0,d3.w),a1
@@ -4311,7 +4405,7 @@ NewGame:
 
 LoadLevel:
 	movem.l	d0-d3/a0-a1,-(sp)
-	lea	DgnMap,a0
+	move.l	DgnMapPtr,a0		; les cartes du paquet du donjon
 	move.w	Level,d0
 	mulu.w	#LEVELSIZE,d0
 	add.l	d0,a0
@@ -7740,6 +7834,10 @@ DirTable:
 	dc.w	-1,0
 
 SaveName:	dc.b	"PROGDIR:AGACrawl.sav",0
+DungeonName:	dc.b	"PROGDIR:Donjons/Crypte.dgn",0
+TxtNoDungeon:	dc.b	"AGACrawl : Donjons/Crypte.dgn introuvable ou abime.",10
+TXTNODUNGEON_LEN = *-TxtNoDungeon
+	even
 DosName:	dc.b	"dos.library",0
 	even
 
@@ -8306,9 +8404,6 @@ NullSprite:				; les sept autres, eteints
 DgnArt:
 	incbin	"data/dgnart.bin"
 	even
-DgnMap:
-	incbin	"data/dgnmap.bin"
-	even
 SfxData:
 	incbin	"data/sfx.bin"
 	even
@@ -8321,6 +8416,8 @@ SfxSilence:
 
 GfxBase:	ds.l	1
 DosBase:	ds.l	1
+DgnMapPtr:	ds.l	1		; les cartes, dans le paquet du donjon
+DgnBank:	ds.l	1		; son bestiaire, idem
 OldView:	ds.l	1
 OldCopper:	ds.l	1
 ShowBuf:	ds.l	1
@@ -8437,6 +8534,7 @@ NumBuf:		ds.b	14
 	SECTION	crawlbuf,BSS_C
 ;======================================================================
 
+DgnPack:	ds.b	DGNPACKMAX	; le paquet du donjon, lu au demarrage
 ScreenA:	ds.b	SCRSIZE
 ScreenB:	ds.b	SCRSIZE
 CopList:	ds.b	COPSIZE

@@ -84,11 +84,37 @@ make disk          # refabrique les trois -- nécessite pip install amitools
   X-Copy + Amiga Explorer, Greaseweazle…), ou copiez le `.lha` sur le disque
   dur et faites `lha x Faerghail.lha`.
 
+## Un donjon, c'est un fichier
+
+Tout était incorporé à l'exécutable : décors, cartes, bestiaire. Un donjon est
+maintenant un **paquet** à part, `Donjons/Crypte.dgn`, que le jeu lit sur la
+disquette au démarrage — comme dans les jeux de l'époque, où chaque donjon
+avait ses fichiers et se chargeait en y entrant. C'est la fondation de ce qui
+vient : plusieurs donjons, chacun avec ses étages et son peuple, sans que
+l'exécutable grossisse d'autant (voir
+[docs/analyse-faerghail.md](docs/analyse-faerghail.md)).
+
+Le paquet porte les cartes de ses étages et son bestiaire. Il est lu tel quel
+en Chip RAM (`DgnPack`) : le blitter y prend les créatures directement.
+`BlitPiece` ne fait qu'une différence : un morceau d'indice au moins
+`ART_BANK` se cherche dans le paquet du donjon, les autres dans l'exécutable.
+
+| Octets | Contenu |
+|---|---|
+| 0–3 | `FDG1` |
+| 4–11 | décalage et taille des cartes |
+| 12–19 | décalage et taille du banc de morceaux (calé sur quatre octets) |
+| … | les cartes, puis le banc : nombre de morceaux, descripteurs de douze octets, plans |
+
+Sans son paquet, le jeu le dit dans le Shell et rend la main avec le code 20,
+avant d'avoir touché à l'écran. Le banc 68020 sert `PROGDIR:` depuis `bin/`
+(ou `$AGA_PROGDIR`), et connaît maintenant `Output()` pour ce message.
+
 ## Exécution
 
 - **FS-UAE / WinUAE** : configurez une A1200 (Kickstart 3.1, AGA, 68020, 2 Mo
-  Chip), montez le dossier `bin/` comme disque dur, puis depuis le Shell :
-  `AGACrawl`.
+  Chip), montez le dossier `bin/` comme disque dur — il porte l'exécutable
+  et son tiroir `Donjons/` —, puis depuis le Shell : `AGACrawl`.
 - **Machine réelle** : copiez l'exécutable et lancez-le **depuis un Shell** (il
   ne gère pas le message `WBStartup` d'un lancement depuis le Workbench).
 
@@ -107,8 +133,9 @@ src/font8.i      police 8x8 de l'interface                       (généré)
 src/surfgrad.i   dégradés que le copper pose ligne par ligne     (généré)
 src/pointer.i    sprite 0 : le pointeur de souris                (généré)
 src/artidx.i     index des morceaux de décor                     (généré)
-data/dgnart.bin  décors en perspective et monstres               (généré)
-data/dgnmap.bin  les trois niveaux                               (généré)
+data/dgnart.bin  décors communs : murs, portes, interface        (généré)
+data/crypte.dgn  le paquet du donjon : ses étages, son bestiaire (généré)
+bin/Donjons/     les paquets, là où le jeu les cherche (PROGDIR:)
 data/sfx.bin     bruitages synthétisés                           (généré)
 data/crawlmus.mod  la marche du donjon                           (généré)
 data/titlemus.mod  la procession de l'accueil                    (généré)

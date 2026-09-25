@@ -122,6 +122,26 @@ if __name__ == "__main__":
         fails.append("le jeu quitte l'accueil sur une sauvegarde illisible")
     print("  refusee, le jeu reste sur l'accueil")
 
+    print("--- sans son donjon ---")
+    # Le paquet du donjon manque : le jeu doit le dire dans le Shell et
+    # rendre la main, sans toucher a l'ecran.
+    import tempfile
+    vide = tempfile.mkdtemp(prefix="aga-progdir-")
+    old_prog = os.environ.get("AGA_PROGDIR")
+    os.environ["AGA_PROGDIR"] = vide
+    try:
+        n = T.Game()
+    finally:
+        if old_prog is None:
+            del os.environ["AGA_PROGDIR"]
+        else:
+            os.environ["AGA_PROGDIR"] = old_prog
+    if not n.finished:
+        fails.append("sans Donjons/Crypte.dgn, le jeu demarre quand meme")
+    if "Crypte.dgn" not in n.console:
+        fails.append(f"sans son donjon, le jeu ne dit rien ({n.console!r})")
+    print(f"  il le dit et rend la main : {n.console.strip()}")
+
     print()
     if fails:
         print(f"{len(fails)} anomalie(s) :")

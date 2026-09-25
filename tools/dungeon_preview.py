@@ -33,7 +33,7 @@ def art_index():
     """Les indices viennent de src/artidx.i, genere avec l'art."""
     idx = {}
     for line in open(os.path.join(ROOT, "src", "artidx.i")):
-        m = re.match(r"(ART_\w+|NMONSTERART)\s*=\s*(\d+)", line)
+        m = re.match(r"(ART_\w+|NMONSTERART|NMONPOSES)\s*=\s*(\d+)", line)
         if m:
             idx[m.group(1)] = int(m.group(2))
     return idx
@@ -50,18 +50,34 @@ SHELFFL, SHELFFR = _A["ART_ARCHFL"], _A["ART_ARCHFR"]
 SHELFOL, SHELFOR = _A["ART_ARCHOL"], _A["ART_ARCHOR"]
 
 
+def load_pack():
+    """Le paquet du donjon : ses cartes, puis son banc de morceaux."""
+    raw = open(os.path.join(ROOT, "data", "crypte.dgn"), "rb").read()
+    assert raw[:4] == G.PACKMAGIC, "paquet de donjon illisible"
+    moff, mlen, aoff, alen = struct.unpack(">IIII", raw[4:20])
+    return raw[moff:moff + mlen], raw[aoff:aoff + alen]
+
+
 def load_art():
-    raw = open(os.path.join(ROOT, "data", "dgnart.bin"), "rb").read()
-    n = struct.unpack(">H", raw[:2])[0]
+    """Les morceaux communs, puis ceux du donjon, dans l'espace d'indices
+    du jeu : BlitPiece cherche au-dela de ART_BANK dans le paquet. Les
+    decalages de chaque banc se comptent depuis son propre debut ; on
+    les rapporte ici au debut de la concatenation."""
+    raw = b""
     pieces = []
-    for i in range(n):
-        off, w, h, dst, _ = struct.unpack(">IHHHH", raw[2 + i * 12:14 + i * 12])
-        pieces.append((off, w, h, dst))
+    for bank in (open(os.path.join(ROOT, "data", "dgnart.bin"), "rb").read(),
+                 load_pack()[1]):
+        n = struct.unpack(">H", bank[:2])[0]
+        for i in range(n):
+            off, w, h, dst, _ = struct.unpack(">IHHHH",
+                                              bank[2 + i * 12:14 + i * 12])
+            pieces.append((len(raw) + off, w, h, dst))
+        raw += bank
     return raw, pieces
 
 
 def load_maps():
-    raw = open(os.path.join(ROOT, "data", "dgnmap.bin"), "rb").read()
+    raw = load_pack()[0]
     step = 4 + MAPW * MAPH
     levels = []
     for lv in range(len(raw) // step):

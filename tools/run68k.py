@@ -100,7 +100,9 @@ class Loader:
 # dos.library une ecriture dans un guichet memoire : le callback Python
 # lit les registres du 68000 et fait l'operation pour de vrai.
 DOSPORT = 0x00f10000
-DOS_LVOS = {-30: "open", -36: "close", -42: "read", -48: "write"}
+DOS_LVOS = {-30: "open", -36: "close", -42: "read", -48: "write",
+            -60: "output"}
+OUTPUT_FH = 0x7fff                       # la console du Shell
 
 
 # --- souches de bibliotheques : un petit bout de 68k a chaque LVO ------
@@ -148,6 +150,13 @@ class Harness:
         self.irq3 = 0                    # niveau 3 pris depuis le depart
         self.bad_blits = []
         self.dos_dir = os.environ.get("AGA_SAVEDIR", "/tmp")
+        # PROGDIR: -- la ou sont les paquets des donjons. Les bancs lient
+        # une copie de l'executable avec ses symboles ailleurs que dans
+        # bin/ : on ne se fie donc pas au chemin du programme.
+        self.prog_dir = os.environ.get("AGA_PROGDIR", os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "bin"))
+        self.console = ""
         self.audio = []
         self.finished = False
         self.setup_hw()
@@ -601,10 +610,18 @@ class Harness:
         d2 = self.cpu.r_reg(2)
         d3 = self.cpu.r_reg(3)
         self.dos_calls.append(name)
+        if name == "output":
+            return OUTPUT_FH
         if name == "open":
             path = self.cstr(d1).replace("PROGDIR:", "")
             full = os.path.join(self.dos_dir, path)
             mode = "r+b" if d2 == 1005 else "w+b"
+            # Ce qui ne s'ecrit pas et n'est pas dans le repertoire des
+            # sauvegardes se cherche a cote de l'executable, comme
+            # PROGDIR: le fait sur l'Amiga : c'est la que sont les
+            # paquets des donjons.
+            if d2 == 1005 and not os.path.exists(full):
+                full = os.path.join(self.prog_dir, path)
             try:
                 fh = open(full, mode)
             except OSError:
@@ -625,6 +642,10 @@ class Harness:
             for i, b in enumerate(data):
                 self.mem.w8(d2 + i, b)
             return len(data)
+        if name == "write" and d1 == OUTPUT_FH:
+            text = bytes(self.mem.r8(d2 + i) for i in range(d3))
+            self.console += text.decode("latin-1")
+            return d3
         if name == "write":
             fh = self.files.get(d1)
             if not fh:

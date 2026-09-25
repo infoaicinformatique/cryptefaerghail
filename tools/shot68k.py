@@ -223,12 +223,15 @@ if __name__ == "__main__":
     shoot(g, "prologue-fin")
     g.key(T.K_ESC)                        # retour a l'accueil
     g.key(T.K_1)                          # 1 : commencer une partie
-    shoot(g, "creation")
-    g.key(T.K_1 + 6)                      # magicien : les jets s'affichent
+    shoot(g, "creation")                  # la race
+    g.key(T.K_1 + 2)                      # une elfe
+    shoot(g, "creation-classe")
+    g.key(T.K_1 + 6)                      # magicienne : les jets s'affichent
     shoot(g, "creation-jets")
     g.key(T.K_RET); g.key(T.K_RET)        # garder les jets, garder le nom
-    for c in (0, 5, 2):                   # guerrier, clerc, roublard
-        g.key(T.K_1 + c); g.key(T.K_RET); g.key(T.K_RET)
+    for race, c in T.PARTY[:1] + T.PARTY[2:]:
+        g.key(T.K_1 + race); g.key(T.K_1 + c)
+        g.key(T.K_RET); g.key(T.K_RET)
     shoot(g, "vue")
     g.key(T.K_C)
     shoot(g, "fiche")

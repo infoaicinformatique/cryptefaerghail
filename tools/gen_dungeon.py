@@ -29,7 +29,7 @@ SCRBPL = 40                              # octets par ligne d'un plan d'ecran
 DEPTHS = 8                               # AGA : huit bitplanes
 NMONSTERART = 9                          # familles de silhouettes
 NMONPOSES = 3                            # repos, souffle, attaque
-NCLASSPORTRAIT = 8                       # un visage par classe
+NCLASSPORTRAIT = 11                      # un visage par classe
 
 # --- palette : 256 couleurs AGA, decrites dans tools/palette.py ------
 import palette as pal                     # noqa: E402
@@ -1412,7 +1412,7 @@ def make_portrait(cls):
         for x in (FACE_CX - 4, FACE_CX + 4):                    # rides du front
             p.set(x, EYE_Y - 6, pal.lit("SKIN", 0.62))
             p.set(x, EYE_Y - 5, pal.lit("SKIN", 0.62))
-    else:                                             # ensorceleur
+    elif cls == 7:                                    # ensorceleur
         draw_shoulders(p, (pal.lit("CLOTHP", 0.40), pal.lit("CLOTHP", 0.70)))
         draw_hair(p, HAIR_DARK, jaw=0.42, hairline=-0.20, drop=0.66,
                   volume=1.26, base=0.14, sweep=-0.26)
@@ -1422,6 +1422,38 @@ def make_portrait(cls):
                       brow=pal.lit("HAIRD", 0.85))
         for k in range(4):                            # une meche libre
             p.set(FACE_CX - 5 + k, EYE_Y - 4 + k, pal.lit("HAIRD", 0.55))
+    elif cls == 8:                                    # druide
+        draw_shoulders(p, (pal.lit("CLOTHG", 0.55), pal.lit("EARTH", 0.70)))
+        draw_hair(p, HAIR_LIGHT, jaw=0.34, hairline=-0.10, drop=0.95,
+                  volume=1.30, base=0.18)
+        draw_face(p, SKIN, jaw=0.34)
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=pal.lit("MOSS", 0.30),
+                      brow=pal.lit("HAIRL", 0.55))
+        draw_beard(p, HAIR_LIGHT, length=6, moustache=True)
+        for k, x in enumerate(range(FACE_CX - 8, FACE_CX + 9, 2)):
+            y = EYE_Y - 9 + abs(x - FACE_CX) // 4     # la couronne de feuilles
+            p.set(x, y, pal.lit("MOSS", 0.25 + 0.2 * (k % 2)))
+            p.set(x + 1, y + 1, pal.lit("MOSS", 0.55))
+    elif cls == 9:                                    # moine
+        draw_shoulders(p, (pal.lit("GOLD", 0.55), pal.lit("FIRE", 0.72)))
+        draw_face(p, SKIN, jaw=0.36, ry=FACE_RY * 1.04)   # crane rase
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=pal.lit("EARTH", 0.65),
+                      brow=pal.lit("HAIRD", 0.80))
+        p.set(FACE_CX, EYE_Y - 5, pal.lit("BLOOD", 0.30))   # la marque
+        p.set(FACE_CX, EYE_Y - 4, pal.lit("BLOOD", 0.40))
+    elif cls == 10:                                   # forgeron
+        draw_shoulders(p, (pal.lit("HIDE", 0.35), pal.lit("HIDE", 0.65)))
+        draw_hair(p, HAIR_DARK, jaw=0.26, hairline=-0.30, drop=0.30,
+                  volume=1.02, base=0.20)
+        draw_face(p, SKIN, jaw=0.24)
+        draw_neck(p, SKIN, wide=6)
+        draw_features(p, SKIN, iris=pal.lit("WOOD", 0.60),
+                      brow=pal.lit("HAIRD", 0.85))
+        draw_beard(p, HAIR_DARK, length=4, moustache=True)
+        for k in range(3):                            # la suie sur la joue
+            p.set(FACE_CX + 5 + k % 2, EYE_Y + 2 + k, pal.lit("IRON", 0.70))
     return p
 
 

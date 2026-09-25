@@ -101,7 +101,8 @@ hr_Shield	= 40
 hr_Spells	= 42			; masque des sorts connus
 hr_AcTemp	= 44			; bonus temporaire de CA
 hr_Slots	= 46			; emplacements de sorts, niveaux 0 a 3
-hr_SIZEOF	= 54
+hr_Race		= 54			; numero dans RaceTable
+hr_SIZEOF	= 56
 NHEROES		= 6			; six aventuriers, comme au temps des
 					; jeux de roles a groupe
 NAMELEN		= 9
@@ -169,6 +170,13 @@ cl_Ref		= 18
 cl_Will		= 20
 cl_Cast		= 22			; 0 aucun, 1 profane (INT), 2 divin (SAG)
 cl_SIZEOF	= 24
+
+; RaceTable : nom, modificateurs des six caracteristiques, et un bit
+; par classe que la race ne donne pas.
+rc_Name		= 0			; 12 octets
+rc_Mods		= 12			; FOR, DEX, CON, INT, SAG, CHA
+rc_Ban		= 24			; masque des classes interdites
+rc_SIZEOF	= 26
 CLS_ROUBLARD	= 2
 CLS_CLERC	= 5
 
@@ -204,11 +212,10 @@ TITLEH		= 176			; hauteur de l'illustration
 LVSTATE		= 3*MAPBYTES+NSHOP
 LVSTORE		= LEVELS*LVSTATE
 
-; "FAE5" : le groupe compte six aventuriers et non plus quatre. Une
-; sauvegarde plus ancienne n'a plus le bon compte, et le nombre magique
-; la fait refuser plutot que relire de travers. ("FAE4" avait ajoute
-; l'etat de chacun des trois etages, puisqu'on peut remonter.)
-SAVEMAGIC	= $46414535		; "FAE5"
+; "FAE6" : chaque aventurier porte sa race ; "FAE5" avait passe le
+; groupe a six. Une sauvegarde plus ancienne n'a plus le bon compte, et
+; le nombre magique la fait refuser plutot que relire de travers.
+SAVEMAGIC	= $46414536		; "FAE6"
 SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+6
 UI_VIEW		= 0
 UI_SHEET	= 1
@@ -3534,6 +3541,15 @@ DrawSheet:
 	move.w	#C_HILITE,d2
 	bsr	DrawText
 
+	move.w	hr_Race(a6),d0		; la race, dessous
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	add.l	d0,a0
+	moveq	#3,d0
+	moveq	#30,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
+
 	lea	TmpStr,a1		; niveau et experience
 	lea	TxtNiv,a0
 	bsr	StrCopy
@@ -3553,7 +3569,7 @@ DrawSheet:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
-	moveq	#32,d1
+	moveq	#40,d1
 	move.w	#C_TEXT,d2
 	bsr	DrawText
 
@@ -3586,8 +3602,8 @@ DrawSheet:
 .leftCol:
 	move.w	d7,d1
 	lsr.w	#1,d1
-	mulu.w	#11,d1
-	add.w	#48,d1
+	mulu.w	#10,d1
+	add.w	#52,d1
 	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	addq.w	#1,d7
@@ -3929,6 +3945,22 @@ RollHero:
 	move.w	d0,(a2)+
 	dbf	d5,.stats
 
+	move.w	CreRace,d0		; ce que la race y ajoute ou retire
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	lea	rc_Mods(a0,d0.w),a0
+	lea	CreStr,a2
+	moveq	#5,d5
+.race:
+	move.w	(a0)+,d0
+	add.w	d0,(a2)
+	cmp.w	#3,(a2)			; jamais sous trois
+	bge.s	.raceOk
+	move.w	#3,(a2)
+.raceOk:
+	addq.l	#2,a2
+	dbf	d5,.race
+
 	move.w	CreClass,d0
 	mulu.w	#cl_SIZEOF,d0
 	lea	ClassTable,a0
@@ -3986,6 +4018,7 @@ CommitHero:
 	clr.b	(a1)
 
 	move.w	CreClass,hr_Class(a6)
+	move.w	CreRace,hr_Race(a6)
 	move.w	#1,hr_Level(a6)
 	clr.w	hr_Xp(a6)
 	move.w	CreHp,hr_Hp(a6)
@@ -4046,44 +4079,44 @@ CreateKey:
 	bra	.done
 .notEsc:
 	move.w	CreStep,d7
-	bne	.notClass
-	cmp.w	#KEY_UP,d0		; le curseur parcourt les classes
-	bne.s	.notClsUp
+	bne	.notRace
+	moveq	#NRACES,d3		; --- la race : six entrees
+	bsr	CreListKey
+	tst.w	d2
+	bmi	.redraw
+	move.w	d2,CreRace
+	clr.w	CreCursor		; la premiere classe que la race donne
+.firstClass:
 	move.w	CreCursor,d2
-	subq.w	#1,d2
-	bpl.s	.setCursor
-	moveq	#0,d2
-	bra.s	.setCursor
-.notClsUp:
-	cmp.w	#KEY_DOWN,d0
-	bne.s	.notClsDown
-	move.w	CreCursor,d2
-	addq.w	#1,d2
-	cmp.w	#NCLASSES,d2
-	blt.s	.setCursor
-	move.w	#NCLASSES-1,d2
-.setCursor:
-	move.w	d2,CreCursor
-	bra	.redraw
-.notClsDown:
-	cmp.w	#KEY_RETURN,d0		; ENTREE prend celle qui est visee
-	bne.s	.classDigit
-	move.w	CreCursor,d2
-	bra.s	.takeClass
-.classDigit:
-	move.w	d0,d2
-	sub.w	#KEY_1,d2
-	bmi	.done
-	cmp.w	#NCLASSES,d2
-	bge	.done
-	move.w	d2,CreCursor
-.takeClass:
-	move.w	d2,CreClass
-	bsr	RollHero
+	bsr	ClassBanned
+	tst.w	d0
+	beq.s	.toClass
+	addq.w	#1,CreCursor
+	bra.s	.firstClass
+.toClass:
 	move.w	#1,CreStep
 	bra	.redraw
-.notClass:
+.notRace:
 	cmp.w	#1,d7
+	bne	.notClass
+	moveq	#NCLASSES,d3		; --- la classe : onze entrees
+	bsr	CreListKey
+	tst.w	d2
+	bmi	.redraw
+	move.w	d2,d4
+	bsr	ClassBanned		; la race ne la donne pas : on le dit
+	tst.w	d0
+	beq.s	.takeClass
+	lea	TxtBanned,a0
+	bsr	LogAdd
+	bra	.redraw
+.takeClass:
+	move.w	d4,CreClass
+	bsr	RollHero
+	move.w	#2,CreStep
+	bra	.redraw
+.notClass:
+	cmp.w	#2,d7
 	bne	.nameStep
 	cmp.w	#KEY_R,d0
 	bne.s	.notReroll
@@ -4095,7 +4128,7 @@ CreateKey:
 	move.w	CreIndex,d2
 	move.w	d2,CreNameIdx
 	bsr	PickName
-	move.w	#2,CreStep
+	move.w	#3,CreStep
 	bra	.redraw
 .nameStep:
 	cmp.w	#KEY_RETURN,d0
@@ -4163,6 +4196,70 @@ CreateKey:
 	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
+;----------------------------------------------------------------------
+; CreListKey : une liste a curseur (races, classes). d0 = touche,
+; d3 = nombre d'entrees. -> d2 = entree choisie (ENTREE ou chiffre),
+; -1 si la touche n'a fait que deplacer le curseur, ou rien.
+;----------------------------------------------------------------------
+CreListKey:
+	cmp.w	#KEY_UP,d0
+	bne.s	.notUp
+	move.w	CreCursor,d2
+	subq.w	#1,d2
+	bpl.s	.move
+	moveq	#0,d2
+	bra.s	.move
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notDown
+	move.w	CreCursor,d2
+	addq.w	#1,d2
+	cmp.w	d3,d2
+	blt.s	.move
+	move.w	d3,d2
+	subq.w	#1,d2
+.move:
+	move.w	d2,CreCursor
+	moveq	#-1,d2
+	rts
+.notDown:
+	cmp.w	#KEY_RETURN,d0		; ENTREE prend celle qui est visee
+	bne.s	.digit
+	move.w	CreCursor,d2
+	rts
+.digit:
+	move.w	d0,d2			; 1 a 9, puis 0 pour la dixieme
+	cmp.w	#KEY_1+9,d2
+	bne.s	.notZero
+	moveq	#9,d2
+	bra.s	.check
+.notZero:
+	sub.w	#KEY_1,d2
+	bmi.s	.none
+.check:
+	cmp.w	d3,d2
+	bge.s	.none
+	move.w	d2,CreCursor
+	rts
+.none:
+	moveq	#-1,d2
+	rts
+
+; ClassBanned : d2 = classe -> d0 = 1 si la race choisie ne la donne pas
+ClassBanned:
+	movem.l	d1/a0,-(sp)
+	move.w	CreRace,d0
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	move.w	rc_Ban(a0,d0.w),d1
+	moveq	#0,d0
+	btst	d2,d1
+	beq.s	.ok
+	moveq	#1,d0
+.ok:
+	movem.l	(sp)+,d1/a0
+	rts
+
 DrawCreate:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	#16,d0			; strictement la zone que le fond repeint
@@ -4188,17 +4285,12 @@ DrawCreate:
 	bsr	DrawText
 
 	move.w	CreStep,d7
-	bne	.chosen
+	bne	.notRaceList
 
-	lea	ClassTable,a6		; la liste des classes
-	moveq	#0,d6
-.classLoop:
+	lea	RaceTable,a6		; --- les six races, et ce qu'elles
+	moveq	#0,d6			; changent aux caracteristiques
+.raceLoop:
 	lea	TmpStr,a1
-	move.w	d6,d0
-	addq.w	#1,d0
-	bsr	StrNum
-	lea	TxtDash,a0
-	bsr	StrCopy
 	move.l	a6,a0
 	bsr	StrCopy
 	clr.b	(a1)
@@ -4208,15 +4300,87 @@ DrawCreate:
 	mulu.w	#11,d1
 	add.w	#34,d1
 	move.w	#C_TEXTDIM,d2
+	cmp.w	CreCursor,d6
+	bne.s	.dimRace
+	move.w	#C_TEXT,d2
+.dimRace:
+	bsr	DrawText
+	lea	rc_SIZEOF(a6),a6
+	addq.w	#1,d6
+	cmp.w	#NRACES,d6
+	blt	.raceLoop
+
+	move.w	CreCursor,d0		; sa description, en bas du cadre
+	lsl.w	#2,d0
+	lea	RaceDesc,a5
+	move.l	(a5,d0.w),a0
+	moveq	#3,d0
+	move.w	#126,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtPickRace,a0
+	moveq	#3,d0
+	move.w	#138,d1
+	move.w	#C_HEALTH,d2
+	bsr	DrawText
+	bra	.done
+
+.notRaceList:
+	cmp.w	#1,d7
+	bne	.chosen
+	lea	ClassTable,a6		; --- les onze classes, sur deux
+	moveq	#0,d6			; colonnes ; celles que la race ne
+.classLoop:				; donne pas s'eteignent
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	d6,d1
+	cmp.w	#6,d1
+	blt.s	.leftCls
+	moveq	#14,d0			; la deuxieme colonne
+	subq.w	#6,d1
+.leftCls:
+	mulu.w	#11,d1
+	add.w	#34,d1
+	move.w	#C_TEXTDIM,d2
+	move.l	d0,-(sp)
+	move.w	d6,d2
+	bsr	ClassBanned
+	move.w	d0,d3
+	move.l	(sp)+,d0
+	move.w	#C_TEXTDIM,d2
+	tst.w	d3
+	beq.s	.allowed
+	move.w	#C_TEXTLOW,d2
+.allowed:
 	cmp.w	CreCursor,d6		; la classe visee ressort
 	bne.s	.dimClass
 	move.w	#C_TEXT,d2
+	tst.w	d3
+	beq.s	.dimClass
+	move.w	#C_ALERT,d2		; visee mais interdite
 .dimClass:
 	bsr	DrawText
 	lea	cl_SIZEOF(a6),a6
 	addq.w	#1,d6
 	cmp.w	#NCLASSES,d6
 	blt	.classLoop
+
+	lea	TmpStr,a1		; la race retenue, en rappel
+	move.w	CreRace,d0
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	add.l	d0,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#104,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
 
 	move.w	CreCursor,d0		; sa description, en bas du cadre
 	lsl.w	#2,d0
@@ -4234,10 +4398,20 @@ DrawCreate:
 	bra	.done
 
 .chosen:
-	move.w	CreClass,d0		; classe retenue
+	lea	TmpStr,a1		; race et classe retenues
+	move.w	CreRace,d0
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	add.l	d0,a0
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	move.w	CreClass,d0
 	mulu.w	#cl_SIZEOF,d0
 	lea	ClassTable,a0
 	add.l	d0,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
 	moveq	#3,d0
 	moveq	#38,d1
 	move.w	#C_TEXT,d2
@@ -4294,7 +4468,7 @@ DrawCreate:
 	move.w	#C_HEALTH,d2
 	bsr	DrawText
 
-	cmp.w	#1,d7
+	cmp.w	#2,d7
 	bne.s	.nameUi
 	lea	TxtRoll,a0
 	moveq	#3,d0
@@ -7923,6 +8097,10 @@ LegendTab:
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
 	dc.l	TxtCls4,TxtCls5,TxtCls6,TxtCls7
+	dc.l	TxtCls8,TxtCls9,TxtCls10
+
+RaceDesc:
+	dc.l	TxtRace0,TxtRace1,TxtRace2,TxtRace3,TxtRace4,TxtRace5
 
 ; Le prologue, page par page : chaque page est une liste de lignes
 ; terminee par un long nul. Une ligne marquee d'une etoile passe a
@@ -8130,6 +8308,17 @@ TxtCls4:	dc.b	"LA LAME ET LA FOI",0
 TxtCls5:	dc.b	"SOINS ET SORTS DIVINS",0
 TxtCls6:	dc.b	"FRAGILE, MAGIE VASTE",0
 TxtCls7:	dc.b	"MAGIE INNÉE ET CHARME",0
+TxtCls8:	dc.b	"SAGESSE DES BOIS, SOINS",0
+TxtCls9:	dc.b	"SANS ARMURE, RÉSISTE",0
+TxtCls10:	dc.b	"ROBUSTE, RÉPARE LE FER",0
+TxtRace0:	dc.b	"AUCUN BONUS NI MALUS",0
+TxtRace1:	dc.b	"CON +2  CHA -2",0
+TxtRace2:	dc.b	"DEX +2  CON -2",0
+TxtRace3:	dc.b	"DEX +2  FOR -2",0
+TxtRace4:	dc.b	"UN PEU DES DEUX PEUPLES",0
+TxtRace5:	dc.b	"FOR +2  INT -2  CHA -2",0
+TxtPickRace:	dc.b	"FLÈCHES PUIS ENTRÉE",0
+TxtBanned:	dc.b	"CETTE RACE NE DONNE PAS CETTE CLASSE.",0
 TxtFor:		dc.b	"FOR ",0
 TxtDex:		dc.b	"DEX ",0
 TxtCon:		dc.b	"CON ",0
@@ -8146,11 +8335,11 @@ TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
 TxtCreateTitle:	dc.b	"CRÉATION DU GROUPE",0
 TxtEmptySlot:	dc.b	"-----",0
 TxtHero:	dc.b	"HÉROS ",0
-TxtOn4:		dc.b	" SUR 4",0
+TxtOn4:		dc.b	" SUR 6",0
 TxtDash:	dc.b	" - ",0
 TxtHyphen:	dc.b	"-",0
 TxtNivShort:	dc.b	"N",0
-TxtPickClass:	dc.b	"FLÈCHES, ENTRÉE OU 1-8",0
+TxtPickClass:	dc.b	"FLÈCHES PUIS ENTRÉE",0
 TxtRoll:	dc.b	"R RELANCER  ENTRÉE OK",0
 TxtName:	dc.b	"NOM : ",0
 TxtNameHelp:	dc.b	"TAPEZ OU FLÈCHES",0
@@ -8304,7 +8493,7 @@ TxtR2A1:	dc.b	"LE BORGNE",0
 TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
 TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR RÉPONDRE  ESC",0
-TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTRÉE OK  ESC",0
+TxtHelpCreate:	dc.b	"1-9 CHOISIR  R DÉS  ENTRÉE OK  ESC",0
 TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P RÉGLAGES",0
 TxtRaised:	dc.b	" SE RELÈVE.",0
 TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RÉCUPÈRE.",0
@@ -8484,6 +8673,7 @@ CreIndex:	ds.w	1
 CreStep:	ds.w	1
 CreCursor:	ds.w	1
 CreClass:	ds.w	1
+CreRace:	ds.w	1		; la race choisie, dans RaceTable
 CreHp:		ds.w	1
 CreMp:		ds.w	1
 CreNameLen:	ds.w	1

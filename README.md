@@ -230,9 +230,29 @@ sur deux. La sauvegarde change de nombre magique, `FAE5`.
 
 ### Création du groupe
 
-**Six aventuriers**, comme dans les jeux de rôle à groupe de l'époque, chacun d'une classe (guerrier, barbare, éclaireur, clerc)
-qui décide du dé de vie, de la progression à l'attaque et de l'accès à la
-magie. Les six caractéristiques sont tirées **à 4d6 en gardant les trois
+**Six aventuriers**, comme dans les jeux de rôle à groupe de l'époque. Chacun
+choisit d'abord sa **race**, puis sa **classe** :
+
+| Race | Caractéristiques | Ne donne pas |
+|---|---|---|
+| Humain | — | — |
+| Nain | CON +2, CHA −2 | magicien, ensorceleur |
+| Elfe | DEX +2, CON −2 | paladin, barbare |
+| Halfelin | DEX +2, FOR −2 | barbare, forgeron |
+| Demi-elfe | — | — |
+| Demi-orc | FOR +2, INT −2, CHA −2 | druide, magicien |
+
+Onze classes : les huit du début — guerrier, barbare, roublard, rôdeur,
+paladin, clerc, magicien, ensorceleur — et trois de plus : le **druide**,
+lanceur divin des bois ; le **moine**, qui se bat sans armure et a les trois
+sauvegardes fortes ; le **forgeron**, solide comme un guerrier. La classe
+décide du dé de vie, de la progression à l'attaque et de l'accès à la magie.
+Celles que la race ne donne pas s'éteignent dans la liste et se refusent.
+
+Les sorts de départ se déclarent maintenant par leur nom dans
+`tools/gen_tables.py`, et le masque se calcule. Il était écrit à la main et ne
+correspondait plus à la table : le paladin partait avec le projectile magique
+au lieu des soins, le clerc avec la terreur au lieu de la bénédiction. Les six caractéristiques sont tirées **à 4d6 en gardant les trois
 meilleurs dés**, comme il se doit ; `R` relance, `ENTRÉE` valide. Le nom se
 tape au clavier — et comme le CIA rend des **positions de touches**, pas des
 caractères, `TAB` bascule entre AZERTY et QWERTY.

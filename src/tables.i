@@ -217,7 +217,13 @@ ClassTable:
 	dc.w	4,2,0,0,1,1
 	dc.b	"ENSORCELEUR",0
 	dc.w	4,2,0,0,1,1
-NCLASSES	= 8
+	dc.b	"DRUIDE",0,0,0,0,0,0
+	dc.w	8,1,1,0,1,2
+	dc.b	"MOINE",0,0,0,0,0,0,0
+	dc.w	8,1,1,1,1,0
+	dc.b	"FORGERON",0,0,0,0
+	dc.w	10,0,1,0,0,0
+NCLASSES	= 11
 
 ; emplacements de sorts : niveaux 1 a 8, sorts de niveau 0 a 3
 SlotTable:
@@ -231,14 +237,33 @@ SlotTable:
 	dc.w	4,4,3,3
 
 StartGear:			; arme, armure, bouclier, sorts
-	dc.w	3,14,16,0
-	dc.w	4,13,0,0
-	dc.w	2,13,0,0
-	dc.w	7,13,0,0
-	dc.w	3,14,16,2
-	dc.w	6,13,16,66
-	dc.w	8,12,0,13
-	dc.w	8,12,0,5
+	dc.w	3,14,16,$0000	; 
+	dc.w	4,13,0,$0000	; 
+	dc.w	2,13,0,$0000	; 
+	dc.w	7,13,0,$0000	; 
+	dc.w	3,14,16,$0010	; SOINS LÉGERS
+	dc.w	6,13,16,$0030	; SOINS LÉGERS, BENEDICTION
+	dc.w	8,12,0,$0007	; RAYON DE GIVRE, PROJECTILE MAGIQUE, MAINS BRÛLANTES
+	dc.w	8,12,0,$0003	; RAYON DE GIVRE, PROJECTILE MAGIQUE
+	dc.w	8,13,0,$0050	; SOINS LÉGERS, TERREUR
+	dc.w	8,12,0,$0000	; 
+	dc.w	6,14,16,$0000	; 
+
+; nom (12), FOR, DEX, CON, INT, SAG, CHA, classes interdites
+RaceTable:
+	dc.b	"HUMAIN",0,0,0,0,0,0
+	dc.w	0,0,0,0,0,0,$0000
+	dc.b	"NAIN",0,0,0,0,0,0,0,0
+	dc.w	0,0,2,0,0,-2,$00c0
+	dc.b	"ELFE",0,0,0,0,0,0,0,0
+	dc.w	0,2,-2,0,0,0,$0012
+	dc.b	"HALFELIN",0,0,0,0
+	dc.w	-2,2,0,0,0,0,$0402
+	dc.b	"DEMI-ELFE",0,0,0
+	dc.w	0,0,0,0,0,0,$0000
+	dc.b	"DEMI-ORC",0,0,0,0
+	dc.w	2,0,0,-2,0,-2,$0140
+NRACES		= 6
 
 NameList:			; 9 octets par nom
 	dc.b	"ALDER",0,0,0,0

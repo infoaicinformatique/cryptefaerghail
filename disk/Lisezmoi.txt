@@ -59,7 +59,14 @@ L'ACCUEIL
   reste sur l'accueil.
 
 CREATION DU GROUPE
-  Six aventuriers, chacun d'une des huit classes :
+  Six aventuriers. Chacun choisit d'abord sa race :
+    HUMAIN      rien a ajouter, rien a retirer
+    NAIN        CON +2  CHA -2  (ni magicien ni ensorceleur)
+    ELFE        DEX +2  CON -2  (ni paladin ni barbare)
+    HALFELIN    DEX +2  FOR -2  (ni barbare ni forgeron)
+    DEMI-ELFE   un peu des deux peuples
+    DEMI-ORC    FOR +2  INT -2  CHA -2  (ni druide ni magicien)
+  puis l'une des onze classes :
     GUERRIER    de de vie 10, attaque a chaque niveau, epee et cotte
     BARBARE     de de vie 12, tres resistant, hache
     ROUBLARD    agile, la fuite lui reussit bien mieux
@@ -68,6 +75,9 @@ CREATION DU GROUPE
     CLERC       soins et sorts divins, potions plus efficaces
     MAGICIEN    fragile, mais l'eventail de sorts le plus large
     ENSORCELEUR magie innee
+    DRUIDE      sagesse des bois, soins et terreur
+    MOINE       sans armure, les trois sauvegardes fortes
+    FORGERON    robuste, masse et cotte
   Les fleches deplacent le curseur, ENTREE ou le chiffre choisit. Les
   six caracteristiques sont tirees a 4d6 en gardant les trois meilleurs
   des ; R relance le jet, ENTREE valide. Le nom se tape au clavier (TAB

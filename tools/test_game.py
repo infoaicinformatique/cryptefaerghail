@@ -301,15 +301,22 @@ def prolog_test(g, fails):
     print(f"  {pages} pages, les fleches reviennent, ESC rend l'accueil")
 
 
-def create_party(g, classes=(0, 6, 1, 5, 3, 7)):
-    """Choix de classe, acceptation des jets, nom par defaut.
+# (race, classe) : chaque race y donne sa classe -- pas de mage nain, de
+# barbare halfelin, ni de magicien demi-orc.
+PARTY = ((0, 0), (2, 6), (1, 1), (4, 5), (3, 3), (5, 7))
+
+
+def create_party(g, party=PARTY):
+    """Choix de la race, de la classe, acceptation des jets, nom par
+    defaut.
 
     Le jeu s'ouvre sur l'ecran d'accueil : on demande d'abord une
     nouvelle partie."""
     if g.w("Phase") == 2:
         g.key(K_1)
-    for c in classes:
-        g.key(K_1 + c)                   # touche 1 a 8
+    for race, c in party:
+        g.key(K_1 + race)                # touche 1 a 6
+        g.key(K_1 + c)                   # touche 1 a 9, puis fleches
         g.key(K_RET)                     # garder les caracteristiques
         g.key(K_RET)                     # garder le nom propose
     return g.w("Phase")

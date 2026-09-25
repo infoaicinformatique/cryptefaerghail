@@ -103,6 +103,13 @@ def monster_xp(cr):
 # nom, de de vie, progression d'attaque (0 complete, 1 trois quarts,
 # 2 demie), sauvegardes fortes (Vig, Ref, Vol), lanceur (0 aucun,
 # 1 profane sur l'Intelligence, 2 divin sur la Sagesse)
+#
+# Onze classes, comme les jeux de role a groupe de l'epoque : les huit
+# du debut, et trois de plus -- le druide, lanceur divin des bois ; le
+# moine, qui se bat sans armure et resiste a tout ; le forgeron, solide
+# comme un guerrier, et qui saura reparer ce que les combats usent.
+# L'ordre compte : c'est le numero de classe des sauvegardes et des
+# portraits, les nouvelles viennent donc a la suite.
 CLASSES = [
     ("GUERRIER",  10, 0, (1, 0, 0), 0),
     ("BARBARE",   12, 0, (1, 0, 0), 0),
@@ -112,18 +119,41 @@ CLASSES = [
     ("CLERC",      8, 1, (1, 0, 1), 2),
     ("MAGICIEN",   4, 2, (0, 0, 1), 1),
     ("ENSORCELEUR", 4, 2, (0, 0, 1), 1),
+    ("DRUIDE",     8, 1, (1, 0, 1), 2),
+    ("MOINE",      8, 1, (1, 1, 1), 0),
+    ("FORGERON",  10, 0, (1, 0, 0), 0),
 ]
 
-# arme, armure, bouclier, sorts connus (masque de 16 bits)
+# arme, armure, bouclier, sorts connus -- par leur nom : le masque
+# (un bit par rang dans SPELLS) se calcule. Il etait ecrit a la main, et
+# ne correspondait plus a la table : le paladin partait avec le
+# projectile magique au lieu des soins, le clerc avec la terreur au lieu
+# de la benediction.
 START_GEAR = [
-    (3, 14, 16, 0),                      # guerrier : epee longue, cotte
-    (4, 13, 0, 0),                       # barbare : hache, cuir
-    (2, 13, 0, 0),                       # roublard : epee courte
-    (7, 13, 0, 0),                       # rodeur : arc
-    (3, 14, 16, 0b10),                   # paladin : soins legers
-    (6, 13, 16, 0b1000010),              # clerc : soins + benediction
-    (8, 12, 0, 0b1101),                  # magicien : givre, projectile, mains
-    (8, 12, 0, 0b101),                   # ensorceleur : givre, projectile
+    (3, 14, 16, []),                                     # guerrier
+    (4, 13, 0, []),                                      # barbare
+    (2, 13, 0, []),                                      # roublard
+    (7, 13, 0, []),                                      # rodeur : arc
+    (3, 14, 16, ["SOINS LÉGERS"]),                       # paladin
+    (6, 13, 16, ["SOINS LÉGERS", "BENEDICTION"]),        # clerc
+    (8, 12, 0, ["RAYON DE GIVRE", "PROJECTILE MAGIQUE",
+                "MAINS BRÛLANTES"]),                     # magicien
+    (8, 12, 0, ["RAYON DE GIVRE", "PROJECTILE MAGIQUE"]),  # ensorceleur
+    (8, 13, 0, ["SOINS LÉGERS", "TERREUR"]),             # druide : baton
+    (8, 12, 0, []),                                      # moine : baton, robe
+    (6, 14, 16, []),                                     # forgeron : masse
+]
+
+# --- Races ----------------------------------------------------------------
+# nom, modificateurs (FOR, DEX, CON, INT, SAG, CHA) -- ceux du SRD --, et
+# les classes que la race ne donne pas.
+RACES = [
+    ("HUMAIN",    (0, 0, 0, 0, 0, 0), []),
+    ("NAIN",      (0, 0, 2, 0, 0, -2), ["MAGICIEN", "ENSORCELEUR"]),
+    ("ELFE",      (0, 2, -2, 0, 0, 0), ["PALADIN", "BARBARE"]),
+    ("HALFELIN",  (-2, 2, 0, 0, 0, 0), ["BARBARE", "FORGERON"]),
+    ("DEMI-ELFE", (0, 0, 0, 0, 0, 0), []),
+    ("DEMI-ORC",  (2, 0, 0, -2, 0, -2), ["DRUIDE", "MAGICIEN"]),
 ]
 
 # --- Sorts du SRD 3.5 -------------------------------------------------
@@ -245,8 +275,25 @@ with open(OUT, "w", encoding="latin-1") as f:
         f.write("\tdc.w\t" + ",".join(str(v) for v in row) + "\n")
 
     f.write("\nStartGear:\t\t\t; arme, armure, bouclier, sorts\n")
-    for w, a, sh, sp in START_GEAR:
-        f.write(f"\tdc.w\t{w},{a},{sh},{sp}\n")
+    names = [sp[0] for sp in SPELLS]
+    assert len(START_GEAR) == len(CLASSES)
+    for w, a, sh, known in START_GEAR:
+        mask = 0
+        for name in known:
+            mask |= 1 << names.index(name)
+        f.write(f"\tdc.w\t{w},{a},{sh},${mask:04x}\t; {', '.join(known)}\n")
+
+    f.write("\n; nom (12), FOR, DEX, CON, INT, SAG, CHA, classes interdites\n")
+    f.write("RaceTable:\n")
+    cnames = [c[0] for c in CLASSES]
+    for name, mods, banned in RACES:
+        mask = 0
+        for c in banned:
+            mask |= 1 << cnames.index(c)
+        f.write(pad(name, 12))
+        f.write("\tdc.w\t" + ",".join(str(m) for m in mods)
+                + f",${mask:04x}\n")
+    f.write(f"NRACES\t\t= {len(RACES)}\n")
 
     f.write(f"\nNameList:\t\t\t; {NAMELEN} octets par nom\n")
     for name in NAMES:
@@ -258,4 +305,5 @@ with open(OUT, "w", encoding="latin-1") as f:
     f.write(keymap("KeyQwerty", QWERTY))
 
 print(f"{OUT} : {len(ITEMS)} objets, {len(SPELLS)} sorts, "
-      f"{len(MONSTERS)} monstres, {len(NAMES)} noms")
+      f"{len(MONSTERS)} monstres, {len(CLASSES)} classes, {len(RACES)} races, "
+      f"{len(NAMES)} noms")

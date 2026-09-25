@@ -156,12 +156,15 @@ if __name__ == "__main__":
     g.key(T.K_1 + 2)                      # 3 : le prologue, page a page
     prolog_pages(g, fails)                # la derniere page rend l'accueil
     g.key(T.K_1)                          # sortir de l'accueil
-    shot(g, "creation", fails)
+    shot(g, "creation", fails)            # les races
+    g.key(T.K_1 + 2)
+    shot(g, "classes", fails)
     g.key(T.K_1 + 6)
     shot(g, "jets", fails)
     g.key(T.K_RET); g.key(T.K_RET)
-    for c in (0, 5, 2):
-        g.key(T.K_1 + c); g.key(T.K_RET); g.key(T.K_RET)
+    for race, c in T.PARTY[:1] + T.PARTY[2:]:
+        g.key(T.K_1 + race); g.key(T.K_1 + c)
+        g.key(T.K_RET); g.key(T.K_RET)
     widest(g)
     g.key(T.K_1)                          # forcer un redessin
     shot(g, "vue", fails)

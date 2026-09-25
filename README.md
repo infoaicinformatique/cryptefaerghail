@@ -53,12 +53,14 @@ make wav           # rejoue les modules en Python et écrit deux WAV
 
 ## Deux disquettes prêtes à l'emploi
 
-Le jeu tient sur **deux disquettes 880 Ko OFS** (DOS0, lisibles de Kickstart
-1.3 à 3.x) :
+Le jeu tient sur **deux disquettes 880 Ko** : celle du jeu en **FFS** (DOS1,
+512 octets utiles par bloc au lieu de 488 — cinq pour cent de place en plus, et
+le jeu demande de toute façon un Kickstart 3), celle du source en OFS (DOS0,
+lisible dès le Kickstart 1.3) :
 
 | | Contenu |
 |---|---|
-| `dist/Faerghail1.adf` | **amorçable** : le jeu, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui le lance au démarrage |
+| `dist/Faerghail1.adf` | **amorçable**, en FFS : le jeu, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui le lance au démarrage |
 | `dist/Faerghail2.adf` | le source : tout ce qui s'assemble, écrit à la main ou généré, et les données qui tiennent à côté |
 
 Une seule ne suffisait plus. À huit bitplanes le jeu pèse à lui seul plus d'un
@@ -111,6 +113,8 @@ data/sfx.bin     bruitages synthétisés                           (généré)
 data/crawlmus.mod  la marche du donjon                           (généré)
 data/titlemus.mod  la procession de l'accueil                    (généré)
 tools/gen_dungeon.py générateur des décors, des cartes et de la police 8x8
+tools/monsters.py    le bestiaire, modelé en volumes (trois poses par famille)
+tools/bestiary_sheet.py  la planche du bestiaire (docs/bestiaire.png)
 tools/gen_tables.py  générateur des tables du jeu
 tools/gen_sfx.py     générateur des bruitages
 tools/gen_score.py   générateur des deux musiques (accueil et donjon)
@@ -264,17 +268,47 @@ ouvre le prologue, `ESC` quitte.
 ### Contenu
 
 Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
-clés, trésors), 4 monstres animés sur deux poses, coffres, objets au sol,
+clés, trésors), 25 créatures en neuf familles modelées en volumes, trois
+poses chacune, coffres, objets au sol,
 niches creusées dans les murs, portes ordinaires, portes verrouillées, le
 grand registre au fond du dernier étage — et
 une **porte à runes** par niveau, qui pose une énigme à trois réponses :
 juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
 un aventurier.
 
+**Le bestiaire** est modelé, et non plus peint à plat. Les premières
+silhouettes avaient été dessinées pour seize couleurs : des ellipses d'une
+teinte, des traits d'un pixel. `tools/monsters.py` compose chaque famille de
+volumes — ellipsoïdes pour un crâne ou une panse, troncs de cône pour un
+membre, plaques pour une aile ou une lame —, les rend à travers un tampon de
+profondeur, éclaire chaque pixel selon sa normale (la lumière des portraits,
+d'en haut à gauche), trame d'un demi-cran pour fondre les gammes courtes, puis
+cerne la silhouette et chaque recouvrement d'un trait sombre. Fourrure,
+écailles, bandelettes, pierre et haillons ont chacun leur grain ; les yeux, les
+crocs et les griffes se posent au pixel.
+
+Chaque famille a **trois poses** : deux qui respirent, que le combat alterne,
+et une qui frappe — le jeu la montre quelques trames quand la créature porte
+un coup. Chaque pose est rognée à la boîte de ses pixels : un cadre fixe de
+96 × 88 coûtait le masque et les huit plans du vide autour d'elle.
+
+![Le bestiaire](docs/bestiaire.png)
+
+**Les monstres se voient venir.** Ils marchaient, mais ne se montraient
+qu'une fois le combat engagé : un couloir d'où quelque chose avançait avait
+l'air vide jusqu'au dernier pas. La vue pose maintenant ce qui se tient dans
+les trois cases devant, jusqu'au premier mur — à un pas la créature du combat,
+au-delà la même réduite vers le point de fuite, à un pas et demi, deux et demi
+et trois et demi.
+
+![Un orc, deux cases devant](docs/emu-monstre-couloir.png)
+![Il frappe](docs/emu-combat-attaque.png)
+
 **Les monstres marchent.** Ils tenaient leur case et attendaient qu'on leur
 rentre dedans : un couloir vide était sûr, et le donjon n'avait pas de nerf.
-Ils font maintenant un pas toutes les quatorze trames vers le groupe, s'il est
-à moins de six cases — de plus loin, ils n'ont rien entendu. Le pas se pose
+Ils font maintenant un pas toutes les quatorze trames vers le groupe — des
+trames comptées par l'interruption, pas des tours de boucle : un redessin qui
+en prend deux ne les ralentit pas —, s'il est à moins de six cases — de plus loin, ils n'ont rien entendu. Le pas se pose
 sur du dallage nu et rien d'autre : ni porte, ni dalle piégée, ni escalier, ni
 la case d'un autre. Celui qui arrive sur le groupe engage le combat lui-même,
 et **meurt chez lui** : la case nettoyée à sa mort est la sienne, plus celle
@@ -359,6 +393,17 @@ sauvegarde d'avant le registre n'a plus le bon compte et se refuse.
 ne servait à rien : chaque objet portait pourtant un prix dans `ItemTable`, et
 personne ne le lisait. Le marchand est scellé dans un mur comme une niche, à
 trois à neuf pas du départ pour qu'on puisse s'équiper avant de s'enfoncer.
+
+C'est le **guichet d'Ossian** : une baie taillée sous un linteau à la marque
+de la maison, une grille de fer et, derrière, le noir d'où vient la voix — deux
+yeux y luisent à peine. Sur le comptoir de chêne, des fioles de verre, un
+parchemin roulé, une épée couchée, une pile de pièces, et la balance où se pèse
+le taux d'un dépôt refait. Il se voit à trois pas, comme le pupitre du greffe ;
+de près, la flamme de sa lanterne vacille, trois flammes en boucle, et le jeu
+ne redessine la vue pour elle que quand on la regarde.
+
+![Le guichet](docs/emu-echoppe-vue.png)
+
 Espace ouvre son étal : huit articles choisis pour l'étage, au prix de
 l'objet ; Tab passe de l'autre côté du comptoir, où il rachète le butin à
 moitié prix. Ce qui est vendu reste vendu — l'étal fait partie de la partie
@@ -675,9 +720,9 @@ de Paula.
 
 - Une phrase d'accueil par étage pour la voix derrière le comptoir : voir la
   fin de [docs/histoire.md](docs/histoire.md).
-- La disquette du jeu a maintenant 115 Ko de marge : de quoi donner à
-  l'échoppe et aux niches leurs vues à deux et trois pas, comme le pupitre,
-  ou une troisième pose aux monstres.
+- Le game design de *Legend of Faerghail* (1990) — un groupe de six, des
+  races, un extérieur, des villes, huit donjons, le combat à rangs : voir
+  [docs/analyse-faerghail.md](docs/analyse-faerghail.md).
 - Interruption COPER : découper l'image en bandes et changer de palette à
   mi-écran depuis le processeur. Le jeu ne s'en sert pas encore ; le
   gestionnaire de niveau 3 est prêt à accueillir la cause.

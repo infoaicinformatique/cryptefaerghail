@@ -404,10 +404,16 @@ def walk_test(g, fails):
     heal(g)
     px, py = g.w("PosX"), g.w("PosY")
     grid = grid_of(g)
-    spot = next(((x, y) for d in (2, 3, 4)
-                 for x in range(MAPW) for y in range(MAPH)
-                 if abs(x - px) + abs(y - py) == d and grid[y][x] == 0
-                 and g.mem.r8(par + y * MAPW + x) == 0), None)
+    # Deux a quatre cases devant, en ligne et sans rien entre : un
+    # monstre pose de l'autre cote d'un mur, a deux cases a vol
+    # d'oiseau, marche droit sur le groupe et bute contre la pierre.
+    def open_line(dx, dy, d):
+        return all(0 <= px + dx * k < MAPW and 0 <= py + dy * k < MAPH
+                   and grid[py + dy * k][px + dx * k] == 0
+                   and g.mem.r8(par + (py + dy * k) * MAPW + px + dx * k) == 0
+                   for k in range(1, d + 1))
+    spot = next(((px + dx * d, py + dy * d) for d in (2, 3, 4)
+                 for dx, dy in DIRS if open_line(dx, dy, d)), None)
     if not check(spot, "pas de dallage nu ou poser un monstre", fails):
         return
     mx, my = spot
@@ -669,6 +675,62 @@ def archive_test(g, fails, ledger):
         g.key(K_ESC)
     print(f"  greffe : {len(shelves)} rayonnages, trois livres lus, "
           f"payes une fois")
+
+
+def corridor_monster_test(g, fails, shot=None):
+    """Les monstres se voient venir : une creature posee deux cases devant
+    le groupe, dans un couloir degage, doit changer la vue -- et se
+    retirer doit la rendre telle qu'elle etait."""
+    import shot68k as S
+    grid = grid_of(g)
+    spot = None
+    for y in range(1, MAPH - 1):
+        for x in range(1, MAPW - 1):
+            if grid[y][x] & 0x3f:
+                continue
+            for d, (dx, dy) in enumerate(DIRS):
+                cells = [(x + dx * k, y + dy * k) for k in (1, 2, 3)]
+                if all(0 <= cx < MAPW and 0 <= cy < MAPH
+                       and grid[cy][cx] == 0 for cx, cy in cells):
+                    spot = (x, y, d, cells[1])
+                    break
+            if spot:
+                break
+        if spot:
+            break
+    if not check(spot, "aucun couloir droit pour voir venir un monstre",
+                 fails):
+        return
+    x, y, d, (mx, my) = spot
+    saved = (g.w("PosX"), g.w("PosY"), g.w("Dir"))
+    g.setw("PosX", x)
+    g.setw("PosY", y)
+    g.setw("Dir", d)
+    # On appelle Redraw directement et on lit le tampon de dessin : faire
+    # tourner la boucle laisserait a l'orc le temps de marcher sur nous.
+    g.call(g.addr("Redraw"))
+    empty = S.grab(g, "DrawBuf")
+    ter, par = g.addr("MapTerrain"), g.addr("MapParam")
+    g.mem.w8(ter + my * MAPW + mx, 0x20)
+    g.mem.w8(par + my * MAPW + mx, 4)        # un orc
+    g.call(g.addr("Redraw"))
+    seen = S.grab(g, "DrawBuf")
+    if shot:
+        shot(g, "monstre-couloir", seen)
+    changed = sum(1 for a, b in zip(empty, seen) if a != b)
+    check(changed > 200, f"le monstre deux cases devant ne se voit pas "
+          f"({changed} pixels changent)", fails)
+    check(g.w("InCombat") == 0, "voir un monstre engage le combat", fails)
+    g.mem.w8(ter + my * MAPW + mx, 0)
+    g.mem.w8(par + my * MAPW + mx, 0)
+    g.call(g.addr("Redraw"))
+    check(S.grab(g, "DrawBuf") == empty, "le monstre parti laisse une trace",
+          fails)
+    g.setw("PosX", saved[0])
+    g.setw("PosY", saved[1])
+    g.setw("Dir", saved[2])
+    g.setw("NeedRedraw", 1)
+    print(f"  un orc deux cases devant, en {mx},{my} : {changed} pixels")
 
 
 def trap_test(g, fails):
@@ -1005,7 +1067,7 @@ if __name__ == "__main__":
     for n in range(800):
         g.key(random.choice(allkeys))
         ui, phase = g.w("UiMode"), g.w("Phase")
-        if not check(ui <= 9, f"UiMode={ui}", fails):
+        if not check(ui <= 10, f"UiMode={ui}", fails):
             break
         if not check(phase <= 3, f"Phase={phase}", fails):
             break
@@ -1017,6 +1079,12 @@ if __name__ == "__main__":
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
           f"niveau {g.w('Level')} or {g.w('Gold')}")
+
+    print("--- les monstres se voient venir ---")
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    corridor_monster_test(g, fails)
 
     print("--- l'escalier qui remonte ---")
     stairs_test(g, fails)

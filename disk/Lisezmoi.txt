@@ -122,7 +122,8 @@ LA SOURIS
 
 L'ECHOPPE
   Un marchand par etage, scelle dans un mur comme une niche, jamais
-  loin du depart. Mettez-vous face a son etal et pressez ESPACE. Huit
+  loin du depart : un guichet grille, une balance sur le comptoir, et
+  derriere, dans le noir, une voix. Mettez-vous face a son etal et pressez ESPACE. Huit
   articles choisis pour l'etage, au prix de l'objet ; TAB passe de
   l'autre cote du comptoir, ou il rachete votre butin a moitie prix.
   Les fleches choisissent la ligne, ENTREE conclut, ESC vous fait
@@ -227,7 +228,9 @@ LE DONJON
 LES MONSTRES
   Ils ne tiennent plus leur case a vous attendre : ils font un pas
   vers vous toutes les quatorze trames si vous etes a moins de six
-  cases. Un couloir vide n'est plus sur.
+  cases. Un couloir vide n'est plus sur -- mais on les voit venir,
+  jusqu'a trois cases devant. En combat, ils respirent, et quand l'un
+  d'eux vous frappe, vous le voyez frapper.
 
 ON REMONTE
   Chaque etage sous le premier a son escalier montant, sur la case ou

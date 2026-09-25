@@ -28,6 +28,7 @@ F = 64.0                                 # demi-taille d'un mur a distance 1
 SCRBPL = 40                              # octets par ligne d'un plan d'ecran
 DEPTHS = 8                               # AGA : huit bitplanes
 NMONSTERART = 9                          # familles de silhouettes
+NMONPOSES = 3                            # repos, souffle, attaque
 NCLASSPORTRAIT = 8                       # un visage par classe
 
 # --- palette : 256 couleurs AGA, decrites dans tools/palette.py ------
@@ -630,66 +631,193 @@ def make_niche():
     return p
 
 
+SHOP_LAMP = (CX + 34, CY - 16)                  # la lanterne du guichet
+
+
 def make_shop():
-    """L'echoppe : un auvent de toile, un comptoir de bois, et de quoi
-    marchander pose dessus. Elle occupe un mur, comme la niche, mais
-    prend toute sa largeur -- on ne la rate pas."""
+    """Le guichet d'Ossian : une baie taillee dans le mur, un linteau a
+    la marque de la maison, une grille de fer et, derriere, le noir d'ou
+    vient la voix -- et deux yeux qui y luisent a peine. Devant, un
+    comptoir de chene et ce qu'on y vend : des fioles de verre, un
+    parchemin roule, une epee couchee, une pile de pieces, et la balance
+    ou se pese le taux d'un depot refait.
+
+    Il occupe un mur entier, comme le pupitre du greffe : on ne passe
+    pas devant sans le voir. La flamme de la lanterne est a part (voir
+    make_flame) : le jeu l'anime."""
     x0, x1 = snap(CX - 46, CX + 46)
-    y0, y1 = CY - 40, CY + 34
+    y0, y1 = CY - 46, CY + 38
     p = Piece(x0, y0, x1 - x0, y1 - y0)
 
-    for y in range(CY - 30, CY + 26):                 # renfoncement du mur
-        for x in range(CX - 40, CX + 41):
-            e = max(abs(x - CX) / 40.0, abs(y - (CY - 2)) / 28.0)
+    def lit(mat, t):
+        return pal.lit(mat, max(0.0, min(1.0, t)))
+
+    # la baie : un encadrement de pierre taillee, en biseau
+    for y in range(CY - 38, CY + 34):
+        for x in range(CX - 44, CX + 45):
+            e = max(abs(x - CX) / 44.0, abs(y - (CY - 2)) / 36.0)
             if e > 1.0:
                 continue
-            if e > 0.93:
-                p.set(x, y, pal.lit("STONE", 0.34 + 0.22 * e))
+            if e > 0.90:
+                bev = (e - 0.90) / 0.10
+                side = -0.10 if (y < CY - 2 and abs(y - (CY - 2)) / 36.0 > abs(x - CX) / 44.0) \
+                    or (x < CX and abs(x - CX) / 44.0 >= abs(y - (CY - 2)) / 36.0) else 0.14
+                p.set(x, y, lit("STONE", 0.30 + side + 0.2 * bev
+                                + (noise(x, y, 3) - 0.5) * 0.06))
             else:
-                p.set(x, y, pal.lit("STONE", 0.88 + 0.09 * (1.0 - e)))
-
-    for i in range(9):                                # auvent raye
-        xa = CX - 38 + i * 9
-        for y in range(CY - 34, CY - 20):
-            sag = ((y - (CY - 34)) / 14.0) ** 2 * 3.0
-            for x in range(xa, xa + 9):
-                if not (CX - 40 <= x <= CX + 40):
-                    continue
-                if y - (CY - 34) > 11 - abs(x - CX) * 0.06 + sag * 0:
-                    continue
-                band = "CLOTHR" if i % 2 == 0 else "BONE"
-                t = 0.22 + 0.40 * ((y - (CY - 34)) / 14.0)
-                p.set(x, y, pal.lit(band, min(1.0, t)))
-    for x in range(CX - 40, CX + 41):                 # frange de l'auvent
-        p.set(x, CY - 20, pal.lit("WOOD", 0.30))
-
-    for y in range(CY + 4, CY + 26):                  # comptoir de chene
-        for x in range(CX - 36, CX + 37):
-            grain = 0.30 + 0.26 * ((x * 7 + y * 3) % 5) / 4.0
-            if y < CY + 8:                            # le plateau, eclaire
-                p.set(x, y, pal.lit("WOOD", 0.16 + 0.14 * ((x // 3) % 2)))
+                p.set(x, y, lit("STONE", 0.96))       # le noir derriere
+    # le linteau, a la marque de la maison : un sceau et deux traits
+    for y in range(CY - 38, CY - 28):
+        for x in range(CX - 40, CX + 41):
+            t = 0.22 + 0.10 * ((y - (CY - 38)) / 10.0) + (noise(x, y, 5) - 0.5) * 0.06
+            p.set(x, y, lit("STONE", t))
+    for x in range(CX - 40, CX + 41):
+        p.set(x, CY - 28, lit("STONE", 0.62))
+    for k in range(-1, 2, 2):
+        for x in range(CX + k * 30, CX + k * 12, -k):
+            p.set(x, CY - 34, lit("STONE", 0.55))
+    for y in range(CY - 37, CY - 29):
+        for x in range(CX - 5, CX + 6):
+            d = ((x - CX) / 5.0) ** 2 + ((y - (CY - 33)) / 4.0) ** 2
+            if d <= 1.0:
+                p.set(x, y, lit("GOLD", 0.20 + 0.45 * d))
+            elif d <= 1.4:
+                p.set(x, y, lit("STONE", 0.62))
+    # le fond : l'ombre, et deux yeux qui n'ont pas de visage
+    for s in (-1, 1):                                 # entre deux barreaux
+        ex, ey = CX + s * 13 + 1, CY - 24
+        for dx in (0, 1):
+            p.set(ex + dx, ey, lit("GOLD", 0.20))
+            p.set(ex + dx, ey + 1, lit("GOLD", 0.60))
+    # la grille : barreaux ronds, deux traverses, rivets
+    for y in range(CY - 27, CY + 2):
+        for x in range(CX - 38, CX + 39):
+            bar = (x - (CX - 38)) % 9
+            cross = y in (CY - 20, CY - 19, CY - 6, CY - 5)
+            if bar <= 1 or cross:
+                t = 0.22 if bar == 0 or (cross and y in (CY - 20, CY - 6)) else 0.48
+                p.set(x, y, lit("IRON", t))
+    for x in range(CX - 38, CX + 39, 9):
+        for y in (CY - 20, CY - 6):
+            p.set(x, y, lit("IRON", 0.02))
+    # le comptoir de chene
+    for y in range(CY + 2, CY + 30):
+        for x in range(CX - 41, CX + 42):
+            if y < CY + 6:                            # le plateau, eclaire
+                t = 0.08 + 0.12 * ((y - CY - 2) / 4.0)
             else:
-                p.set(x, y, pal.lit("WOOD", min(1.0, grain + 0.24)))
+                plank = (x - (CX - 41)) // 12
+                t = 0.46 + 0.10 * ((x * 3 + y * 7 + plank * 5) % 7) / 6.0
+                if (x - (CX - 41)) % 12 == 0:
+                    t = 0.85                          # le joint des planches
+            p.set(x, y, lit("WOOD", t + (noise(x // 2, y, 7) - 0.5) * 0.06))
+    for x in range(CX - 41, CX + 42):
+        p.set(x, CY + 6, lit("WOOD", 0.80))           # l'ombre du plateau
+    for x in (CX - 36, CX + 36):                      # les ferrures
+        for y in range(CY + 9, CY + 27):
+            p.set(x, y, lit("IRON", 0.35))
+            p.set(x + 1, y, lit("IRON", 0.12))
 
-    for i, (cx, r) in enumerate(((-24, 5), (-10, 4), (6, 6), (22, 4))):
-        mat = ("GOLD", "MAGIC", "IRON", "GOLD")[i]    # la marchandise
-        for y in range(CY + 4 - 2 * r, CY + 5):
-            for x in range(CX + cx - r, CX + cx + r + 1):
-                d = ((x - (CX + cx)) / float(r)) ** 2 + \
-                    ((y - (CY + 2 - r)) / float(r)) ** 2
-                if d <= 1.0:
-                    p.set(x, y, pal.lit(mat, 0.12 + 0.60 * d))
+    def bottle(bx, h, glass):
+        """Une fiole : ventre rond, col, bouchon, et le reflet du verre."""
+        for y in range(CY + 3 - h, CY + 3):
+            for x in range(bx - 5, bx + 6):
+                dy = y - (CY + 3 - h)
+                if dy < 3:                            # le bouchon
+                    if abs(x - bx) <= 1:
+                        p.set(x, y, lit("WOOD", 0.30))
+                    continue
+                if dy < h // 2:                       # le col
+                    if abs(x - bx) <= 1:
+                        p.set(x, y, lit(glass, 0.35 + 0.2 * (x - bx + 1)))
+                    continue
+                r = ((x - bx) / 5.0) ** 2 + ((y - (CY + 3 - h // 4)) / (h / 3.2)) ** 2
+                if r <= 1.0:
+                    p.set(x, y, lit(glass, 0.18 + 0.55 * r
+                                   + 0.15 * (x > bx)))
+        p.set(bx - 2, CY + 3 - h // 3, lit("STEEL", 0.0))
+        p.set(bx - 2, CY + 4 - h // 3, lit("STEEL", 0.2))
 
-    for y in range(CY - 18, CY - 4):                  # la lanterne du stand
-        for x in range(CX + 27, CX + 36):
-            d = ((x - (CX + 31)) / 4.0) ** 2 + ((y - (CY - 11)) / 6.0) ** 2
-            if d > 1.0:
-                continue
-            if d < 0.45:                              # la flamme dedans
-                p.set(x, y, pal.lit("FIRE", 0.10 + 0.55 * d))
-            else:                                     # sa monture de fer
-                p.set(x, y, pal.lit("IRON", 0.24 + 0.44 * d))
+    bottle(CX - 32, 14, "BLOOD")                      # soin
+    bottle(CX - 22, 17, "MAGIC")                      # potion majeure
+    for x in range(CX - 14, CX - 2):                  # le parchemin roule
+        for y in range(CY - 1, CY + 3):
+            p.set(x, y, lit("PARCH" if False else "BONE", 0.10 + 0.14 * abs(y - CY)))
+    for y in range(CY - 1, CY + 3):
+        p.set(CX - 14, y, lit("BONE", 0.45))
+        p.set(CX - 3, y, lit("BLOOD", 0.30))          # son ruban
+    for i in range(22):                               # l'epee couchee
+        x = CX + 8 + i
+        y = CY + 3 - (i // 8)
+        if i < 5:
+            p.set(x, y, lit("WOOD", 0.25))
+        elif i < 7:
+            for k in (-2, -1, 0, 1):
+                p.set(x, y + k, lit("GOLD", 0.20))
+        else:
+            p.set(x, y, lit("STEEL", 0.10))
+            p.set(x, y + 1, lit("STEEL", 0.45))
+    for k in range(4):                                # la pile de pieces
+        for x in range(CX + 29, CX + 36):
+            p.set(x, CY + 3 - k * 2, lit("GOLD", 0.12 + 0.07 * abs(x - CX - 32)))
+            p.set(x, CY + 4 - k * 2, lit("GOLD", 0.55))
+    # la balance, suspendue au milieu de la grille
+    bx = CX + 1
+    for y in range(CY - 24, CY + 3):
+        p.set(bx, y, lit("GOLD", 0.30))
+    for x in range(bx - 12, bx + 13):
+        p.set(x, CY - 16 + abs(x - bx) // 8, lit("GOLD", 0.15))
+    for s in (-1, 1):
+        cx = bx + s * 12
+        for y in range(CY - 15, CY - 7):
+            p.set(cx - (y - CY + 15) // 3, y, lit("GOLD", 0.45))
+            p.set(cx + (y - CY + 15) // 3, y, lit("GOLD", 0.45))
+        for x in range(cx - 4, cx + 5):
+            p.set(x, CY - 7, lit("GOLD", 0.10))
+            p.set(x, CY - 6, lit("GOLD", 0.50))
+    for x in range(bx - 3, bx + 4):
+        p.set(x, CY + 2, lit("GOLD", 0.40))
+    # la potence et la cage de la lanterne ; la flamme est a part
+    lx, ly = SHOP_LAMP
+    for y in range(ly - 12, ly - 7):
+        p.set(lx, y, lit("IRON", 0.30))
+    for x in range(lx, lx + 8):
+        p.set(x, ly - 12, lit("IRON", 0.30))
+    for y in range(ly - 7, ly + 8):
+        for x in range(lx - 5, lx + 6):
+            edge = abs(x - lx) == 5 or y in (ly - 7, ly + 7)
+            if edge:
+                p.set(x, y, lit("IRON", 0.24))
+            elif abs(x - lx) == 2 and ly - 5 < y < ly + 6:
+                p.set(x, y, lit("IRON", 0.50))
+            else:
+                p.set(x, y, lit("FIRE", 0.80))
     return p
+
+
+def make_flame(k, frame):
+    """La flamme de la lanterne du guichet, en trois temps : le jeu les
+    fait tourner, et la lueur bouge avec elle. A k pas, elle se
+    rapproche du point de fuite."""
+    lx, ly = SHOP_LAMP
+    p = Piece(0, 0, VIEW_W, VIEW_H)
+    lean = (-1, 0, 1)[frame]
+    tall = (5, 6, 4)[frame]
+    for y in range(ly - 6, ly + 7):
+        for x in range(lx - 4, lx + 5):
+            if abs(x - lx) == 2 and ly - 5 < y < ly + 6:
+                continue                              # la cage passe devant
+            dy = (ly + 4 - y) / float(tall + 2)
+            w = 2.6 * (1.0 - dy) ** 0.7 if 0 <= dy <= 1 else -1
+            dx = x - lx - lean * dy * 2
+            if w > 0 and abs(dx) <= w:
+                core = abs(dx) / max(w, 0.1) + dy * 0.6
+                p.set(x, y, pal.lit("FIRE", min(1.0, 0.05 + 0.55 * core)))
+            else:
+                glow = 0.62 + 0.08 * ((x + y + frame) % 3)
+                p.set(x, y, pal.lit("FIRE", glow))
+    q = trim(p)
+    return trim(shrink(q, k)) if k > 1 else q
 
 
 def make_ledger():
@@ -871,6 +999,25 @@ def shelf_pixel(a, v, dist, side):
             return pal.lit("PARCHD", max(0.0, min(1.0, base - 0.06 + 0.3 * e)))
         return pal.lit(mat, max(0.0, min(1.0, t)))
     return back
+
+
+def trim(p):
+    """Rogne un morceau au plus petit cadre qui porte ses pixels, cale
+    sur seize en largeur : le masque et les huit plans d'un pixel
+    transparent coutent autant que ceux d'un pixel dessine. Le morceau
+    garde sa place a l'ecran -- il la porte avec lui."""
+    rows = [y for y in range(p.h) if any(c is not None for c in p.px[y])]
+    cols = [x for x in range(p.w)
+            if any(p.px[y][x] is not None for y in range(p.h))]
+    if not rows:
+        return Piece(0, 0, 16, 1)
+    xa, xb = snap(p.x0 + cols[0], p.x0 + cols[-1] + 1)
+    ya, yb = p.y0 + rows[0], p.y0 + rows[-1] + 1
+    q = Piece(xa, ya, xb - xa, yb - ya)
+    for y in range(ya, yb):
+        for x in range(max(xa, p.x0), min(xb, p.x0 + p.w)):
+            q.px[y - ya][x - xa] = p.px[y - p.y0][x - p.x0]
+    return q
 
 
 def shrink(p, k):
@@ -1315,160 +1462,17 @@ def eyes(p, cx, cy, spread, idx=15, size=2):
         ellipse(p, cx + e, cy, size, size, idx)
 
 
-def make_monster(kind, frame=0):
-    """Neuf familles de creatures, deux poses chacune. Les couleurs
-    restent dans la palette du donjon : gris de pierre, vert, rouge,
-    ocre, blanc.  Chaque famille sert plusieurs entrees du bestiaire."""
-    w, h = 96, 88                                    # largeur multiple de 16
-    x0 = ((CX - w // 2) // 16) * 16
-    p = Piece(x0, CY - h // 2 + 6, w, h)
-    cx = x0 + w // 2
-    cy = CY - h // 2 + 6 + h // 2
-    f = 1 if frame else 0                            # deuxieme pose
-    sway = 2 if frame else -2
-
-    if kind == 0:                                    # --- bete a quatre pattes
-        body, dark = C[4], C[6]
-        ellipse(p, cx + 2, cy + 10, 26, 15, body)
-        ellipse(p, cx + 2, cy + 6, 24, 11, C[3])        # dos eclaire
-        for s, off in ((-1, -16), (-1, 8), (1, -12), (1, 12)):
-            limb(p, cx + off, cy + 18, cx + off + s * 3, cy + 28 + f * 2, 3, dark)
-        ellipse(p, cx - 26, cy + 2, 13, 11, body)    # tete
-        ellipse(p, cx - 34, cy + 4, 6, 5, C[3])         # museau
-        limb(p, cx - 31, cy - 8, cx - 27, cy - 2, 2, dark)   # oreilles
-        limb(p, cx - 24, cy - 10, cx - 22, cy - 3, 2, dark)
-        eyes(p, cx - 29, cy - 1, 0, C[15], 1)
-        for t in range(26):                          # queue
-            p.set(cx + 27 + t // 2, cy + 6 - t + (t * sway) // 14, dark)
-        for t in range(-6, 7):                       # crocs
-            if t % 3 == 0:
-                p.set(cx - 36 + abs(t) // 2, cy + 8, 13)
-
-    elif kind == 1:                                  # --- squelette
-        bone, shade = C[13], C[2]
-        ellipse(p, cx, cy - 24, 11, 13, bone)        # crane
-        for e in (-4, 4):
-            ellipse(p, cx + e, cy - 26, 3, 4, C[0])
-        for t in range(-4, 5, 2):                    # machoire
-            p.set(cx + t, cy - 14, C[0])
-        limb(p, cx, cy - 12, cx, cy + 14, 3, bone)   # colonne
-        for r in range(-8, 12, 5):                   # cotes
-            for x in range(-12, 13):
-                if abs(x) > 3:
-                    p.set(cx + x, cy + r + abs(x) // 4, shade)
-        limb(p, cx - 12, cy - 8, cx - 20 - f * 3, cy + 6 - f * 8, 2, bone)
-        limb(p, cx + 12, cy - 8, cx + 20, cy + 10, 2, bone)
-        limb(p, cx - 6, cy + 16, cx - 9, cy + 34, 3, bone)
-        limb(p, cx + 6, cy + 16, cx + 9, cy + 34, 3, bone)
-        limb(p, cx + 20, cy + 10, cx + 26, cy - 16, 2, C[4])     # arme
-        for t in range(6):
-            p.set(cx + 26 + t // 3, cy - 18 - t, C[2])
-
-    elif kind == 2:                                  # --- petit humanoide
-        skin, cloth = C[12], C[9]
-        ellipse(p, cx, cy + 8, 13, 16, skin)         # corps
-        ellipse(p, cx, cy - 12, 11, 11, skin)        # tete
-        limb(p, cx - 9, cy - 18, cx - 14, cy - 24, 2, skin)   # oreilles
-        limb(p, cx + 9, cy - 18, cx + 14, cy - 24, 2, skin)
-        eyes(p, cx, cy - 13, 4, C[14], 2)
-        for t in range(-4, 5, 2):
-            p.set(cx + t, cy - 6, C[13])                # dents
-        limb(p, cx - 12, cy + 4, cx - 18 - f * 2, cy + 16, 3, skin)
-        limb(p, cx + 12, cy + 2, cx + 18, cy - 10 - f * 4, 3, skin)
-        limb(p, cx + 18, cy - 26 - f * 4, cx + 18, cy + 14, 1, C[4])  # lance
-        limb(p, cx - 6, cy + 22, cx - 8, cy + 34, 3, cloth)
-        limb(p, cx + 6, cy + 22, cx + 8, cy + 34, 3, cloth)
-
-    elif kind == 3:                                  # --- humanoide arme
-        skin, dark = C[12], C[6]
-        ellipse(p, cx, cy + 10, 20, 20, skin)
-        ellipse(p, cx, cy + 6, 17, 15, C[3])            # torse eclaire
-        ellipse(p, cx, cy - 16, 13, 13, skin)
-        eyes(p, cx, cy - 18, 5, C[14], 2)
-        for t in (-5, 5):                            # defenses
-            p.set(cx + t, cy - 8, C[13]), p.set(cx + t, cy - 7, C[13])
-        limb(p, cx - 18, cy + 4, cx - 26, cy + 18 - f * 4, 4, skin)
-        limb(p, cx + 18, cy + 2, cx + 26, cy - 12 - f * 6, 4, skin)
-        limb(p, cx + 26, cy - 14 - f * 6, cx + 34, cy - 30 - f * 6, 2, C[4])
-        for t in range(10):                          # lame de la hache
-            p.set(cx + 30 + t // 2, cy - 32 - f * 6 + t, C[2])
-            p.set(cx + 36 - t // 3, cy - 30 - f * 6 + t, C[1])
-        limb(p, cx - 8, cy + 28, cx - 11, cy + 40, 4, dark)
-        limb(p, cx + 8, cy + 28, cx + 11, cy + 40, 4, dark)
-
-    elif kind == 4:                                  # --- grand brutal
-        skin, dark = C[3], C[5]
-        ellipse(p, cx, cy + 14, 27, 26, skin)
-        ellipse(p, cx, cy + 10, 23, 20, C[2])
-        ellipse(p, cx, cy - 18, 16, 15, skin)
-        limb(p, cx - 14, cy - 30, cx - 20, cy - 38, 3, C[13])    # cornes
-        limb(p, cx + 14, cy - 30, cx + 20, cy - 38, 3, C[13])
-        eyes(p, cx, cy - 20, 6, C[15], 2)
-        for t in range(-6, 7, 3):
-            p.set(cx + t, cy - 10, C[13])
-        limb(p, cx - 24, cy + 6, cx - 34, cy + 22 - f * 4, 5, skin)
-        limb(p, cx + 24, cy + 4, cx + 32, cy - 14 - f * 6, 5, skin)
-        limb(p, cx + 32, cy - 16 - f * 6, cx + 38, cy - 36 - f * 8, 4, C[9])
-        ellipse(p, cx + 38, cy - 38 - f * 8, 8, 8, C[9])         # masse
-        limb(p, cx - 10, cy + 36, cx - 13, cy + 42, 6, dark)
-        limb(p, cx + 10, cy + 36, cx + 13, cy + 42, 6, dark)
-
-    elif kind == 5:                                  # --- spectre
-        for r in range(30, 7, -3):                   # voile en degrade
-            idx = 5 if r > 20 else (6 if r > 12 else 7)
-            ellipse(p, cx, cy + 6 + f, max(2, r - 6), r, idx)
-        for t in range(24):                          # lambeaux
-            p.set(cx - 22 + t, cy + 34 + (t % 5) - f * 2, 6)
-        ellipse(p, cx, cy - 16, 12, 13, C[7])           # capuche
-        ellipse(p, cx, cy - 14, 9, 10, C[0])
-        eyes(p, cx, cy - 16, 4, C[12], 2)
-        limb(p, cx - 14, cy - 2, cx - 24 - f * 2, cy - 12, 2, C[6])
-        limb(p, cx + 14, cy - 2, cx + 24, cy - 14 - f * 2, 2, C[6])
-
-    elif kind == 6:                                  # --- momie
-        wrap, shade = C[2], C[4]
-        ellipse(p, cx, cy + 12, 18, 24, wrap)
-        ellipse(p, cx, cy - 16, 12, 14, wrap)
-        for r in range(-28, 36, 5):                  # bandelettes
-            for x in range(-20, 21):
-                if abs(x) < 19 - abs(r) // 6:
-                    p.set(cx + x + (r // 4) % 3, cy + r, shade)
-        ellipse(p, cx - 4, cy - 18, 3, 3, C[0])
-        ellipse(p, cx + 4, cy - 18, 3, 3, C[0])
-        limb(p, cx - 16, cy + 2, cx - 30, cy - 6 - f * 3, 4, wrap)
-        limb(p, cx + 16, cy + 2, cx + 30, cy - 4 - f * 3, 4, wrap)
-        for t in range(8):                           # bandelettes qui pendent
-            p.set(cx - 30 + t % 3, cy + 2 + t, shade)
-            p.set(cx + 30 - t % 3, cy + 4 + t, shade)
-
-    elif kind == 7:                                  # --- creature ailee
-        body, wing = C[6], C[5]
-        for s in (-1, 1):                            # ailes
-            for i in range(5):
-                limb(p, cx + s * 10, cy - 4,
-                     cx + s * (30 + i * 2), cy - 22 + i * 9 + f * 4, 2, wing)
-            ellipse(p, cx + s * 24, cy - 4 + f * 2, 13, 20 - f * 3, wing)
-        ellipse(p, cx, cy + 8, 14, 18, body)
-        ellipse(p, cx, cy - 14, 11, 11, body)
-        limb(p, cx - 10, cy - 22, cx - 14, cy - 30, 2, body)  # cornes
-        limb(p, cx + 10, cy - 22, cx + 14, cy - 30, 2, body)
-        eyes(p, cx, cy - 15, 4, C[14], 2)
-        limb(p, cx - 6, cy + 24, cx - 10, cy + 34, 3, body)   # serres
-        limb(p, cx + 6, cy + 24, cx + 10, cy + 34, 3, body)
-
-    else:                                            # --- hydre
-        ellipse(p, cx, cy + 22, 24, 14, C[12])          # corps
-        ellipse(p, cx, cy + 18, 20, 10, C[3])
-        necks = ((-30, -18), (-16, -30), (0, -36), (16, -30), (30, -16))
-        for i, (hx, hy) in enumerate(necks):
-            wob = f * (2 if i % 2 else -2)
-            limb(p, cx, cy + 16, cx + hx, cy + hy + wob, 3, C[12])
-            ellipse(p, cx + hx, cy + hy + wob, 8, 6, C[12])
-            ellipse(p, cx + hx + (2 if hx > 0 else -2), cy + hy + wob + 2,
-                    5, 3, 15)
-            eyes(p, cx + hx, cy + hy + wob - 2, 3, C[14], 1)
-        for t in range(20):                          # queue
-            p.set(cx + 24 + t // 2, cy + 28 + t // 3, C[12])
+def make_monster(kind, pose=0):
+    """Une creature en combat, a un pas : modelee en volumes par
+    tools/monsters.py, et posee dans la vue les pieds sur le dallage de
+    la case d'en face."""
+    import monsters
+    x0 = ((CX - monsters.W // 2) // 16) * 16
+    p = Piece(x0, CY - monsters.H // 2 + 6, monsters.W, monsters.H)
+    for y, row in enumerate(monsters.draw(kind, pose)):
+        for x, idx in enumerate(row):
+            if idx is not None:
+                p.px[y][x] = idx
     return p
 
 
@@ -1508,8 +1512,16 @@ def build_art():
     ART_INDEX["ART_DOOR"] = len(pieces)
     pieces += [make_front(k, door=True) for k in (1, 2, 3)]
     ART_INDEX["ART_MONSTER"] = len(pieces)
-    for k in range(NMONSTERART):                                 # deux poses
-        pieces += [make_monster(k, 0), make_monster(k, 1)]
+    monfar = []
+    for k in range(NMONSTERART):                   # trois poses : deux qui
+        near = [make_monster(k, p) for p in range(NMONPOSES)]   # respirent,
+        pieces += [trim(p) for p in near]          # une qui frappe
+        # La meme creature dans le couloir, une et deux cases plus loin :
+        # la case d'en face est a un pas et demi, les suivantes a deux et
+        # demi et trois et demi -- tout se rapproche du point de fuite
+        # d'autant.
+        monfar += [trim(shrink(near[0], 2.5 / 1.5)),
+                   trim(shrink(near[0], 3.5 / 1.5))]
     # de quoi habiller les passages lateraux : la face du fond du passage
     # et son mur exterieur, sans quoi une ouverture n'est qu'un trou noir
     ART_INDEX["ART_FRONTL"] = len(pieces)
@@ -1520,6 +1532,8 @@ def build_art():
     pieces += [make_side(i, -1.5) for i in (2, 3)]
     ART_INDEX["ART_OUTERR"] = len(pieces)
     pieces += [make_side(i, 1.5) for i in (2, 3)]
+    ART_INDEX["ART_MONFAR"] = len(pieces)          # deux par famille
+    pieces += monfar
     ART_INDEX["ART_TITLE"] = len(pieces)
     pieces += [make_title()]
     ART_INDEX["ART_GATE"] = len(pieces)
@@ -1528,8 +1542,11 @@ def build_art():
     pieces += [make_lever(s) for s in (0, 1)]
     ART_INDEX["ART_NICHE"] = len(pieces)
     pieces += [make_niche()]
-    ART_INDEX["ART_SHOP"] = len(pieces)
-    pieces += [make_shop()]
+    ART_INDEX["ART_SHOP"] = len(pieces)            # a un, deux, trois pas
+    shop = make_shop()
+    pieces += [shop, trim(shrink(shop, 2)), trim(shrink(shop, 3))]
+    ART_INDEX["ART_FLAME"] = len(pieces)           # trois flammes, a un pas
+    pieces += [make_flame(1, f) for f in range(3)]
     ART_INDEX["ART_LEDGER"] = len(pieces)          # a un, deux, trois pas :
     ledger = make_ledger()                         # on le voit du fond de
     pieces += [ledger, shrink(ledger, 2), shrink(ledger, 3)]    # la salle
@@ -2311,6 +2328,7 @@ if __name__ == "__main__":
         for k, v in ART_INDEX.items():
             f.write(f"{k}\t= {v}\n")
         f.write(f"NMONSTERART\t= {NMONSTERART}\n")
+        f.write(f"NMONPOSES\t= {NMONPOSES}\n")
     maps, levels = build_maps()
     open(os.path.join(ROOT, "data", "dgnmap.bin"), "wb").write(maps)
     write_palette(os.path.join(ROOT, "src", "dgnpal.i"))

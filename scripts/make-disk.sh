@@ -1,7 +1,7 @@
 #!/bin/sh
-# Fabrique les deux disquettes 880 Ko OFS du jeu :
+# Fabrique les deux disquettes 880 Ko du jeu :
 #
-#   dist/Faerghail1.adf   amorcable : le jeu, son Lisezmoi, son
+#   dist/Faerghail1.adf   amorcable, en FFS : le jeu, son Lisezmoi, son
 #                         Startup-Sequence
 #   dist/Faerghail2.adf   le source : tout ce qui s'assemble, ecrit a la
 #                         main ou genere, et les donnees qui tiennent
@@ -36,13 +36,15 @@ cp "$ROOT/data/dgnart.bin" "$ROOT/data/dgnmap.bin" "$ROOT/data/sfx.bin" \
 	"$ROOT/data/crawlmus.mod" "$ROOT/data/titlemus.mod" "$STAGE/Src/data/"
 
 # --- disquette 1 : le jeu -------------------------------------------------
+# En FFS : 512 octets utiles par bloc au lieu de 488, cinq pour cent de
+# place en plus. Le jeu demande de toute facon un Kickstart 3.
 rm -f "$ADF1"
-xdftool "$ADF1" create + format "Faerghail" \
+xdftool "$ADF1" create + format "Faerghail" ffs \
 	+ write "$STAGE/AGACrawl" \
 	+ write "$STAGE/Lisezmoi.txt" \
 	+ makedir S \
 	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence
-xdftool "$ADF1" boot install			# bootblock DOS0 : la disquette demarre
+xdftool "$ADF1" boot install			# bootblock DOS1 : la disquette demarre
 
 # --- disquette 2 : le source ---------------------------------------------
 # Le source tient tout entier, tables generees comprises : on peut

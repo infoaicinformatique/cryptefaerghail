@@ -276,10 +276,24 @@ if __name__ == "__main__":
     path = P.bfs(grid, (g.w("PosX"), g.w("PosY")),
                  lambda c: c & 0x30 == 0x20)
     if path:
-        for cell in path[1:]:
+        # Deux cases avant lui, face a lui : les monstres se voient venir.
+        for i, cell in enumerate(path[1:], 1):
+            if len(path) - i == 2 and len(path) >= 3:
+                (ax, ay), (bx, by) = path[-2], path[-1]
+                here = (g.w("PosX"), g.w("PosY"))
+                if (ax - here[0], ay - here[1]) == (bx - ax, by - ay):
+                    P.face(g, P.DIRS.index((ax - here[0], ay - here[1])), [])
+                    shoot(g, "monstre-couloir")
             if not P.step_to(g, cell, []) or g.w("InCombat"):
                 break
     shoot(g, "combat")
+    if g.w("InCombat"):                   # la pose d'attaque, tenue
+        g.setw("StrikeTime", 400)
+        g.setw("NeedRedraw", 1)
+        g.key(T.K_1)
+        shoot(g, "combat-attaque")
+        g.setw("StrikeTime", 1)
+        g.key(T.K_1)
     g.key(T.K_S)
     shoot(g, "combat-sorts")
     g.key(T.K_ESC)
@@ -314,6 +328,9 @@ if __name__ == "__main__":
         while g.w("InCombat") and not g.w("GameOver"):
             g.key(T.K_A)
     shoot(g, "couloir")
+
+    T.corridor_monster_test(g, [], shot=lambda gg, n, px: png(
+        os.path.join(ROOT, "docs", f"emu-{n}.png"), px, copper_surf(gg)))
 
     g.key(0x37)                           # M : la carte du niveau
     shoot(g, "carte")

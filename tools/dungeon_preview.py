@@ -263,7 +263,7 @@ if __name__ == "__main__":
         help_line = "FLECHES  ESPACE OUVRIR  P BOIRE  ESC"
     else:
         blit(screen, raw, pieces[BG], masked=False)
-        blit(screen, raw, pieces[MONSTER + monster * 2])
+        blit(screen, raw, pieces[MONSTER + monster * _A["NMONPOSES"]])
         log = ["UN ORC SURGIT !",
                "LE GROUPE INFLIGE 21 DEGATS.",
                "ORC TOUCHE MYRA : 6",

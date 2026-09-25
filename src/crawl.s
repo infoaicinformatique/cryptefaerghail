@@ -360,8 +360,34 @@ MainLoop:
 	move.w	VHPOSR+CUSTOM,d0	; le balayage brasse le hasard : sans
 	eor.w	d0,RngSeed+2		; cela, chaque partie serait identique
 
+	tst.w	InCombat		; la lanterne du guichet, si on la
+	bne.s	.noFlame		; regarde : trois flammes en boucle
+	tst.w	UiMode
+	bne.s	.noFlame
+	tst.w	ShopInSight
+	beq.s	.noFlame
+	addq.w	#1,AnimCount
+	move.w	AnimCount,d0
+	and.w	#7,d0
+	bne.s	.noFlame
+	move.w	FlameFrame,d0
+	addq.w	#1,d0
+	cmp.w	#3,d0
+	blo.s	.flameOk
+	moveq	#0,d0
+.flameOk:
+	move.w	d0,FlameFrame
+	move.w	#1,NeedRedraw
+.noFlame:
 	tst.w	InCombat		; les monstres respirent
 	beq.s	.noAnim
+	tst.w	StrikeTime		; le coup porte, la pose d'attaque
+	beq.s	.breath			; tient quelques trames
+	subq.w	#1,StrikeTime
+	bne.s	.noAnim
+	move.w	#1,NeedRedraw
+	bra.s	.noAnim
+.breath:
 	addq.w	#1,AnimCount
 	move.w	AnimCount,d0
 	and.w	#7,d0
@@ -1802,15 +1828,22 @@ DrawScene:
 
 	tst.w	InCombat
 	beq.s	.dungeon
-	move.w	MonArt,d0
-	add.w	d0,d0
+	move.w	MonArt,d0		; trois poses par famille : deux qui
+	mulu.w	#NMONPOSES,d0		; respirent, et celle qui frappe
+	tst.w	StrikeTime
+	beq.s	.breathe
+	addq.w	#2,d0
+	bra.s	.posed
+.breathe:
 	add.w	AnimFrame,d0
+.posed:
 	add.w	#ART_MONSTER,d0
 	moveq	#0,d1
 	bsr	BlitPiece
 	bra	.done
 
 .dungeon:
+	clr.w	ShopInSight		; le guichet le reposera s'il se voit
 	moveq	#0,d7			; distance du premier mur
 	moveq	#1,d6
 .scan:
@@ -1881,6 +1914,23 @@ DrawScene:
 	bsr	BlitPiece
 	bra	.noFront
 .notLedgerArt:
+	cmp.w	#T_SHOP,d4		; le guichet aussi, a trois pas
+	bne.s	.notShopFar
+	cmp.w	#4,d7
+	bge	.noFront
+	move.w	d7,d0
+	add.w	#ART_SHOP-1,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	cmp.w	#1,d7			; de pres, sa lanterne brule
+	bne	.noFront
+	move.w	FlameFrame,d0
+	add.w	#ART_FLAME,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	move.w	#1,ShopInSight
+	bra	.noFront
+.notShopFar:
 	cmp.w	#1,d7			; les autres details, de pres seulement
 	bne	.noFront
 	cmp.w	#T_NICHE,d4
@@ -1890,13 +1940,6 @@ DrawScene:
 	bsr	BlitPiece
 	bra.s	.noFront
 .notNicheArt:
-	cmp.w	#T_SHOP,d4		; l'etal du marchand
-	bne.s	.notShopArt
-	moveq	#ART_SHOP,d0
-	moveq	#0,d1
-	bsr	BlitPiece
-	bra.s	.noFront
-.notShopArt:
 	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
 	bne.s	.noFront
 	move.w	d7,d2
@@ -2046,6 +2089,7 @@ DrawScene:
 	bra	.sideEach
 .sideDone:
 	dbf	d6,.sideLoop
+	bsr	DrawCorridorMon		; ce qui vient vers le groupe
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -6139,7 +6183,15 @@ MonWalk:
 	bne	.done
 	tst.w	GameOver
 	bne	.done
-	addq.w	#1,MonClock
+	move.w	VBI_Count,d0		; le pas se compte en trames, pas en
+	move.w	d0,d1			; tours de boucle : un redessin qui en
+	sub.w	MonLastVbi,d0		; prend deux ne doit pas ralentir ceux
+	move.w	d1,MonLastVbi		; qui viennent vers le groupe
+	cmp.w	#MONSTEP,d0		; (et au retour d'un combat, pas plus
+	bls.s	.elapsed		; d'un pas d'un coup)
+	moveq	#MONSTEP,d0
+.elapsed:
+	add.w	d0,MonClock
 	move.w	MonClock,d0
 	cmp.w	#MONSTEP,d0
 	blt	.done
@@ -6407,6 +6459,7 @@ StartCombat:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	#1,InCombat
 	clr.w	AnimFrame
+	clr.w	StrikeTime
 	clr.w	MonStun
 	move.w	MonKind,d0
 	mulu.w	#mt_SIZEOF,d0
@@ -6603,6 +6656,59 @@ MonsterTurn:
 	bsr	MonsterAttack
 	rts
 
+;----------------------------------------------------------------------
+; DrawCorridorMon : les monstres marchent, et on les voit venir.
+;
+; Ils ne se montraient qu'une fois le combat engage : un couloir ou
+; quelque chose avancait vers le groupe avait l'air vide jusqu'au
+; dernier pas. On regarde les trois cases devant, jusqu'au premier mur
+; (d7, 0 s'il n'y en a pas), et l'on pose ce qui s'y tient, du plus loin
+; au plus pres : a un pas, la creature du combat ; au-dela, la meme
+; reduite vers le point de fuite.
+;----------------------------------------------------------------------
+DrawCorridorMon:
+	movem.l	d0-d7/a0-a6,-(sp)
+	moveq	#3,d6
+.loop:
+	tst.w	d7
+	beq.s	.inSight
+	cmp.w	d7,d6			; derriere le mur : rien a voir
+	bge.s	.next
+.inSight:
+	move.w	d6,d2
+	bsr	CellAhead
+	move.w	d0,d4
+	move.w	d1,d5
+	bsr	MapCell
+	and.w	#C_MASK,d0
+	cmp.w	#C_MONSTER,d0
+	bne.s	.next
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam		; l'espece, dans MonTypes
+	mulu.w	#mt_SIZEOF,d0
+	lea	MonTypes,a0
+	move.w	mt_Art(a0,d0.l),d0
+	cmp.w	#1,d6
+	bne.s	.far
+	mulu.w	#NMONPOSES,d0		; a un pas : la pose de repos
+	add.w	#ART_MONSTER,d0
+	bra.s	.blit
+.far:
+	add.w	d0,d0			; deux vues lointaines par famille
+	add.w	d6,d0
+	add.w	#ART_MONFAR-2,d0
+.blit:
+	moveq	#0,d1
+	bsr	BlitPiece
+.next:
+	subq.w	#1,d6
+	bne.s	.loop
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+STRIKEFRAMES	= 18			; la pose d'attaque, en trames
+
 MonsterAttack:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
@@ -6642,6 +6748,7 @@ MonsterAttack:
 	bsr	LogAdd
 	bra	.done
 .hit:
+	move.w	#STRIKEFRAMES,StrikeTime	; le monstre frappe : sa pose
 	move.w	mt_Dice(a2),d0
 	move.w	mt_Faces(a2),d1
 	bsr	RollDice
@@ -8269,6 +8376,10 @@ ShopTop:	ds.w	1
 SpellCount:	ds.w	1
 SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1
+MonLastVbi:	ds.w	1		; VBI_Count au dernier passage de MonWalk
+StrikeTime:	ds.w	1		; trames de pose d'attaque restantes
+FlameFrame:	ds.w	1		; la flamme de la lanterne du guichet
+ShopInSight:	ds.w	1		; le guichet est dans la vue, a un pas
 AnimCount:	ds.w	1
 GameOver:	ds.w	1
 Quit:		ds.w	1

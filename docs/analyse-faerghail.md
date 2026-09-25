@@ -128,13 +128,13 @@ Ce qu'il faut en retenir :
 
 Chaque étape laisse un jeu jouable, testé par les bancs, avant la suivante.
 
-1. **Chargement à la demande.** Le moteur charge un donjon depuis la disquette
+1. *(Fait.)* **Chargement à la demande.** Le moteur charge un donjon depuis la disquette
    (`dos.library` : `Open`/`Read`) au lieu de tout incorporer. C'est la
    condition de tout le reste : huit donjons, un extérieur et une ville ne
    tiennent pas dans un seul exécutable.
-2. **Le groupe de six**, les races, les onze classes, les compétences à l'usage.
+2. *(Fait.)* **Le groupe de six**, les races, les onze classes, les compétences à l'usage.
 3. **Le combat à rangs** : groupes d'ennemis, lignes, ordres par personnage,
-   déroulé détaillé ou rapide, mémoire des ordres.
+   déroulé détaillé ou rapide, mémoire des ordres. *Fait.*
 4. **Les rencontres** : saluer, parler, se retirer ; langues ; recrutement.
 5. **La ville** : échoppe, banque, auberge, temple, guilde (entraînement payant,
    sorts, langues), vol à la tire.

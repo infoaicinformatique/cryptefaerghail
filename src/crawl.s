@@ -221,12 +221,13 @@ TITLEH		= 176			; hauteur de l'illustration
 LVSTATE		= 3*MAPBYTES+NSHOP
 LVSTORE		= LEVELS*LVSTATE
 
-; "FAE7" : chaque aventurier porte ses competences ; "FAE6" sa race,
-; "FAE5" avait passe le groupe a six. Une sauvegarde plus ancienne n'a
-; plus le bon compte, et le nombre magique la fait refuser plutot que
-; relire de travers.
-SAVEMAGIC	= $46414537		; "FAE7"
-SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+6
+; "FAE8" : le reglage du combat, detaille ou rapide, part avec les
+; autres ; "FAE7" avait ajoute les competences, "FAE6" la race, "FAE5"
+; passe le groupe a six. Une sauvegarde plus ancienne n'a plus le bon
+; compte, et le nombre magique la fait refuser plutot que relire de
+; travers.
+SAVEMAGIC	= $46414538		; "FAE8"
+SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+8
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -238,6 +239,7 @@ UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
 UI_LEDGER	= 9			; le grand registre
 UI_ARCHIVE	= 10			; un livre des rayonnages du greffe
+UI_ROUND	= 11			; le resultat d'un round de combat
 
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
@@ -271,6 +273,7 @@ KEY_S		= $21
 KEY_M_QW	= $37			; M sur un clavier anglais
 KEY_M_AZ	= $29			; M sur un clavier francais
 KEY_U		= $16
+KEY_O		= $18			; meme place en AZERTY et en QWERTY
 
 ; --- disposition de l'ecran ---
 PANEL_X		= 224
@@ -289,6 +292,8 @@ VIEW_B		= 152
 PANEL_TOP	= 12			; premier bloc d'aventurier
 PANEL_STEP	= 24			; hauteur d'un bloc : six dans le panneau
 PANEL_GAUGE	= 64			; longueur des jauges
+FRONTRANK	= 3			; les trois premiers se tiennent devant
+GROUPMAX	= 4			; creatures d'une meme rencontre, au plus
 PANEL_BOT	= 160
 SPELLROW_Y	= 40			; premiere ligne du menu de sorts
 RIDDLEROW_Y	= 60			; premiere reponse d'une enigme
@@ -852,6 +857,12 @@ MouseAct:
 	bsr	HandleKey
 	bra	.done
 .panelLeft:
+	cmp.w	#UI_ROUND,d4		; le resultat du round : un clic
+	bne.s	.notRoundClick		; vaut une touche
+	moveq	#KEY_SPACE,d0
+	bsr	HandleKey
+	bra	.done
+.notRoundClick:
 	cmp.w	#UI_SPELL,d4		; ces deux-la se repondent au chiffre
 	beq.s	.digits
 	cmp.w	#UI_RIDDLE,d4
@@ -1931,6 +1942,11 @@ DrawScene:
 	bsr	DrawArchive
 	bra	.done
 .notArchive:
+	cmp.w	#UI_ROUND,d0
+	bne.s	.notRound
+	bsr	DrawRound
+	bra	.done
+.notRound:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1953,6 +1969,7 @@ DrawScene:
 	add.w	#ART_MONSTER,d0
 	moveq	#0,d1
 	bsr	BlitPiece
+	bsr	DrawOrderTag		; a qui l'ordre, et combien ils sont
 	bra	.done
 
 .dungeon:
@@ -2383,6 +2400,12 @@ DrawParty:
 	addq.w	#1,d7
 	cmp.w	#NHEROES,d7
 	blt	.heroLoop
+
+	move.w	#PANEL_X+4,d0		; entre l'avant et l'arriere, un trait
+	move.w	#PANEL_TOP+FRONTRANK*PANEL_STEP-2,d1
+	moveq	#80,d2
+	move.w	#C_FRAME,d3
+	bsr	HLine
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -2485,8 +2508,13 @@ DrawStatus:
 	bra	.help
 .helpArchive:
 	cmp.w	#UI_ARCHIVE,d0
-	bne.s	.helpOther
+	bne.s	.helpRound
 	lea	TxtHelpArchive,a0
+	bra	.help
+.helpRound:
+	cmp.w	#UI_ROUND,d0
+	bne.s	.helpOther
+	lea	TxtRoundGo,a0
 	bra	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
@@ -2715,7 +2743,7 @@ BookKey:				; d0 = touche
 	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
-OPTROWS		= 5			; lignes de reglage
+OPTROWS		= 6			; lignes de reglage
 
 ;----------------------------------------------------------------------
 ; Reglages, accessibles en cours de partie.
@@ -2798,11 +2826,19 @@ OptValue:				; d0 = ligne -> d0 = texte, 0 si aucun
 	bra.s	.done
 .notSfx:
 	cmp.w	#2,d1
-	bne.s	.done
+	bne.s	.notKb
 	move.l	#TxtOptAzerty,d0
 	tst.w	KbLayout
 	beq.s	.done
 	move.l	#TxtOptQwerty,d0
+	bra.s	.done
+.notKb:
+	cmp.w	#3,d1
+	bne.s	.done
+	move.l	#TxtOptDetail,d0
+	tst.w	OptQuick
+	beq.s	.done
+	move.l	#TxtOptQuick,d0
 .done:
 	movem.l	(sp)+,d1
 	rts
@@ -2844,6 +2880,11 @@ OptToggle:				; agit sur la ligne visee
 	bra.s	.redraw
 .notKb:
 	cmp.w	#3,d0
+	bne.s	.notCombat
+	eor.w	#1,OptQuick
+	bra.s	.redraw
+.notCombat:
+	cmp.w	#4,d0
 	bne.s	.notSave
 	bsr	SaveGame
 	lea	TxtSaved,a0
@@ -3371,6 +3412,14 @@ HeroAc:
 	moveq	#SK_DEFENSE,d0		; savoir parer
 	bsr	SkillTen
 	add.w	d0,d2
+	tst.w	InCombat		; et parer ce round-ci
+	beq.s	.noGuard
+	bsr	HeroIndex
+	lea	Guarding,a0
+	tst.b	(a0,d0.w)
+	beq.s	.noGuard
+	addq.w	#GUARDAC,d2
+.noGuard:
 	move.w	d2,d0
 	movem.l	(sp)+,d1-d2/a0
 	rts
@@ -6785,16 +6834,38 @@ StartCombat:
 	lea	MonTypes,a2
 	add.l	d0,a2
 	move.l	a2,MonPtr
-	move.w	mt_Hd(a2),d0		; les PV se tirent aux des de vie
-	move.w	mt_HdF(a2),d1
-	bsr	RollDice
-	add.w	mt_HpB(a2),d0
-	cmp.w	#1,d0
-	bge.s	.hpOk
-	moveq	#1,d0
-.hpOk:
+	bsr	RollMonHp		; celui de devant
 	move.w	d0,MonHp
 	move.w	mt_Art(a2),MonArt
+
+	; Le groupe : de un a quatre de la meme espece, d'autant moins que
+	; l'espece est lourde, d'autant plus qu'on est bas. Chacun a ses
+	; points de vie ; ceux de derriere attendent dans GroupHp.
+	move.w	mt_Hd(a2),d0		; quatre au plus, un de moins tous
+	subq.w	#1,d0			; les deux des de vie
+	lsr.w	#1,d0
+	moveq	#GROUPMAX,d1
+	sub.w	d0,d1
+	bgt.s	.maxOk
+	moveq	#1,d1
+.maxOk:
+	move.w	Level,d0		; et pas plus que l'etage n'en autorise
+	addq.w	#2,d0
+	cmp.w	d0,d1
+	ble.s	.capped
+	move.w	d0,d1
+.capped:
+	bsr	RndMod
+	addq.w	#1,d0
+	move.w	d0,GroupN
+	move.w	#1,GroupNext
+	lea	GroupHp,a0
+	move.w	MonHp,(a0)+
+	moveq	#GROUPMAX-2,d2
+.rollGroup:
+	bsr	RollMonHp
+	move.w	d0,(a0)+
+	dbf	d2,.rollGroup
 	clr.w	PartyBless
 	moveq	#SFX_GROWL,d0
 	bsr	SfxPlay
@@ -6808,7 +6879,35 @@ StartCombat:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	cmp.w	#1,GroupN		; il n'est pas seul
+	beq.s	.alone
+	lea	TmpStr,a1
+	lea	TxtNotAlone,a0
+	bsr	StrCopy
+	move.w	GroupN,d0
+	bsr	StrNum
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+.alone:
+	bsr	FirstOrder		; le premier debout donne son ordre
+	clr.w	RoundNo
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; RollMonHp : a2 = espece -> d0 = points de vie, tires aux des de vie
+RollMonHp:
+	movem.l	d1,-(sp)
+	move.w	mt_Hd(a2),d0
+	move.w	mt_HdF(a2),d1
+	bsr	RollDice
+	add.w	mt_HpB(a2),d0
+	cmp.w	#1,d0
+	bge.s	.ok
+	moveq	#1,d0
+.ok:
+	movem.l	(sp)+,d1
 	rts
 
 ; HeroAttack : a6 = heros, a2 = monstre -> d0 = degats (0 si rate)
@@ -6904,50 +7003,243 @@ HeroAttack:
 	movem.l	(sp)+,d1-d7/a0/a3
 	rts
 
-CombatRound:
-	movem.l	d0-d7/a0-a6,-(sp)
-	lea	HitFlags,a0		; qui aura touche ce round
-	clr.l	(a0)
-	clr.w	4(a0)
-	move.l	MonPtr,a2
-	moveq	#0,d7			; degats du groupe
-	moveq	#0,d4			; bruitage de la premiere arme
-	moveq	#0,d3			; un heros a-t-il frappe
-	lea	Heroes,a6
-	moveq	#NHEROES-1,d6
-.heroLoop:
-	tst.w	hr_Hp(a6)
-	beq.s	.heroNext
-	tst.w	d3
-	bne.s	.haveSfx
-	moveq	#1,d3
-	move.w	hr_Weapon(a6),d0
-	beq.s	.bareSfx
-	bsr	ItemPtr
-	move.w	it_Sfx(a0),d4
-	bra.s	.haveSfx
-.bareSfx:
-	moveq	#SFX_SWORD,d4
-.haveSfx:
-	bsr	HeroAttack
-	add.w	d0,d7
-	tst.w	d0
-	beq.s	.heroNext
-	move.w	#NHEROES-1,d1		; son rang dans le groupe
-	sub.w	d6,d1
-	lea	HitFlags,a0
-	st	(a0,d1.w)
-.heroNext:
-	lea	hr_SIZEOF(a6),a6
-	dbf	d6,.heroLoop
+;----------------------------------------------------------------------
+; Le combat par rounds, a la maniere des jeux de role a groupe
+;
+; Un round commence par les ordres : chaque aventurier debout recoit le
+; sien, a tour de role -- A frapper, D parer, S un sort --, et ENTREE
+; reprend ceux du round d'avant pour tous ceux qui restent. Les ordres
+; sont retenus d'un round et d'un combat a l'autre : le groupe se bat
+; comme on l'a regle, et il suffit d'ENTREE pour enchainer.
+;
+; Puis le round se joue : les aventuriers dans l'ordre du groupe, puis
+; chaque creature debout. Celui de l'arriere ne frappe qu'a l'arc -- sans
+; quoi il pare ; celui de l'avant qui lance un sort peut perdre sa
+; concentration, l'ennemi sous le nez. Le resultat s'affiche en detail,
+; ou se resume au journal, selon le reglage (P).
+;
+; Orders : 0 frapper, 1 parer, 2 + n le sort n.
+;----------------------------------------------------------------------
+ORD_ATTACK	= 0
+ORD_GUARD	= 1
+ORD_SPELL	= 2
 
-	move.w	d4,d0
+; resultats d'un aventurier dans le round, pour le panneau
+RES_NONE	= 0			; a terre, ou rien a faire
+RES_HIT		= 1			; ResVal : les degats
+RES_MISS	= 2
+RES_GUARD	= 3
+RES_FAR		= 4			; trop loin pour frapper : il pare
+RES_SPELL	= 5			; ResVal : ce que le sort a pris
+RES_CONC	= 6			; concentration perdue
+GUARDAC		= 4			; ce que parer ajoute a la CA
+
+; FirstOrder : l'ordre revient au premier aventurier debout
+FirstOrder:
+	movem.l	d0/a6,-(sp)
+	moveq	#-1,d0
+	bsr	NextAlive
+	move.w	d0,OrderHero
+	bmi.s	.none
+	move.w	d0,SelHero
+.none:
+	movem.l	(sp)+,d0/a6
+	rts
+
+; NextAlive : d0 = heros -> d0 = le suivant debout, -1 s'il n'y en a pas
+NextAlive:
+	movem.l	d1/a6,-(sp)
+	move.w	d0,d1
+.loop:
+	addq.w	#1,d1
+	cmp.w	#NHEROES,d1
+	bge.s	.none
+	move.w	d1,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq.s	.loop
+	move.w	d1,d0
+	bra.s	.done
+.none:
+	moveq	#-1,d0
+.done:
+	movem.l	(sp)+,d1/a6
+	rts
+
+; SetOrder : d0 = ordre pour l'aventurier dont c'est le tour. On passe
+; au suivant ; apres le dernier, le round se joue.
+SetOrder:
+	movem.l	d0-d1/a0,-(sp)
+	move.w	OrderHero,d1
+	bmi.s	.play
+	lea	Orders,a0
+	move.b	d0,(a0,d1.w)
+	move.w	d1,d0
+	bsr	NextAlive
+	move.w	d0,OrderHero
+	bmi.s	.play
+	move.w	d0,SelHero
+	move.w	#1,NeedRedraw
+	bra.s	.done
+.play:
+	bsr	ResolveRound
+.done:
+	movem.l	(sp)+,d0-d1/a0
+	rts
+
+; ResolveRound : le round se joue, avec les ordres tels qu'ils sont.
+ResolveRound:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#1,InResolve
+	addq.w	#1,RoundNo
+	lea	HitFlags,a0		; qui aura touche, qui pare
+	lea	Guarding,a1
+	lea	ResCode,a3
+	moveq	#NHEROES-1,d0
+.clear:
+	clr.b	(a0)+
+	clr.b	(a1)+
+	clr.b	(a3)+
+	dbf	d0,.clear
+	clr.w	MonHits
+	clr.w	MonDmg
+	clr.w	RoundSfx		; l'arme du premier qui frappe
+	moveq	#0,d7			; degats du groupe ce round
+	moveq	#0,d6			; numero du heros
+.heroLoop:
+	tst.w	InCombat
+	beq	.heroesDone
+	move.w	d6,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq	.heroNext
+	lea	Orders,a0
+	moveq	#0,d5
+	move.b	(a0,d6.w),d5		; son ordre
+	cmp.w	#ORD_GUARD,d5
+	bne.s	.notGuard
+.guard:
+	lea	Guarding,a0
+	st	(a0,d6.w)
+	moveq	#RES_GUARD,d0
+	bsr	SetRes
+	bra	.heroNext
+.notGuard:
+	cmp.w	#ORD_SPELL,d5
+	bhs	.spell
+
+	cmp.w	#FRONTRANK,d6		; --- frapper
+	blo.s	.canReach
+	bsr	HasBow			; de l'arriere, a l'arc seulement
+	tst.w	d0
+	bne.s	.canReach
+	lea	Guarding,a0		; trop loin : il pare
+	st	(a0,d6.w)
+	moveq	#RES_FAR,d0
+	bsr	SetRes
+	bra	.heroNext
+.canReach:
+	tst.w	RoundSfx		; le bruit de son arme, s'il est le
+	bne.s	.sfxKnown		; premier a frapper
+	moveq	#SFX_SWORD,d0
+	move.w	hr_Weapon(a6),d1
+	beq.s	.sfxSet
+	move.w	d1,d0
+	bsr	ItemPtr
+	move.w	it_Sfx(a0),d0
+.sfxSet:
+	addq.w	#1,d0			; plus un : l'epee est le bruitage zero
+	move.w	d0,RoundSfx
+.sfxKnown:
+	move.l	MonPtr,a2
+	bsr	HeroAttack
+	tst.w	d0
+	bne.s	.hit
+	moveq	#RES_MISS,d0
+	bsr	SetRes
+	bra	.heroNext
+.hit:
+	move.w	d0,d1
+	add.w	d1,d7
+	sub.w	d1,MonHp
+	lea	HitFlags,a0
+	st	(a0,d6.w)
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	d1,(a0,d0.w)
+	moveq	#RES_HIT,d0
+	bsr	SetRes
+	bra	.checkDead
+
+.spell:					; --- un sort
+	move.w	d6,SelHero
+	cmp.w	#FRONTRANK,d6		; a l'avant, l'ennemi sous le nez
+	bhs.s	.focused
+	move.l	MonPtr,a2
+	bsr	IsCaster
+	tst.w	d0
+	beq.s	.focused
+	moveq	#SK_CONCENT,d0		; 40 % de perdre le fil, moins la
+	bsr	SkillValue		; moitie de sa concentration
+	lsr.w	#1,d0
+	moveq	#40,d2
+	sub.w	d0,d2
+	ble.s	.focused
+	moveq	#100,d1
+	bsr	RndMod
+	cmp.w	d2,d0
+	bhs.s	.focused
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtLostFocus,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	moveq	#RES_CONC,d0
+	bsr	SetRes
+	bra.s	.heroNext
+.focused:
+	move.w	MonHp,d4
+	move.w	d5,d0
+	sub.w	#ORD_SPELL,d0
+	bsr	CastSpell
+	sub.w	MonHp,d4		; ce que le sort a pris
+	bpl.s	.took
+	moveq	#0,d4
+.took:
+	add.w	d4,d7
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	d4,(a0,d0.w)
+	moveq	#RES_SPELL,d0
+	bsr	SetRes
+.checkDead:
+	tst.w	MonHp
+	bgt.s	.heroNext
+	bsr	MonsterDies		; la suivante s'avance, ou c'est fini
+.heroNext:
+	addq.w	#1,d6
+	cmp.w	#NHEROES,d6
+	blt	.heroLoop
+.heroesDone:
+	move.w	d7,RoundDmg
+	move.w	RoundSfx,d0		; l'arme, puis l'impact ou l'esquive
+	beq.s	.silent
+	subq.w	#1,d0
 	bsr	SfxPlay
+	moveq	#SFX_MISS,d0
 	tst.w	d7
-	beq.s	.allMissed
+	beq.s	.impact
 	moveq	#SFX_HIT,d0
+.impact:
 	bsr	SfxPlay
-	sub.w	d7,MonHp
+.silent:
+	tst.w	d7			; le recit du groupe, en une ligne
+	beq.s	.noDamage
 	lea	TmpStr,a1
 	lea	TxtYouHit,a0
 	bsr	StrCopy
@@ -6958,22 +7250,296 @@ CombatRound:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
-	bra.s	.check
-.allMissed:
-	moveq	#SFX_MISS,d0
-	bsr	SfxPlay
-	lea	TxtAllMiss,a0
-	bsr	LogAdd
-.check:
+.noDamage:
 	bsr	CombatProgress		; ceux qui ont touche y gagnent peut-etre
-	tst.w	MonHp
-	bgt.s	.monsterTurn
-	bsr	MonsterDies
-	bra.s	.done
-.monsterTurn:
-	bsr	MonsterTurn
+	tst.w	InCombat
+	beq.s	.over
+	tst.w	GameOver
+	bne.s	.over
+	bsr	MonsterTurn		; puis chaque creature debout
+.over:
+	clr.w	InResolve
+	tst.w	InCombat
+	beq.s	.done
+	tst.w	GameOver
+	bne.s	.done
+	bsr	FirstOrder		; le round suivant commence par l'ordre
+	tst.w	OptQuick		; du premier -- apres le resultat, si on
+	bne.s	.done			; le veut en detail
+	move.w	#UI_ROUND,UiMode
 .done:
 	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; SetRes : d0 = resultat de l'aventurier d6
+SetRes:
+	move.l	a0,-(sp)
+	lea	ResCode,a0
+	move.b	d0,(a0,d6.w)
+	move.l	(sp)+,a0
+	rts
+
+; HasBow : a6 = heros -> d0 = 1 s'il tient une arme de jet
+HasBow:
+	movem.l	a0,-(sp)
+	move.w	hr_Weapon(a6),d0
+	beq.s	.no
+	bsr	ItemPtr
+	cmp.w	#SFX_BOW,it_Sfx(a0)
+	bne.s	.no
+	moveq	#1,d0
+	bra.s	.done
+.no:
+	moveq	#0,d0
+.done:
+	movem.l	(sp)+,a0
+	rts
+
+; IsCaster : a6 = heros -> d0 = 1 si sa classe lance des sorts
+IsCaster:
+	movem.l	a0,-(sp)
+	bsr	ClassPtr
+	move.w	cl_Cast(a0),d0
+	beq.s	.done
+	moveq	#1,d0
+.done:
+	movem.l	(sp)+,a0
+	rts
+
+; HeroIndex : a6 = heros -> d0 = son rang dans le groupe
+HeroIndex:
+	move.l	a6,d0
+	sub.l	#Heroes,d0
+	divu.w	#hr_SIZEOF,d0
+	and.l	#$0000ffff,d0
+	rts
+
+; CombatKey : d0 = touche, pendant les ordres
+CombatKey:
+	cmp.w	#KEY_A_QW,d0
+	beq.s	.attack
+	cmp.w	#KEY_A_AZ,d0
+	beq.s	.attack
+	cmp.w	#KEY_SPACE,d0
+	beq.s	.attack
+	cmp.w	#KEY_D,d0
+	beq.s	.guard
+	cmp.w	#KEY_RETURN,d0
+	beq.s	.repeat
+	cmp.w	#KEY_F,d0
+	beq.s	.flee
+	cmp.w	#KEY_S,d0
+	bne.s	.done
+	movem.l	d0/a0-a1/a6,-(sp)	; qui ne connait aucun sort n'a pas
+	move.w	OrderHero,d0		; de menu a ouvrir
+	bmi.s	.noSpell
+	bsr	HeroPtr
+	tst.w	hr_Spells(a6)
+	bne.s	.menu
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtNoSpells,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	move.w	#1,NeedRedraw
+	bra.s	.noSpell
+.menu:
+	move.w	#UI_SPELL,UiMode	; le sort se choisit dans le menu,
+	move.w	#1,NeedRedraw		; qui revient ici avec son numero
+.noSpell:
+	movem.l	(sp)+,d0/a0-a1/a6
+	rts
+.attack:
+	moveq	#ORD_ATTACK,d0
+	bra	SetOrder
+.guard:
+	moveq	#ORD_GUARD,d0
+	bra	SetOrder
+.repeat:
+	bra	ResolveRound		; les ordres retenus, pour tous
+.flee:
+	bsr	CombatFlee
+	tst.w	InCombat
+	beq.s	.done
+	bsr	FirstOrder
+.done:
+	rts
+
+; DrawRound : le resultat du round, en detail (UI_ROUND)
+DrawRound:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	lea	TmpStr,a1
+	lea	TxtRoundTitle,a0
+	bsr	StrCopy
+	move.w	RoundNo,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	moveq	#0,d6
+.row:
+	move.w	d6,d0
+	bsr	HeroPtr
+	tst.w	hr_HpMax(a6)
+	beq	.next
+	move.l	a6,a0			; le nom
+	moveq	#3,d0
+	move.w	d6,d1
+	mulu.w	#11,d1
+	add.w	#36,d1
+	move.w	#C_TEXT,d2
+	tst.w	hr_Hp(a6)
+	bne.s	.up
+	move.w	#C_TEXTLOW,d2
+.up:
+	bsr	DrawText
+	lea	ResCode,a0		; ce qu'il a fait
+	moveq	#0,d0
+	move.b	(a0,d6.w),d0
+	move.w	d0,d5
+	lsl.w	#2,d0
+	lea	ResTexts,a0
+	move.l	(a0,d0.w),a0
+	lea	TmpStr,a1
+	bsr	StrCopy
+	cmp.w	#RES_HIT,d5		; avec des degats a dire
+	beq.s	.value
+	cmp.w	#RES_SPELL,d5
+	bne.s	.noValue
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	tst.w	(a0,d0.w)
+	beq.s	.noValue
+.value:
+	move.b	#' ',(a1)+
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	(a0,d0.w),d0
+	bsr	StrNum
+.noValue:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#13,d0
+	move.w	d6,d1
+	mulu.w	#11,d1
+	add.w	#36,d1
+	move.w	#C_PARCHD,d2
+	cmp.w	#RES_HIT,d5
+	bne.s	.color
+	move.w	#C_HEALTH,d2
+.color:
+	bsr	DrawText
+.next:
+	addq.w	#1,d6
+	cmp.w	#NHEROES,d6
+	blt	.row
+
+	lea	TmpStr,a1		; et ce que les creatures ont fait
+	lea	TxtRoundFoes,a0
+	bsr	StrCopy
+	move.w	MonHits,d0
+	bsr	StrNum
+	lea	TxtRoundBlows,a0
+	bsr	StrCopy
+	move.w	MonDmg,d0
+	bsr	StrNum
+	lea	TxtRoundHp,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#110,d1
+	move.w	#C_ALERT,d2
+	bsr	DrawText
+	lea	TxtRoundGo,a0
+	moveq	#3,d0
+	move.w	#134,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; DrawOrderTag : pendant les ordres, sur la creature -- a qui c'est le
+; tour et ce qu'il a fait au round d'avant ; en bas, combien ils sont.
+DrawOrderTag:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	OrderHero,d0
+	bmi	.foes
+	bsr	HeroPtr
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtOrderSep,a0
+	bsr	StrCopy
+	lea	Orders,a0
+	move.w	OrderHero,d0
+	moveq	#0,d1
+	move.b	(a0,d0.w),d1
+	moveq	#ORD_SPELL,d2		; un sort : "SORT", et son nom dessous
+	cmp.w	d2,d1
+	bhs.s	.spellTag
+	lsl.w	#2,d1
+	lea	OrderNames,a0
+	move.l	(a0,d1.w),a0
+	bra.s	.named
+.spellTag:
+	lea	TxtResSpell,a0
+.named:
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	move.b	#'?',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	Orders,a0
+	move.w	OrderHero,d0
+	moveq	#0,d1
+	move.b	(a0,d0.w),d1
+	cmp.w	#ORD_SPELL,d1
+	blo.s	.foes
+	sub.w	#ORD_SPELL,d1
+	move.w	d1,d0
+	bsr	SpellPtr
+	moveq	#3,d0
+	moveq	#40,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
+.foes:
+	lea	TmpStr,a1
+	move.l	MonPtr,a0
+	bsr	StrCopy
+	cmp.w	#1,GroupN
+	beq.s	.one
+	lea	TxtTimes,a0
+	bsr	StrCopy
+	move.w	GroupN,d0
+	bsr	StrNum
+.one:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0			; sous l'ordre, contre la voute
+	moveq	#30,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -6984,8 +7550,17 @@ MonsterTurn:
 	lea	TxtMonStunned,a0
 	bsr	LogAdd
 	rts
-.attack:
+.attack:				; chacun du groupe frappe
+	move.l	d7,-(sp)
+	move.w	GroupN,d7
+	subq.w	#1,d7
+.each:
+	tst.w	GameOver
+	bne.s	.over
 	bsr	MonsterAttack
+	dbf	d7,.each
+.over:
+	move.l	(sp)+,d7
 	rts
 
 ;----------------------------------------------------------------------
@@ -7226,8 +7801,7 @@ STRIKEFRAMES	= 18			; la pose d'attaque, en trames
 MonsterAttack:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
-	moveq	#NHEROES,d1
-	bsr	RndMod
+	bsr	PickTarget		; l'avant d'abord, trois fois sur quatre
 	move.w	d0,d5
 	moveq	#NHEROES-1,d6
 .find:
@@ -7277,6 +7851,8 @@ MonsterAttack:
 	moveq	#1,d0
 .dmgOk:
 	move.w	d0,d4
+	addq.w	#1,MonHits		; pour le resultat du round
+	add.w	d0,MonDmg
 	moveq	#SFX_HIT,d0
 	bsr	SfxPlay
 	sub.w	d4,hr_Hp(a6)
@@ -7345,7 +7921,6 @@ PartyWiped:
 MonsterDies:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
-	clr.w	InCombat
 	moveq	#SFX_DEATH,d0
 	bsr	SfxPlay
 	move.w	mt_Gold(a2),d0
@@ -7367,6 +7942,39 @@ MonsterDies:
 	lea	TmpStr,a0
 	bsr	LogAdd
 
+	lea	Heroes,a6		; chaque creature tombee paie son du
+	moveq	#NHEROES-1,d6
+.xpEach:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpEachNext
+	move.w	mt_Xp(a2),d0
+	add.w	d0,hr_Xp(a6)
+	bsr	CheckLevel
+.xpEachNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.xpEach
+
+	subq.w	#1,GroupN		; la suivante s'avance
+	beq.s	.last
+	move.w	GroupNext,d0
+	add.w	d0,d0
+	lea	GroupHp,a0
+	move.w	(a0,d0.w),MonHp
+	addq.w	#1,GroupNext
+	clr.w	MonStun
+	lea	TmpStr,a1
+	lea	TxtNextOne,a0
+	bsr	StrCopy
+	move.w	GroupN,d0
+	bsr	StrNum
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra	.stillFighting
+.last:
+	clr.w	InCombat
+
 	move.w	MonX,d0			; sa case est nettoyee -- la sienne, et
 	move.w	MonY,d1			; pas celle du groupe : depuis que les
 	bsr	MapCell			; monstres marchent, c'est parfois lui
@@ -7376,19 +7984,100 @@ MonsterDies:
 	move.w	MonY,d1
 	bsr	MapSet
 
-	lea	Heroes,a6		; experience et bonus de fin de combat
+	lea	Heroes,a6		; les effets du combat retombent
 	moveq	#NHEROES-1,d6
-.xpLoop:
-	tst.w	hr_Hp(a6)
-	beq.s	.xpNext
+.acLoop:
 	clr.w	hr_AcTemp(a6)
-	move.w	mt_Xp(a2),d0
-	add.w	d0,hr_Xp(a6)
-	bsr	CheckLevel
-.xpNext:
 	lea	hr_SIZEOF(a6),a6
-	dbf	d6,.xpLoop
+	dbf	d6,.acLoop
+.stillFighting:
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; SwapRank : le heros choisi passe de l'avant a l'arriere, ou l'inverse,
+; en changeant de place avec celui qui se tient au meme rang de l'autre
+; ligne (le premier avec le quatrieme, et ainsi de suite). Il emporte
+; tout, jusqu'a ses ordres de combat.
+;----------------------------------------------------------------------
+SwapRank:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	SelHero,d4
+	move.w	d4,d5
+	add.w	#FRONTRANK,d5
+	cmp.w	#NHEROES,d5
+	blt.s	.mirror
+	sub.w	#NHEROES,d5
+.mirror:
+	move.w	d4,d0
+	bsr	HeroPtr
+	move.l	a6,a0
+	move.w	d5,d0
+	bsr	HeroPtr
+	move.l	a6,a1
+	moveq	#hr_SIZEOF-1,d2
+.swap:
+	move.b	(a0),d3
+	move.b	(a1),(a0)+
+	move.b	d3,(a1)+
+	dbf	d2,.swap
+	lea	Orders,a0		; ses ordres le suivent
+	move.b	(a0,d4.w),d3
+	move.b	(a0,d5.w),(a0,d4.w)
+	move.b	d3,(a0,d5.w)
+	move.w	d5,SelHero
+
+	lea	TmpStr,a1		; le dire
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtToBack,a0
+	cmp.w	#FRONTRANK,d5
+	bge.s	.said
+	lea	TxtToFront,a0
+.said:
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; PickTarget : qui la creature vise. -> d0 = numero de heros.
+;
+; Le groupe se tient sur deux rangs : les trois premiers devant, les
+; trois autres derriere. Trois coups sur quatre vont a l'avant, tant
+; qu'il y reste quelqu'un debout ; les autres cherchent derriere.
+; MonsterAttack passe au suivant si le vise est a terre.
+;----------------------------------------------------------------------
+PickTarget:
+	movem.l	d1-d3/a6,-(sp)
+	moveq	#0,d3			; quelqu'un debout devant ?
+	moveq	#0,d2
+.front:
+	move.w	d2,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq.s	.frontNext
+	moveq	#1,d3
+.frontNext:
+	addq.w	#1,d2
+	cmp.w	#FRONTRANK,d2
+	blt.s	.front
+	moveq	#FRONTRANK,d2		; la base : l'avant ou l'arriere
+	tst.w	d3
+	beq.s	.pick			; personne devant : l'arriere
+	moveq	#4,d1
+	bsr	RndMod
+	tst.w	d0
+	beq.s	.pick			; un coup sur quatre : derriere
+	moveq	#0,d2
+.pick:
+	moveq	#FRONTRANK,d1
+	bsr	RndMod
+	add.w	d2,d0
+	movem.l	(sp)+,d1-d3/a6
 	rts
 
 CheckLevel:				; a6 = heros
@@ -7665,6 +8354,8 @@ CastSpell:				; d0 = sort
 	bsr	HeroPtr
 	moveq	#SK_CONCENT,d0
 	bsr	SkillUse
+	tst.w	InResolve		; dans un round : c'est le round qui
+	bne.s	.done			; fait riposter, et tomber
 	tst.w	InCombat		; hors combat, personne ne riposte
 	beq.s	.done
 	tst.w	MonHp
@@ -7994,6 +8685,11 @@ HandleKey:
 	tst.w	GameOver
 	bne	.done
 
+	cmp.w	#UI_ROUND,UiMode	; --- le resultat du round : une
+	bne.s	.notRoundUi		; touche, et l'on repasse aux ordres
+	clr.w	UiMode
+	bra	.redraw
+.notRoundUi:
 	move.w	UiMode,d1		; --- reponse a une enigme
 	cmp.w	#UI_RIDDLE,d1
 	bne.s	.notRiddleUi
@@ -8024,15 +8720,29 @@ HandleKey:
 	add.w	d2,d2
 	lea	SpellList,a0
 	move.w	(a0,d2.w),d0
+	tst.w	InCombat		; en combat, c'est un ordre : il se
+	beq.s	.castNow		; jouera avec le round
+	clr.w	UiMode
+	add.w	#ORD_SPELL,d0
+	bsr	SetOrder
+	bra	.redraw
+.castNow:
 	bsr	CastSpell
 	bra	.done
 .notSpellUi:
-	move.w	d0,d2			; 1 a 4 : heros courant
+	move.w	d0,d2			; 1 a 6 : heros courant
 	sub.w	#KEY_1,d2
 	bmi.s	.notHero
 	cmp.w	#NHEROES,d2
 	bge.s	.notHero
 	move.w	d2,SelHero
+	tst.w	InCombat		; en combat : c'est a lui de recevoir
+	beq	.redraw			; son ordre, s'il est debout
+	move.w	d2,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq	.redraw
+	move.w	d2,OrderHero
 	bra	.redraw
 .notHero:
 	cmp.w	#KEY_C,d0		; fiche d'aventure
@@ -8154,6 +8864,11 @@ HandleKey:
 	move.w	d1,Dir
 	bra	.redraw
 .notRight:
+	cmp.w	#KEY_O,d0		; l'ordre de marche : l'avant, l'arriere
+	bne.s	.notRank
+	bsr	SwapRank
+	bra	.done
+.notRank:
 	cmp.w	#KEY_S,d0		; sorts hors combat : soins, protections
 	bne.s	.notCast
 	move.w	#UI_SPELL,UiMode
@@ -8164,24 +8879,8 @@ HandleKey:
 	bsr	DoAction
 	bra	.done
 
-.fight:					; --- combat
-	cmp.w	#KEY_A_QW,d0
-	beq.s	.attack
-	cmp.w	#KEY_A_AZ,d0
-	beq.s	.attack
-	cmp.w	#KEY_SPACE,d0
-	beq.s	.attack
-	cmp.w	#KEY_F,d0
-	beq.s	.flee
-	cmp.w	#KEY_S,d0
-	bne	.done
-	move.w	#UI_SPELL,UiMode
-	bra	.redraw
-.attack:
-	bsr	CombatRound
-	bra	.done
-.flee:
-	bsr	CombatFlee
+.fight:					; --- combat : les ordres
+	bsr	CombatKey
 	bra	.done
 
 .invKeys:				; --- sac a dos
@@ -8341,13 +9040,14 @@ SaveList:
 	dc.l	Inventory,INVSIZE
 	dc.l	LevelStore,LVSTORE	; les trois etages, chacun dans son etat
 	dc.l	LevelKnown,LEVELS*2	; et ceux que le groupe a deja vus
-	dc.l	OptMusic,6		; musique, bruitages, disposition
+	dc.l	OptMusic,8		; musique, bruitages, disposition, combat
 	dc.l	0,0
 
 	include	"surfgrad.i"
 
 OptNames:
-	dc.l	TxtOptMusic,TxtOptSfx,TxtOptKb,TxtOptSave,TxtOptTitleBack
+	dc.l	TxtOptMusic,TxtOptSfx,TxtOptKb,TxtOptCombat,TxtOptSave
+	dc.l	TxtOptTitleBack
 
 SchoolNames:				; 1 profane, 2 divin, 3 les deux
 	dc.l	TxtSchoolArc,TxtSchoolDiv,TxtSchoolBoth
@@ -8649,6 +9349,37 @@ TxtNoWayUp:	dc.b	"AU-DESSUS, C'EST LE JOUR.",0
 TxtWin:		dc.b	"ACQUITTÉS. VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
+TxtNoSpells:	dc.b	" NE CONNAÎT AUCUN SORT.",0
+TxtLostFocus:	dc.b	" PERD SA CONCENTRATION.",0
+TxtRoundTitle:	dc.b	"RÉSULTAT DU ROUND ",0
+TxtRoundFoes:	dc.b	"EUX : ",0
+TxtRoundBlows:	dc.b	" COUPS, ",0
+TxtRoundHp:	dc.b	" PV",0
+TxtRoundGo:	dc.b	"UNE TOUCHE : LA SUITE",0
+TxtOrderSep:	dc.b	" : ",0
+TxtTimes:	dc.b	" X",0
+TxtResNone:	dc.b	"-",0
+TxtResHit:	dc.b	"FRAPPE",0
+TxtResMiss:	dc.b	"MANQUE",0
+TxtResGuard:	dc.b	"PARE",0
+TxtResFar:	dc.b	"LOIN : PARE",0
+TxtResSpell:	dc.b	"SORT",0
+TxtResConc:	dc.b	"DÉCONCENTRÉ",0
+TxtOrdAttack:	dc.b	"FRAPPER",0
+TxtOrdGuard:	dc.b	"PARER",0
+TxtOptCombat:	dc.b	"COMBAT        ",0
+TxtOptDetail:	dc.b	"DÉTAILLÉ",0
+TxtOptQuick:	dc.b	"RAPIDE",0
+	even
+ResTexts:
+	dc.l	TxtResNone,TxtResHit,TxtResMiss,TxtResGuard,TxtResFar
+	dc.l	TxtResSpell,TxtResConc
+OrderNames:
+	dc.l	TxtOrdAttack,TxtOrdGuard
+TxtToBack:	dc.b	" PASSE À L'ARRIÈRE.",0
+TxtToFront:	dc.b	" PASSE À L'AVANT.",0
+TxtNotAlone:	dc.b	"IL N'EST PAS SEUL : ILS SONT ",0
+TxtNextOne:	dc.b	"UN AUTRE S'AVANCE. RESTENT : ",0
 TxtYouHit:	dc.b	"LE GROUPE INFLIGE ",0
 TxtDamage:	dc.b	" DÉGÂTS.",0
 TxtAllMiss:	dc.b	"TOUS LES COUPS SE PERDENT.",0
@@ -8756,7 +9487,7 @@ TxtLeverSeen:	dc.b	"UN LEVIER SCELLÉ DANS LE MUR.",0
 TxtGateShut:	dc.b	"UNE HERSE DE FER BARRE LE PASSAGE.",0
 TxtLeverDown:	dc.b	"LE LEVIER CÈDE. UNE HERSE SE LÈVE.",0
 TxtLeverUp:	dc.b	"LE LEVIER REMONTE. LA HERSE RETOMBE.",0
-TxtRuneTitle:	dc.b	"LA PORTE VÉRIFIE VOTRE DROIT",0
+TxtRuneTitle:	dc.b	"LA PORTE VOUS INTERROGE",0	; 23 : la vue
 TxtRuneAsk:	dc.b	"RÉPONDEZ : 1, 2 OU 3",0
 TxtRuneOk:	dc.b	"LES RUNES S'EFFACENT. PASSAGE !",0
 TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLÈRE.",0
@@ -8844,7 +9575,7 @@ TxtLegLedger:	dc.b	"GREFFE",0
 TxtHelpMap:	dc.b	"M OU ESC POUR REFERMER LA CARTE",0
 TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
 TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
-TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
+TxtHelpFight:	dc.b	"A FRAPPE D PARE S SORT F FUIT ENTRÉE",0
 TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-6",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
 TxtHelpSheet:	dc.b	"TAB COMPÉTENCES  1-6 HÉROS  I SAC",0
@@ -8917,6 +9648,7 @@ OptCursor:	ds.w	1
 OptMusic:	ds.w	1		; les trois reglages se suivent : ils
 OptSfx:	ds.w	1		; partent ensemble dans la sauvegarde
 KbLayout:	ds.w	1
+OptQuick:	ds.w	1		; combat : 0 detaille, 1 rapide
 CurMusic:	ds.w	1
 CopSurf:	ds.l	1
 SurfPhase:	ds.w	1
@@ -8936,6 +9668,21 @@ MonLastVbi:	ds.w	1		; VBI_Count au dernier passage de MonWalk
 HitFlags:	ds.b	NHEROES		; ceux qui ont touche pendant le round
 	even
 SheetPage:	ds.w	1		; fiche : 0 le heros, 1 ses competences
+Guarding:	ds.b	NHEROES		; ceux qui parent ce round
+ResCode:	ds.b	NHEROES		; ce que chacun a fait, pour le panneau
+ResVal:		ds.w	NHEROES		; et ses degats
+OrderHero:	ds.w	1		; a qui c'est de donner son ordre
+InResolve:	ds.w	1		; un round est en train de se jouer
+RoundNo:	ds.w	1		; numero du round dans le combat
+RoundDmg:	ds.w	1
+RoundSfx:	ds.w	1		; le bruitage d'arme du round, plus un		; ce que le groupe a inflige au dernier
+MonHits:	ds.w	1		; coups portes par les creatures, et
+MonDmg:		ds.w	1		; leurs degats, au dernier round
+Orders:		ds.b	NHEROES		; l'ordre de combat de chacun, retenu
+	even				; d'un round et d'un combat a l'autre
+GroupN:		ds.w	1		; creatures encore debout, celle de devant
+GroupNext:	ds.w	1		; comprise, et la prochaine a s'avancer
+GroupHp:	ds.w	GROUPMAX	; leurs points de vie, tires d'avance
 StrikeTime:	ds.w	1		; trames de pose d'attaque restantes
 FlameFrame:	ds.w	1		; la flamme de la lanterne du guichet
 ShopInSight:	ds.w	1		; le guichet est dans la vue, a un pas

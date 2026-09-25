@@ -212,6 +212,31 @@ if __name__ == "__main__":
         shot(g, name, fails)
     g.setw("Acquitted", 0)
 
+    # Le resultat d'un round, au plus large : chaque ligne la plus longue
+    # que le panneau puisse avoir -- "LOIN : PARE", des degats a trois
+    # chiffres -- et des creatures qui ont porte beaucoup de coups.
+    res, val = g.addr("ResCode"), g.addr("ResVal")
+    for i, code in enumerate((1, 4, 5, 6, 1, 4)):
+        g.mem.w8(res + i, code)
+        g.mem.w16(val + 2 * i, 999)
+    g.setw("MonHits", 99)
+    g.setw("MonDmg", 999)
+    g.setw("RoundNo", 99)
+    g.setw("UiMode", T.read_equ("UI_ROUND", 11))
+    g.setw("NeedRedraw", 1)
+    shot(g, "round", fails)
+    g.setw("UiMode", 0)
+
+    # Les trois enigmes, sans chercher les portes : le titre depassait
+    # de la vue, et le banc ne le voyait que s'il trouvait un chemin
+    # jusqu'a une porte a runes.
+    for riddle in range(3):
+        g.setw("RiddleIdx", riddle)
+        g.setw("UiMode", T.read_equ("UI_RIDDLE", 4))
+        g.setw("NeedRedraw", 1)
+        shot(g, f"enigme-{riddle}", fails)
+    g.setw("UiMode", 0)
+
     # Les trois livres du greffe : dix lignes sous leur cote, chacune
     # doit tenir dans la vue.
     for book in range(T.read_equ("NARCHIVES", 3)):

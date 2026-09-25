@@ -106,7 +106,21 @@ COMMANDES
   1 a 6                 choisir le heros courant
   ESC                   fermer un ecran ; deux fois de suite, quitter
 
-  En combat :  A attaquer   S lancer un sort   F fuir   I sac
+  O                     l'ordre de marche : l'avant, l'arriere
+
+  En combat, un ordre par heros, a tour de role :
+    A frapper   D parer   S un sort   1 a 6 changer de heros
+    ENTREE rejoue les ordres retenus pour tous   F fuir   I sac
+
+LE COMBAT
+  En face, un groupe de un a quatre creatures ; quand celle de devant
+  tombe, la suivante s'avance. Votre groupe se tient sur deux rangs :
+  les trois premiers devant, les trois autres derriere. Derriere, on
+  ne frappe qu'a l'arc, et on est moins vise ; devant, un lanceur de
+  sorts peut perdre sa concentration. Chaque round, chacun recoit son
+  ordre, puis le round se joue ; le resultat s'affiche en detail, ou
+  se resume au journal (reglage COMBAT, touche P). Les ordres sont
+  retenus : ENTREE suffit pour enchainer.
 
 LE PANNEAU DU GROUPE
   Un bloc par aventurier, six en tout : son nom en tete avec son

@@ -782,6 +782,89 @@ def corridor_monster_test(g, fails, shot=None):
     print(f"  un orc deux cases devant, en {mx},{my} : {changed} pixels")
 
 
+def combat_test(g, fails):
+    """Le combat par rounds : un groupe, des rangs, un ordre par heros.
+
+    On provoque la rencontre d'autorite, devant le groupe, puis on
+    verifie chaque regle : la taille du groupe, l'ordre qui passe d'un
+    heros au suivant, l'arriere qui ne frappe qu'a l'arc, la parade, le
+    resultat du round, ENTREE qui rejoue les ordres retenus, et la
+    creature suivante qui s'avance quand celle de devant tombe."""
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    g.setw("OptQuick", 0)
+    heal(g)
+    g.setw("MonKind", 4)                  # des orcs
+    g.setw("MonX", g.w("PosX"))
+    g.setw("MonY", g.w("PosY"))
+    if not check(g.call(g.addr("StartCombat")), "StartCombat ne rend pas "
+                 "la main", fails):
+        return
+    n = g.w("GroupN")
+    check(1 <= n <= 4, f"groupe de {n} creatures", fails)
+    check(g.w("OrderHero") == 0, f"l'ordre commence au heros "
+          f"{g.w('OrderHero')}", fails)
+
+    orders = g.addr("Orders")
+    for i in range(NH):                   # tout le monde frappe...
+        g.mem.w8(orders + i, 0)
+    g.key(K_A)
+    check(g.mem.r8(orders) == 0 and g.w("OrderHero") == 1,
+          f"A ne donne pas l'ordre au premier (ordre {g.w('OrderHero')})",
+          fails)
+    g.key(K_D)                            # ...sauf le deuxieme, qui pare
+    check(g.mem.r8(orders + 1) == 1, "D ne donne pas l'ordre de parer",
+          fails)
+    round0 = g.w("RoundNo")
+    for _ in range(NH - 2):
+        g.key(K_A)
+    check(g.w("RoundNo") == round0 + 1, "le round ne se joue pas apres le "
+          "dernier ordre", fails)
+    if g.w("InCombat"):
+        check(g.w("UiMode") == 11, f"pas de resultat du round en detail "
+              f"(UiMode={g.w('UiMode')})", fails)
+        res = [g.mem.r8(g.addr("ResCode") + i) for i in range(NH)]
+        guard = [g.mem.r8(g.addr("Guarding") + i) for i in range(NH)]
+        check(res[1] == 3 and guard[1], f"le deuxieme ne pare pas "
+              f"(resultat {res[1]})", fails)
+        # PARTY : Selva, clerc a l'arriere, n'a pas d'arc ; Thorgal,
+        # rodeur, en a un.
+        if g.hero(3, "hr_Hp"):
+            check(res[3] == 4 and guard[3], f"l'arriere sans arc frappe "
+                  f"(resultat {res[3]})", fails)
+        if g.hero(4, "hr_Hp"):
+            check(res[4] in (1, 2), f"l'arc ne porte pas depuis l'arriere "
+                  f"(resultat {res[4]})", fails)
+        g.key(K_SPACE)                    # une touche referme le resultat
+        check(g.w("UiMode") == 0, "le resultat du round ne se referme pas",
+              fails)
+
+    if g.w("InCombat"):                   # la suivante s'avance
+        g.setw("GroupN", 2)
+        g.setw("GroupNext", 1)
+        g.mem.w16(g.addr("GroupHp") + 2, 250)
+        g.setw("MonHp", 1)
+        for i in range(NH):
+            g.mem.w8(orders + i, 0)
+        for _ in range(12):
+            if g.w("GroupN") < 2 or not g.w("InCombat"):
+                break
+            g.key(K_RET)                  # les ordres retenus, d'un coup
+            if g.w("UiMode") == 11:
+                g.key(K_SPACE)
+        check(g.w("GroupN") == 1 and g.w("InCombat") == 1,
+              f"la creature suivante ne s'avance pas (groupe "
+              f"{g.w('GroupN')}, combat {g.w('InCombat')})", fails)
+        check(g.sw("MonHp") > 200, f"la suivante n'a pas ses propres PV "
+              f"({g.sw('MonHp')})", fails)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    heal(g)
+    print(f"  un groupe de {n}, les ordres un par un, l'arriere a l'arc, "
+          f"la parade, et la suivante qui s'avance")
+
+
 def trap_test(g, fails):
     """Marcher jusqu'a un piege et voir ce qu'il fait."""
     grid = grid_of(g)
@@ -1085,21 +1168,21 @@ if __name__ == "__main__":
     print("--- combats ---")
     fights = rounds = 0
     monster = lambda c: (c & C_MASK) == C_MONSTER
-    for _ in range(300):
+    for _ in range(1500):
         if fights >= 3:
             break
         if not g.w("InCombat") and not walk_towards(g, monster, 30):
             g.key(random.choice(moves))
             continue
         hp0 = g.w("MonHp")
-        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
+        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"), g.w("GroupN"))
         g.key(K_A)
         rounds += 1
         if not g.w("InCombat"):
             fights += 1
         # Le monstre suivant peut arriver dans la trame ou le precedent
         # tombe : on ne compare que si c'est le meme.
-        if (g.w("MonX"), g.w("MonY"), g.w("MonKind")) == qui:
+        if (g.w("MonX"), g.w("MonY"), g.w("MonKind"), g.w("GroupN")) == qui:
             check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
         for i in range(NH):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
@@ -1155,6 +1238,9 @@ if __name__ == "__main__":
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
           f"niveau {g.w('Level')} or {g.w('Gold')}")
+
+    print("--- le combat par rounds ---")
+    combat_test(g, fails)
 
     print("--- les monstres se voient venir ---")
     g.setw("GameOver", 0)

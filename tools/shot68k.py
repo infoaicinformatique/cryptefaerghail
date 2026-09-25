@@ -297,9 +297,25 @@ if __name__ == "__main__":
         shoot(g, "combat-attaque")
         g.setw("StrikeTime", 1)
         g.key(T.K_1)
-    g.key(T.K_S)
-    shoot(g, "combat-sorts")
-    g.key(T.K_ESC)
+    if g.w("InCombat"):                   # les ordres : au premier
+        spells = T.read_equ("hr_Spells", 42)   # lanceur debout de choisir
+        caster = next((i for i in range(T.NH)  # un sort
+                       if g.hero(i, "hr_Hp") and g.mem.r16(
+                           g.addr("Heroes") + i * T.HR["hr_SIZEOF"] + spells)),
+                      0)
+        g.key(T.K_1 + caster)
+        shoot(g, "combat-ordres")
+        g.key(T.K_S)
+        shoot(g, "combat-sorts")
+        g.key(T.K_1)                      # le premier : c'est son ordre
+        g.setw("MonHp", 120)              # qu'il tienne un round : six
+        for _ in range(12):               # contre un kobold, il tombe au
+            if not g.w("InCombat") or g.w("GameOver"):   # premier, et il
+                break                     # n'y a pas de resultat a montrer
+            g.key(T.K_RET)
+            if g.w("UiMode") == 11:
+                shoot(g, "combat-round")  # le resultat, en detail
+                break
     while g.w("InCombat") and not g.w("GameOver"):
         g.key(T.K_A)
     for want in (lambda c: c & 0x30 == 0x30,          # explorer un peu

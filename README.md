@@ -277,6 +277,42 @@ meilleurs dés**, comme il se doit ; `R` relance, `ENTRÉE` valide. Le nom se
 tape au clavier — et comme le CIA rend des **positions de touches**, pas des
 caractères, `TAB` bascule entre AZERTY et QWERTY.
 
+### Le combat par rounds
+
+Le combat se joue comme dans *Legend of Faerghail* et les jeux de rôle à
+groupe de l'époque : par rounds, avec un ordre pour chacun.
+
+**Un groupe en face.** Une rencontre met en face de un à quatre créatures de
+la même espèce — d'autant moins que l'espèce est lourde, d'autant plus qu'on
+est bas. Chacune a ses points de vie ; quand celle de devant tombe, la
+suivante s'avance, et chacune frappe à son tour. La vue le dit : « ORC X3 ».
+
+**Deux rangs.** Les trois premiers du groupe se tiennent devant, les trois
+autres derrière — un trait les sépare dans le panneau. Les créatures visent
+l'avant trois fois sur quatre, tant qu'il y reste quelqu'un debout.
+Derrière, on ne frappe qu'à l'arc : sans arc, l'ordre de frapper devient une
+parade. Devant, celui qui lance un sort a l'ennemi sous le nez et peut perdre
+sa concentration — 40 % moins la moitié de sa compétence. `O`, hors combat,
+fait passer le héros choisi de l'avant à l'arrière, en changeant de place avec
+celui qui se tient au même rang de l'autre ligne.
+
+**Un ordre par héros.** Chaque round commence par les ordres, à tour de rôle :
+`A` frapper, `D` parer (+4 à la classe d'armure pour le round), `S` un sort,
+choisi dans le menu. `1` à `6` donnent la main à un autre héros. Les ordres
+sont **retenus** d'un round et d'un combat à l'autre : `ENTRÉE` les rejoue pour
+tous ceux qui restent, et le round part. `F` tente la fuite pour tout le
+groupe.
+
+**Le round se joue** : les héros dans l'ordre du groupe, puis chaque créature
+debout. Le résultat s'affiche **en détail** — un panneau qui dit ce que chacun
+a fait (FRAPPE 7, MANQUE, PARE, LOIN : PARE, SORT 12, DÉCONCENTRÉ) et ce que
+les créatures ont porté —, ou se résume au journal en mode **rapide**. Le choix
+est dans les réglages (`P`) et part avec la sauvegarde, dont le nombre magique
+devient `FAE8`.
+
+![Les ordres](docs/emu-combat-ordres.png)
+![Le résultat du round](docs/emu-combat-round.png)
+
 ### Règles
 
 Reprises du **SRD 3.5** (le contenu de D&D 3.5 publié sous Open Game
@@ -334,7 +370,10 @@ ouvre le prologue, `ESC` quitte.
 | Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre ou un livre du greffe, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
 | 1 à 6 | choisir le héros courant |
-| A / S / F | attaquer, lancer un sort, fuir (en combat) |
+| A / D / S | en combat : l'ordre du héros dont c'est le tour — frapper, parer, un sort |
+| ENTRÉE | en combat : rejouer les ordres retenus pour tous ceux qui restent |
+| F | en combat : fuir, tout le groupe |
+| O | l'ordre de marche : le héros choisi passe de l'avant à l'arrière, ou l'inverse |
 | E / U / D | équiper, utiliser, jeter (dans le sac) |
 | M / L / P | carte du niveau, grimoire, réglages |
 | Souris | clic gauche : rose des vents dans la vue, choisir un aventurier, poser un curseur ; clic droit : agir, ou refermer un panneau |

@@ -29,7 +29,7 @@ def party(g):
     return dict(
         heros=[(g.name(i), g.hero(i, "hr_Class"), g.hero(i, "hr_Hp"),
                 g.hero(i, "hr_HpMax"), g.hero(i, "hr_Xp"),
-                g.hero(i, "hr_Weapon")) for i in range(4)],
+                g.hero(i, "hr_Weapon")) for i in range(T.NH)],
         sac=[g.mem.r8(inv + i) for i in range(24)],
         pos=(g.w("PosX"), g.w("PosY"), g.w("Dir")),
         niveau=g.w("Level"), or_=g.w("Gold"), cles=g.w("KeyCount"),
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print(f"  reprise : {apres['pos']}, or {apres['or_']}, "
               f"{apres['vues']} cases relevees, "
               f"quittance {apres['quittance']}, reglages {apres['reglages']}")
-        for i in range(4):
+        for i in range(T.NH):
             print(f"  {apres['heros'][i][0]:8s} PV {apres['heros'][i][2]}"
                   f"/{apres['heros'][i][3]} PX {apres['heros'][i][4]}")
 

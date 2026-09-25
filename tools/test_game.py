@@ -46,6 +46,9 @@ def read_equ(name, default):
     return default
 
 
+NH = read_equ("NHEROES", 6)                     # six aventuriers
+
+
 HR = {k: read_equ(k, 0) for k in
       ("hr_Name", "hr_Class", "hr_Level", "hr_Xp", "hr_Hp", "hr_HpMax",
        "hr_Mp", "hr_MpMax", "hr_Str", "hr_Weapon", "hr_SIZEOF", "hr_Slots")}
@@ -193,7 +196,9 @@ class Game(R.Harness):
 
 
 MAPH = 24
-PANEL_X, PANEL_TOP, PANEL_STEP = 224, 12, 37
+PANEL_X, PANEL_TOP, PANEL_STEP = (read_equ("PANEL_X", 224),
+                                  read_equ("PANEL_TOP", 12),
+                                  read_equ("PANEL_STEP", 24))
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
 T_WALL, T_LOCKED, T_NICHE, T_LEVER, T_GATE = 1, 4, 5, 7, 8
 T_SHOP, T_TRAP = 9, 10
@@ -296,7 +301,7 @@ def prolog_test(g, fails):
     print(f"  {pages} pages, les fleches reviennent, ESC rend l'accueil")
 
 
-def create_party(g, classes=(0, 6, 1, 5)):
+def create_party(g, classes=(0, 6, 1, 5, 3, 7)):
     """Choix de classe, acceptation des jets, nom par defaut.
 
     Le jeu s'ouvre sur l'ecran d'accueil : on demande d'abord une
@@ -414,6 +419,21 @@ def walk_test(g, fails):
                    for k in range(1, d + 1))
     spot = next(((px + dx * d, py + dy * d) for d in (2, 3, 4)
                  for dx, dy in DIRS if open_line(dx, dy, d)), None)
+    if spot is None:                      # pas de couloir droit ici : on
+        for y in range(1, MAPH - 1):      # mene le groupe au premier venu
+            for x in range(1, MAPW - 1):
+                if grid[y][x] or g.mem.r8(par + y * MAPW + x):
+                    continue
+                px, py = x, y
+                spot = next(((px + dx * 2, py + dy * 2) for dx, dy in DIRS
+                             if open_line(dx, dy, 2)), None)
+                if spot:
+                    break
+            if spot:
+                break
+        if spot:
+            g.setw("PosX", px)
+            g.setw("PosY", py)
     if not check(spot, "pas de dallage nu ou poser un monstre", fails):
         return
     mx, my = spot
@@ -741,7 +761,7 @@ def trap_test(g, fails):
     if not check(traps, "aucun piege sur cet etage", fails):
         return
     print(f"  {len(traps)} dalles piegees sur l'etage")
-    hp0 = sum(g.hero(i, "hr_Hp") for i in range(4))
+    hp0 = sum(g.hero(i, "hr_Hp") for i in range(NH))
     sprung = spotted = disarmed = 0
     for tx, ty in traps:
         if g.w("GameOver") or spotted + sprung >= 6:
@@ -759,7 +779,7 @@ def trap_test(g, fails):
             continue
         heal(g)                           # on veut voir le piege, pas mourir
         before = (g.w("PosX"), g.w("PosY"))
-        hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+        hpa = sum(g.hero(i, "hr_Hp") for i in range(NH))
         g.key(K_UP)                       # marcher dessus
         par = g.mem.r8(g.addr("MapParam") + ty * MAPW + tx)
         now = grid_of(g)[ty][tx] & 0x0f
@@ -771,7 +791,7 @@ def trap_test(g, fails):
             check(par & 0x80, "le piege reste arme sans etre marque", fails)
             check(not moved, "le piege est repere et le groupe avance quand"
                   " meme", fails)
-            check(sum(g.hero(i, "hr_Hp") for i in range(4)) == hpa,
+            check(sum(g.hero(i, "hr_Hp") for i in range(NH)) == hpa,
                   "un piege repere blesse quand meme", fails)
             g.key(K_SPACE)                # tenter le desamorcage
             if grid_of(g)[ty][tx] & 0x0f != T_TRAP:
@@ -783,11 +803,11 @@ def trap_test(g, fails):
                   fails)
             check(g.mem.r8(g.addr("MapParam") + ty * MAPW + tx) == 0,
                   "un piege detendu garde son parametre", fails)
-        for i in range(4):
+        for i in range(NH):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
                 return
-    hp1 = sum(g.hero(i, "hr_Hp") for i in range(4))
+    hp1 = sum(g.hero(i, "hr_Hp") for i in range(NH))
     print(f"  {spotted} reperes ({disarmed} desamorces), {sprung} declenches, "
           f"PV du groupe {hp0} -> {hp1}")
     check(spotted + sprung > 0, "aucun piege n'a pu etre approche", fails)
@@ -814,10 +834,10 @@ def trap_test(g, fails):
         heal(g)
         par = g.addr("MapParam") + ty * MAPW + tx
         g.mem.w8(par, g.mem.r8(par) | 0x80)     # le groupe sait, et y va
-        hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+        hpa = sum(g.hero(i, "hr_Hp") for i in range(NH))
         g.key(K_UP)
         now = grid_of(g)[ty][tx] & 0x0f
-        hpb = sum(g.hero(i, "hr_Hp") for i in range(4))
+        hpb = sum(g.hero(i, "hr_Hp") for i in range(NH))
         check(now != T_TRAP, "on enjambe une dalle reperee et elle reste"
               " armee", fails)
         check((g.w("PosX"), g.w("PosY")) == (tx, ty),
@@ -855,7 +875,10 @@ def mouse_test(g, fails):
           f"{vstop - vstart} lignes")
 
     g.setw("UiMode", 0)                   # --- la rose des vents
+    g.setw("InCombat", 0)                 # hors combat : en combat, un clic
+    g.setw("GameOver", 0)                 # dans la vue frappe
     g.setw("NeedRedraw", 1)
+    g.key(K_1)
     d0 = g.w("Dir")
     g.click(40, 80)                       # colonne de gauche : tourner
     check(g.w("Dir") == (d0 + 3) % 4, "cliquer a gauche ne tourne pas", fails)
@@ -899,7 +922,7 @@ def mouse_test(g, fails):
 
 def heal(g):
     """Remet le groupe d'aplomb, pour eprouver un piege et non l'usure."""
-    for i in range(4):
+    for i in range(NH):
         base = g.addr("Heroes") + i * HR["hr_SIZEOF"]
         g.mem.w16(base + HR["hr_Hp"], g.hero(i, "hr_HpMax"))
 
@@ -989,7 +1012,7 @@ if __name__ == "__main__":
     print("--- creation du groupe ---")
     phase = create_party(g)
     check(phase == 1, f"phase {phase} apres creation, attendu 1", fails)
-    for i in range(4):
+    for i in range(NH):
         hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
         lvl, wpn = g.hero(i, "hr_Level"), g.hero(i, "hr_Weapon")
         print(f"  {g.name(i):8s} classe {g.hero(i,'hr_Class')} "
@@ -1033,7 +1056,7 @@ if __name__ == "__main__":
         # tombe : on ne compare que si c'est le meme.
         if (g.w("MonX"), g.w("MonY"), g.w("MonKind")) == qui:
             check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
-        for i in range(4):
+        for i in range(NH):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
                 break

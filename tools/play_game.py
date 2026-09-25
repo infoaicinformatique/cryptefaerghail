@@ -275,7 +275,7 @@ def step_to(g, target, log):
 
 def exercise_ui(g, fails, stats):
     """Ouvre la fiche, le sac, le menu de sorts et tape dedans."""
-    for hero in range(4):
+    for hero in range(T.NH):
         g.key(T.K_1 + hero)
         g.key(T.K_C)                      # fiche d'aventure
         if g.w("UiMode") != 1:
@@ -320,7 +320,7 @@ def exercise_ui(g, fails, stats):
 
 def check_state(g, fails):
     """Invariants que rien ne doit briser."""
-    for i in range(4):
+    for i in range(T.NH):
         hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
         if not 0 <= hp <= hpm:
             fails.append(f"heros {i} : PV {hp}/{hpm}")
@@ -360,7 +360,7 @@ def cast_first(g, stats):
 
 def heal_up(g, stats):
     """Entre deux combats : potions et sorts de soin sur les blesses."""
-    for i in range(4):
+    for i in range(T.NH):
         if g.hero(i, "hr_Hp") * 2 > g.hero(i, "hr_HpMax"):
             continue
         g.key(T.K_1 + i)
@@ -387,7 +387,7 @@ def fight(g, fails, stats):
         qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
         guard += 1
         if guard % 4 == 2:
-            g.key(T.K_1 + random.randrange(4))
+            g.key(T.K_1 + random.randrange(T.NH))
             if cast_first(g, stats):
                 stats["rounds"] += 1
                 continue
@@ -399,7 +399,7 @@ def fight(g, fails, stats):
         encore = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
         if g.w("InCombat") and encore == qui and g.sw("MonHp") > hp0:
             fails.append(f"PV du monstre en hausse : {hp0} -> {g.sw('MonHp')}")
-        for i in range(4):
+        for i in range(T.NH):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not 0 <= hp <= hpm:
                 fails.append(f"heros {i} : PV {hp}/{hpm} en combat")
@@ -476,7 +476,7 @@ def main():
           f"achats {stats['achats']}, ventes {stats['ventes']}, "
           f"pieges {stats['pieges']}, registre {stats['registre']}, "
           f"fin {g.w('GameOver')}")
-    for i in range(4):
+    for i in range(T.NH):
         print(f"  {g.name(i):8s} PV {g.hero(i,'hr_Hp')}/{g.hero(i,'hr_HpMax')} "
               f"niv {g.hero(i,'hr_Level')} PX {g.hero(i,'hr_Xp')}")
     for entry in log[-6:]:

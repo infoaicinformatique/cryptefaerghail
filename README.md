@@ -190,7 +190,7 @@ déjà écrite y trouve sa raison.
 | Ce que le jeu fait | Pourquoi la maison le fait |
 |---|---|
 | Le grand registre, au fond du dernier étage | C'est un greffe : la maison tient ses comptes, et la ligne se raye là où elle est écrite |
-| Les quatre noms du groupe y font les quatre colonnes | Une quittance porte quatre signatures |
+| Les six noms du groupe y font les six colonnes | Une quittance porte six signatures |
 | La sortie ne s'ouvre qu'une fois la ligne rayée | On ne sort de Faerghail qu'acquitté |
 | Un marchand scellé dans un mur, un par étage | L'emmurement de garde du dernier greffier : il est devenu une clause de la maison, et un guichet est un endroit, pas un homme |
 | Il rachète à moitié prix | Le taux d'un dépôt refait |
@@ -199,7 +199,7 @@ déjà écrite y trouve sa raison.
 | Des dalles piégées, deux fois plus en bas | Une dette impayée, un ressort tendu ; en bas, les échéances sont plus vieilles |
 | Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
 | Une croix à la craie sur la dalle repérée | La marque des greffiers, sur un compte à examiner |
-| Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
+| Six aventuriers, ni quatre ni cinq | Six colonnes de signature au bas d'une quittance |
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
 
 Dans le jeu, cela se lit à l'accueil — **touche 3**, quatre pages tournées à
@@ -219,9 +219,18 @@ trop déborderait du plan et retomberait en haut du suivant, ce que
 `tools/test_layout.py` va justement chercher, page par page, en regardant la
 bordure de l'écran et la bande laissée entre le texte et le pied de page.
 
+### Le panneau du groupe
+
+Le groupe est passé de quatre à six, et le panneau n'a pas grandi : six blocs
+de vingt-quatre lignes. Chacun porte le nom et le niveau, un visage réduit de
+seize pixels — le grand portrait reste sur la fiche —, les points de vie, et
+deux jauges : la vie, et la magie pour qui en a. Le visage est tiré du
+portrait, chaque pixel prenant la teinte la plus présente de son carré de deux
+sur deux. La sauvegarde change de nombre magique, `FAE5`.
+
 ### Création du groupe
 
-Quatre aventuriers, chacun d'une classe (guerrier, barbare, éclaireur, clerc)
+**Six aventuriers**, comme dans les jeux de rôle à groupe de l'époque, chacun d'une classe (guerrier, barbare, éclaireur, clerc)
 qui décide du dé de vie, de la progression à l'attaque et de l'accès à la
 magie. Les six caractéristiques sont tirées **à 4d6 en gardant les trois
 meilleurs dés**, comme il se doit ; `R` relance, `ENTRÉE` valide. Le nom se
@@ -284,7 +293,7 @@ ouvre le prologue, `ESC` quitte.
 | Flèches | avancer, reculer, tourner (l'escalier montant est sur la case d'arrivée) |
 | Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre ou un livre du greffe, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
-| 1 à 4 | choisir le héros courant |
+| 1 à 6 | choisir le héros courant |
 | A / S / F | attaquer, lancer un sort, fuir (en combat) |
 | E / U / D | équiper, utiliser, jeter (dans le sac) |
 | M / L / P | carte du niveau, grimoire, réglages |
@@ -363,7 +372,7 @@ emporte.
 
 **Le grand registre**, au greffe du dernier étage. Scellé dans un mur comme
 l'échoppe, mais loin du départ : il faut le chercher. `ESPACE` ouvre la page,
-qui porte les quatre noms du groupe — ce sont les quatre colonnes de signature
+qui porte les six noms du groupe — ce sont les six colonnes de signature
 d'une quittance. `ENTRÉE` raye la ligne, une fois pour toutes, et vaut de
 l'expérience à tout le monde.
 

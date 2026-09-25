@@ -37,8 +37,8 @@ L'HISTOIRE
   ont commence a apparaitre a la craie sur les portes de granges, et
   les gens dont on lisait le nom se sont mis a manquer.
 
-  Quatre personnes descendent. Il faut etre quatre : le registre a
-  quatre colonnes de signature au bas de chaque quittance.
+  Six personnes descendent. Il faut etre six : le registre a six
+  colonnes de signature au bas de chaque quittance.
 
   On ne sort de Faerghail qu'acquitte.
 
@@ -59,7 +59,7 @@ L'ACCUEIL
   reste sur l'accueil.
 
 CREATION DU GROUPE
-  Quatre aventuriers, chacun d'une des huit classes :
+  Six aventuriers, chacun d'une des huit classes :
     GUERRIER    de de vie 10, attaque a chaque niveau, epee et cotte
     BARBARE     de de vie 12, tres resistant, hache
     ROUBLARD    agile, la fuite lui reussit bien mieux
@@ -85,16 +85,16 @@ COMMANDES
   L                     grimoire du heros choisi
   P                     reglages du jeu
   S                     lancer un sort (soins, protections) hors combat
-  1 a 4                 choisir le heros courant
+  1 a 6                 choisir le heros courant
   ESC                   fermer un ecran ; deux fois de suite, quitter
 
   En combat :  A attaquer   S lancer un sort   F fuir   I sac
 
 LE PANNEAU DU GROUPE
-  Un bloc par aventurier : son nom en tete, sur toute la largeur, avec
-  son niveau cale a droite ; son portrait dessous ; a cote, ses points
-  de vie et la jauge qui va avec, puis ses emplacements de sorts et
-  leur jauge -- ou, pour qui ne lance pas de sorts, sa classe d'armure.
+  Un bloc par aventurier, six en tout : son nom en tete avec son
+  niveau cale a droite ; son visage dessous ; a cote, ses points de
+  vie, puis deux jauges -- la vie, et la magie pour qui en a. Le grand
+  portrait et la classe d'armure sont sur la fiche (C).
   Le nom du heros choisi passe a l'or. Sous la moitie de ses points de
   vie, le compte et la jauge virent au rouge.
 
@@ -242,9 +242,9 @@ ON REMONTE
 LE GRAND REGISTRE
   Au fond du dernier etage, scelle dans un mur : un pupitre, le livre
   ouvert dessus, la chaine qui le tient, l'encrier et la plume.
-  ESPACE ouvre la page. Elle porte les quatre noms du groupe -- une
-  quittance de la maison a quatre colonnes de signature, c'est pour
-  cela qu'on descend a quatre. ENTREE raye la ligne, une seule fois,
+  ESPACE ouvre la page. Elle porte les six noms du groupe -- une
+  quittance de la maison a six colonnes de signature, c'est pour
+  cela qu'on descend a six. ENTREE raye la ligne, une seule fois,
   et vaut de l'experience a tout le monde.
   Sans cela, l'escalier du dernier etage ne mene nulle part : la porte
   des quittances ne cede qu'a qui a raye sa ligne. Le greffe apparait

@@ -342,7 +342,7 @@ if __name__ == "__main__":
     g.setw("GameOver", 0)
     g.setw("InCombat", 0)
     g.setw("UiMode", 0)
-    for i in range(4):
+    for i in range(T.NH):
         base = g.addr("Heroes") + i * T.HR["hr_SIZEOF"]
         g.mem.w16(base + T.HR["hr_Hp"], g.hero(i, "hr_HpMax"))
     g.setw("Level", 2)

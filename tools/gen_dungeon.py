@@ -1316,6 +1316,31 @@ def crop(p, top, height):
     return out
 
 
+def mini_face(p):
+    """Le portrait reduit de moitie pour le panneau du groupe : six blocs
+    de vingt-quatre lignes n'ont plus la place du grand, qui reste sur
+    la fiche. Chaque pixel prend la teinte la plus presente de son carre
+    de deux sur deux -- des index de palette ne se moyennent pas --, et
+    le bas du buste est rogne."""
+    q = Piece(0, 0, 16, FACE_H)
+    for y in range(FACE_H):
+        for x in range(16):
+            seen = {}
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    sy, sx = 2 * y + dy + FACE_TOP, 2 * x + dx
+                    if 0 <= sy < p.h and 0 <= sx < p.w:
+                        c = p.px[sy][sx]
+                        if c is not None:
+                            seen[c] = seen.get(c, 0) + 1
+            if seen:
+                q.px[y][x] = max(seen, key=lambda c: (seen[c], -c))
+    return q
+
+
+FACE_TOP, FACE_H = 2, 15                 # le visage reduit : tete et cou
+
+
 def make_portrait(cls):
     """Portrait 32x32, un par classe : meme tete eclairee, coiffee,
     casquee ou encapuchonnee selon le metier."""
@@ -1561,6 +1586,9 @@ def build_art():
     # le nom du heros prend toute la largeur du panneau au-dessus de
     # lui, ce qui laisse la place d'ecrire les points sans abreger.
     pieces += [crop(make_portrait(c), PORTRAIT_TOP, PORTRAIT_H)
+               for c in range(NCLASSPORTRAIT)]
+    ART_INDEX["ART_FACE"] = len(pieces)            # le meme, pour le
+    pieces += [mini_face(make_portrait(c))         # panneau des six
                for c in range(NCLASSPORTRAIT)]
     ART_INDEX["ART_ICON"] = len(pieces)
     pieces += [make_icon(k) for k in range(5)]

@@ -57,7 +57,7 @@ def widest(g):
     for slot in range(24):                # sac rempli des noms les plus longs
         g.mem.w8(inv + slot, order[slot % len(order)])
     spells = T.read_equ("hr_Spells", 40)
-    for h in range(4):                    # et tout le monde equipe pareil
+    for h in range(T.NH):                    # et tout le monde equipe pareil
         base = g.addr("Heroes") + h * T.HR["hr_SIZEOF"]
         g.mem.w16(base + T.HR["hr_Weapon"], order[0])
         g.mem.w16(base + spells, 0xffff)  # tous les sorts connus

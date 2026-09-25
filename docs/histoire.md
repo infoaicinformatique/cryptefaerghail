@@ -179,9 +179,9 @@ depuis un siècle, a recommencé à faire ce qu'elle sait faire. Elle recouvre.
 Elle prend ce qu'on lui doit là où elle le trouve, sur les héritiers, faute de
 débiteurs.
 
-Quatre personnes descendent. Il faut être quatre — le registre a quatre
-colonnes de signature au bas de chaque quittance, et rien de ce que fait cette
-maison ne se fait à trois.
+Six personnes descendent. Il faut être six — le registre a six colonnes de
+signature au bas de chaque quittance, et rien de ce que fait cette maison ne se
+fait à cinq.
 
 Ils vont chercher le grand registre au dernier étage, et une plume.
 
@@ -198,7 +198,7 @@ Ils vont chercher le grand registre au dernier étage, et une plume.
 | Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
 | Une croix à la craie sur la dalle repérée | La marque des greffiers, sur un compte à examiner |
 | Trois étages, de plus en plus dangereux | Un étage par génération, la profondeur vaut l'ancienneté |
-| Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
+| Six aventuriers, ni quatre ni cinq | Six colonnes de signature au bas d'une quittance |
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
 | Elle ne s'ouvre qu'une fois la ligne rayée au registre | On ne sort de Faerghail qu'acquitté |
 | La partie se sauve à chaque étage | Le registre est tenu à jour |
@@ -210,9 +210,9 @@ Le grand registre est au fond du dernier étage, scellé dans un mur : un
 pupitre de chêne, le livre ouvert dessus, une chaîne qui le tient au mur —
 le registre ne sort pas —, l'encrier et la plume.
 
-La page porte quatre noms, et ce sont ceux du groupe. Une quittance de la
-maison a quatre colonnes de signature ; c'est pour cela qu'on descend à
-quatre, et c'est là que la raison de ce nombre se voit enfin. Rayer la ligne
+La page porte six noms, et ce sont ceux du groupe. Une quittance de la
+maison a six colonnes de signature ; c'est pour cela qu'on descend à six, et
+c'est là que la raison de ce nombre se voit enfin. Rayer la ligne
 ne demande rien d'autre que d'être là : le greffier a été emmuré *avec le
 registre et de quoi écrire*, et ce de quoi écrire n'a jamais servi depuis.
 

@@ -102,7 +102,8 @@ hr_Spells	= 42			; masque des sorts connus
 hr_AcTemp	= 44			; bonus temporaire de CA
 hr_Slots	= 46			; emplacements de sorts, niveaux 0 a 3
 hr_SIZEOF	= 54
-NHEROES		= 4
+NHEROES		= 6			; six aventuriers, comme au temps des
+					; jeux de roles a groupe
 NAMELEN		= 9
 
 ; --- objets ---
@@ -203,11 +204,11 @@ TITLEH		= 176			; hauteur de l'illustration
 LVSTATE		= 3*MAPBYTES+NSHOP
 LVSTORE		= LEVELS*LVSTATE
 
-; "FAE4" : les trois etages sont maintenant gardes chacun dans son etat,
-; puisqu'on peut remonter. Une sauvegarde plus ancienne n'a plus le bon
-; compte, et le nombre magique la fait refuser plutot que relire de
-; travers.
-SAVEMAGIC	= $46414534		; "FAE4"
+; "FAE5" : le groupe compte six aventuriers et non plus quatre. Une
+; sauvegarde plus ancienne n'a plus le bon compte, et le nombre magique
+; la fait refuser plutot que relire de travers. ("FAE4" avait ajoute
+; l'etat de chacun des trois etages, puisqu'on peut remonter.)
+SAVEMAGIC	= $46414535		; "FAE5"
 SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+6
 UI_VIEW		= 0
 UI_SHEET	= 1
@@ -269,7 +270,8 @@ VIEW_R		= 208
 VIEW_T		= 16
 VIEW_B		= 152
 PANEL_TOP	= 12			; premier bloc d'aventurier
-PANEL_STEP	= 37			; hauteur d'un bloc
+PANEL_STEP	= 24			; hauteur d'un bloc : six dans le panneau
+PANEL_GAUGE	= 64			; longueur des jauges
 PANEL_BOT	= 160
 SPELLROW_Y	= 40			; premiere ligne du menu de sorts
 RIDDLEROW_Y	= 60			; premiere reponse d'une enigme
@@ -2248,14 +2250,23 @@ Redraw:
 ;----------------------------------------------------------------------
 ; DrawParty : portrait, nom, points de vie et de magie
 ;----------------------------------------------------------------------
+;----------------------------------------------------------------------
+; DrawParty : six blocs de vingt-quatre lignes
+;
+; Le groupe est passe de quatre a six, et le panneau n'a pas grandi :
+; chaque bloc perd le grand portrait, qui reste sur la fiche, pour un
+; visage reduit de seize pixels. Le nom et le niveau sur la premiere
+; ligne ; a cote du visage, les points de vie, puis deux jauges -- la
+; vie, et la magie pour qui en a.
+;----------------------------------------------------------------------
 DrawParty:
 	movem.l	d0-d7/a0-a6,-(sp)
 	lea	Heroes,a6
 	moveq	#0,d7
 .heroLoop:
 	move.w	d7,d5
-	mulu.w	#36,d5
-	add.w	#14,d5			; ligne du bloc
+	mulu.w	#PANEL_STEP,d5
+	add.w	#PANEL_TOP,d5		; ligne du bloc
 
 	tst.w	hr_HpMax(a6)
 	bne.s	.exists
@@ -2266,10 +2277,7 @@ DrawParty:
 	bsr	DrawText
 	bra	.heroNext
 .exists:
-	; --- le nom prend toute la largeur du panneau, le niveau se range
-	; a sa droite : plus besoin d'abreger, et le portrait descend
-	; sous cette ligne.
-	move.l	a6,a0
+	move.l	a6,a0			; le nom, puis le niveau cale a droite
 	move.w	#29,d0
 	move.w	d5,d1
 	move.w	#C_TEXT,d2
@@ -2283,12 +2291,12 @@ DrawParty:
 .notSel:
 	bsr	DrawText
 
-	lea	TmpStr,a1		; niveau, cale sur le bord droit
+	lea	TmpStr,a1
 	move.w	hr_Level(a6),d0
 	bsr	StrNum
 	clr.b	(a1)
 	lea	TmpStr,a0
-	move.w	#37,d0
+	move.w	#38,d0
 	cmp.w	#10,hr_Level(a6)
 	blt.s	.lvlOne
 	subq.w	#1,d0			; deux chiffres : une colonne de plus
@@ -2297,17 +2305,17 @@ DrawParty:
 	move.w	#C_PARCHD,d2		; l'or est reserve au heros choisi
 	bsr	DrawText
 
-	move.w	hr_Class(a6),d0		; portrait, sous le nom
-	add.w	#ART_PORTRAIT,d0
+	move.w	hr_Class(a6),d0		; le visage, sous le nom
+	add.w	#ART_FACE,d0
 	moveq	#0,d1
 	move.w	d5,d2
 	addq.w	#8,d2
 	mulu.w	#SCRBPL,d2
-	add.w	#28,d2
+	add.w	#PANEL_X/8,d2
 	bsr	BlitPieceAt
 
-	lea	TmpStr,a1		; points de vie, sans etiquette :
-	move.w	hr_Hp(a6),d0		; la jauge dit deja de quoi il s'agit
+	lea	TmpStr,a1		; les points de vie, a cote
+	move.w	hr_Hp(a6),d0
 	bsr	StrNum
 	cmp.w	#100,hr_HpMax(a6)	; au-dela de cent, le total ne tient
 	bge.s	.hpShort		; pas dans le panneau
@@ -2317,9 +2325,9 @@ DrawParty:
 .hpShort:
 	clr.b	(a1)
 	lea	TmpStr,a0
-	move.w	#32,d0
+	move.w	#30,d0
 	move.w	d5,d1
-	add.w	#10,d1
+	addq.w	#8,d1
 	move.w	#C_HEALTH,d2
 	move.w	hr_Hp(a6),d3
 	add.w	d3,d3
@@ -2330,52 +2338,24 @@ DrawParty:
 	move.w	d2,d6			; on garde la teinte pour la jauge
 	bsr	DrawText
 
-	movem.l	d5-d6,-(sp)		; d5 porte la ligne du bloc
-	move.w	#256,d0
+	movem.l	d5-d6,-(sp)		; la jauge de vie
+	move.w	#PANEL_X+16,d0
 	move.w	d5,d1
-	add.w	#19,d1
-	moveq	#48,d2
+	add.w	#17,d1
+	moveq	#PANEL_GAUGE,d2
 	move.w	hr_Hp(a6),d3
 	move.w	hr_HpMax(a6),d4
 	move.w	d6,d5
 	bsr	DrawGauge
 	movem.l	(sp)+,d5-d6
 
-	tst.w	hr_MpMax(a6)		; la magie, si la classe en a
-	bne.s	.hasMp
-	lea	TmpStr,a1		; sinon la classe d'armure, qui
-	lea	TxtCa,a0		; comblait un blanc pour rien
-	bsr	StrCopy
-	bsr	HeroAc
-	bsr	StrNum
-	clr.b	(a1)
-	lea	TmpStr,a0
-	move.w	#32,d0
-	move.w	d5,d1
-	add.w	#23,d1
-	move.w	#C_TEXTDIM,d2
-	bsr	DrawText
-	bra	.heroNext
-.hasMp:
-	lea	TmpStr,a1
-	move.w	hr_Mp(a6),d0
-	bsr	StrNum
-	move.b	#'/',(a1)+
-	move.w	hr_MpMax(a6),d0
-	bsr	StrNum
-	clr.b	(a1)
-	lea	TmpStr,a0
-	move.w	#32,d0
-	move.w	d5,d1
-	add.w	#23,d1
-	move.w	#C_MANA,d2
-	bsr	DrawText
-
+	tst.w	hr_MpMax(a6)		; et celle de la magie, si la classe
+	beq.s	.heroNext		; en a
 	movem.l	d5-d6,-(sp)
-	move.w	#256,d0
+	move.w	#PANEL_X+16,d0
 	move.w	d5,d1
-	add.w	#32,d1
-	moveq	#48,d2
+	add.w	#21,d1
+	moveq	#PANEL_GAUGE,d2
 	move.w	hr_Mp(a6),d3
 	move.w	hr_MpMax(a6),d4
 	move.w	#C_MANA,d5
@@ -5819,7 +5799,7 @@ DisarmTrap:
 ; Personne n'est revenu depuis un siecle, et la maison recouvre sur les
 ; heritiers -- c'est pour cela que le groupe est descendu.
 ;
-; Le registre montre les quatre noms du groupe, qui sont les quatre
+; Le registre montre les six noms du groupe, qui sont les six
 ; colonnes de signature d'une quittance. Rayer la ligne ouvre la porte
 ; des quittances, tout en bas : sans cela, l'escalier du dernier etage
 ; ne mene nulle part (voir Descend).
@@ -5859,7 +5839,7 @@ DrawLedger:
 	move.w	#C_TEXT,d2
 	bsr	DrawText
 
-	lea	Heroes,a6		; les quatre colonnes de signature
+	lea	Heroes,a6		; les six colonnes de signature
 	moveq	#0,d7
 .nameLoop:
 	lea	TmpStr,a1
@@ -5878,10 +5858,10 @@ DrawLedger:
 	bsr	StrCopy
 	clr.b	(a1)
 	lea	TmpStr,a0
-	moveq	#5,d0
+	moveq	#5,d0			; six colonnes, six lignes
 	move.w	d7,d1
-	mulu.w	#10,d1
-	add.w	#70,d1
+	mulu.w	#9,d1
+	add.w	#68,d1
 	move.w	#C_TEXT,d2
 	tst.w	Acquitted
 	beq.s	.notPaid
@@ -5897,24 +5877,24 @@ DrawLedger:
 	bne.s	.struck
 	lea	TxtLedgerQuill,a0
 	moveq	#3,d0
-	move.w	#118,d1
+	move.w	#124,d1
 	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	lea	TxtLedgerAsk,a0
 	moveq	#3,d0
-	move.w	#132,d1
+	move.w	#138,d1
 	move.w	#C_HILITE,d2
 	bsr	DrawText
 	bra.s	.done
 .struck:
 	lea	TxtLedgerDone,a0
 	moveq	#3,d0
-	move.w	#118,d1
+	move.w	#124,d1
 	move.w	#C_HILITE,d2
 	bsr	DrawText
 	lea	TxtLedgerFree,a0
 	moveq	#3,d0
-	move.w	#132,d1
+	move.w	#138,d1
 	move.w	#C_TEXT,d2
 	bsr	DrawText
 .done:
@@ -6815,8 +6795,11 @@ MonsterAttack:
 	bsr	HeroPtr
 	tst.w	hr_Hp(a6)
 	bne.s	.found
-	addq.w	#1,d5
-	and.w	#3,d5
+	addq.w	#1,d5		; le suivant, en bouclant sur les six
+	cmp.w	#NHEROES,d5
+	blo.s	.wrapOk
+	moveq	#0,d5
+.wrapOk:
 	dbf	d6,.find
 	bsr	PartyWiped
 	bra	.done
@@ -8063,8 +8046,8 @@ TxtPr3L07:	dc.b	"CRAIE SUR LES PORTES DE GRANGES.",0
 TxtPr3L08:	dc.b	"LES GENS DONT ON LISAIT LE NOM SE",0
 TxtPr3L09:	dc.b	"SONT MIS A MANQUER.",0
 TxtPr3L10:	dc.b	"",0
-TxtPr3L11:	dc.b	"QUATRE PERSONNES DESCENDENT : LE",0
-TxtPr3L12:	dc.b	"REGISTRE A QUATRE COLONNES DE",0
+TxtPr3L11:	dc.b	"SIX PERSONNES DESCENDENT : LE",0
+TxtPr3L12:	dc.b	"REGISTRE A SIX COLONNES DE",0
 TxtPr3L13:	dc.b	"SIGNATURE AU BAS D'UNE QUITTANCE.",0
 TxtPr3L14:	dc.b	"",0
 TxtPr3L15:	dc.b	"*ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
@@ -8158,7 +8141,7 @@ TxtIntro:	dc.b	"ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
 TxtFloor0:	dc.b	"LE GREFFE. LES GAGES SONT RÉCENTS.",0
 TxtFloor1:	dc.b	"PLUS BAS : LES VIEILLES ÉCHÉANCES.",0
 TxtFloor2:	dc.b	"LE FOND. PLUS PERSONNE N'A PAYÉ.",0
-TxtCreate1:	dc.b	"CRÉEZ VOS QUATRE AVENTURIERS.",0
+TxtCreate1:	dc.b	"CRÉEZ VOS SIX AVENTURIERS.",0
 TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
 TxtCreateTitle:	dc.b	"CRÉATION DU GROUPE",0
 TxtEmptySlot:	dc.b	"-----",0
@@ -8368,7 +8351,7 @@ TxtKindBless:	dc.b	"BÉNÉDICTION +",0
 TxtSaveFort:	dc.b	"VIGUEUR",0
 TxtSaveRef:	dc.b	"RÉFLEXES",0
 TxtSaveWill:	dc.b	"VOLONTÉ",0
-TxtHelpBook:	dc.b	"FLÈCHES  1-4 HÉROS  L OU ESC FERMER",0
+TxtHelpBook:	dc.b	"FLÈCHES  1-6 HÉROS  L OU ESC FERMER",0
 TxtMapTitle:	dc.b	"CARTE NIVEAU ",0
 TxtDash2:	dc.b	" - ",0
 TxtNord:	dc.b	"NORD",0
@@ -8386,9 +8369,9 @@ TxtHelpMap:	dc.b	"M OU ESC POUR REFERMER LA CARTE",0
 TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
 TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
-TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-4",0
+TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-6",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
-TxtHelpSheet:	dc.b	"1-4 HÉROS  I SAC  L LIVRE  P RÉGLAGES",0
+TxtHelpSheet:	dc.b	"1-6 HÉROS  I SAC  L LIVRE  P RÉGLAGES",0
 TxtHelpShop:	dc.b	"FLÈCHES  TAB COTE  ENTRÉE  ESC SORT",0
 	even
 

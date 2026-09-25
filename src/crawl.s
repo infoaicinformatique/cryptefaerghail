@@ -45,6 +45,13 @@ T_SHOP		= 9			; echoppe scellee dans un mur
 T_TRAP		= 10			; dallage piege, invisible au depart
 T_LEDGER	= 11			; le grand registre, scelle au greffe
 T_STAIRSUP	= 12			; l'escalier qui remonte d'un etage
+T_ARCHIVE	= 13			; un rayonnage du greffe
+
+; MapParam d'un rayonnage : les sept bits bas donnent le livre qu'on y
+; lit ($7f pour un rayonnage muet), le bit 7 dit que le groupe l'a lu.
+ARCH_READ	= 7			; numero de bit
+ARCH_MUTE	= $7f
+NARCHIVES	= 3
 
 ; MapParam d'un piege : le quartet bas donne l'espece, le bit 7 dit que
 ; le groupe l'a repere. Un piege desamorce redevient du dallage.
@@ -212,6 +219,7 @@ UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
 UI_LEDGER	= 9			; le grand registre
+UI_ARCHIVE	= 10			; un livre des rayonnages du greffe
 
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
@@ -1685,6 +1693,8 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_LEDGER,d2
 	beq.s	.yes
+	cmp.w	#T_ARCHIVE,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1736,7 +1746,7 @@ DrawScene:
 	bra	.done
 .inGame:
 	move.w	UiMode,d0
-	beq.s	.world
+	beq	.world
 	cmp.w	#UI_SHEET,d0
 	bne.s	.notSheet
 	bsr	DrawSheet
@@ -1777,6 +1787,11 @@ DrawScene:
 	bsr	DrawLedger
 	bra	.done
 .notLedger:
+	cmp.w	#UI_ARCHIVE,d0
+	bne.s	.notArchive
+	bsr	DrawArchive
+	bra	.done
+.notArchive:
 	bsr	DrawSpellMenu
 	bra	.done
 
@@ -1825,6 +1840,14 @@ DrawScene:
 	beq.s	.asDoor
 	cmp.w	#T_RUNE,d4
 	beq.s	.asDoor
+	cmp.w	#T_ARCHIVE,d4		; un rayonnage, a toute distance
+	bne.s	.notShelf
+	cmp.w	#4,d7
+	bge.s	.stone
+	move.w	d7,d0
+	add.w	#ART_ARCHIVE-1,d0
+	bra.s	.blitFront
+.notShelf:
 	cmp.w	#T_GATE,d4
 	bne.s	.stone
 	cmp.w	#4,d7			; herse : barreaux, le couloir se voit
@@ -1848,8 +1871,18 @@ DrawScene:
 .blitFront:
 	moveq	#0,d1
 	bsr	BlitPiece
-	cmp.w	#1,d7			; les details ne se voient que de pres
-	bne.s	.noFront
+	cmp.w	#T_LEDGER,d4		; le pupitre se voit du fond du greffe
+	bne.s	.notLedgerArt
+	cmp.w	#4,d7
+	bge	.noFront
+	move.w	d7,d0
+	add.w	#ART_LEDGER-1,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	bra	.noFront
+.notLedgerArt:
+	cmp.w	#1,d7			; les autres details, de pres seulement
+	bne	.noFront
 	cmp.w	#T_NICHE,d4
 	bne.s	.notNicheArt
 	moveq	#ART_NICHE,d0
@@ -1864,13 +1897,6 @@ DrawScene:
 	bsr	BlitPiece
 	bra.s	.noFront
 .notShopArt:
-	cmp.w	#T_LEDGER,d4		; le pupitre du greffe
-	bne.s	.notLedgerArt
-	moveq	#ART_LEDGER,d0
-	moveq	#0,d1
-	bsr	BlitPiece
-	bra.s	.noFront
-.notLedgerArt:
 	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
 	bne.s	.noFront
 	move.w	d7,d2
@@ -1923,7 +1949,19 @@ DrawScene:
 	bsr	MapCell
 	bsr	IsSolid
 	tst.w	d2
-	beq.s	.open
+	beq	.open
+	and.w	#$000f,d0		; un rayonnage de biais : les
+	cmp.w	#T_ARCHIVE,d0		; registres courent le long du mur
+	bne.s	.stoneSide
+	move.w	d6,d0
+	tst.w	d5
+	bmi.s	.shelfLeft
+	add.w	#ART_ARCHR,d0
+	bra.s	.blitSide
+.shelfLeft:
+	add.w	#ART_ARCHL,d0
+	bra.s	.blitSide
+.stoneSide:
 	move.w	d6,d0
 	tst.w	d5
 	bmi.s	.leftWall
@@ -1944,6 +1982,18 @@ DrawScene:
 	bsr	IsSolid
 	tst.w	d2
 	beq.s	.noBack
+	and.w	#$000f,d0		; des registres au fond du passage
+	cmp.w	#T_ARCHIVE,d0
+	bne.s	.stoneBack
+	move.w	d6,d0
+	tst.w	d5
+	bmi.s	.shelfBackL
+	add.w	#ART_ARCHFR,d0
+	bra.s	.blitBack
+.shelfBackL:
+	add.w	#ART_ARCHFL,d0
+	bra.s	.blitBack
+.stoneBack:
 	move.w	d6,d0
 	tst.w	d5
 	bmi.s	.leftBack
@@ -1965,6 +2015,19 @@ DrawScene:
 	bsr	IsSolid
 	tst.w	d2
 	beq.s	.sideNext
+	and.w	#$000f,d0		; le mur d'en face du passage peut
+	cmp.w	#T_ARCHIVE,d0		; etre un rayonnage : le greffe vu
+	bne.s	.stoneOuter		; de son entree
+	move.w	d6,d0
+	subq.w	#2,d0
+	tst.w	d5
+	bmi.s	.shelfOuterL
+	add.w	#ART_ARCHOR,d0
+	bra.s	.blitOuter
+.shelfOuterL:
+	add.w	#ART_ARCHOL,d0
+	bra.s	.blitOuter
+.stoneOuter:
 	move.w	d6,d0
 	subq.w	#2,d0
 	tst.w	d5
@@ -2245,7 +2308,7 @@ DrawStatus:
 	bsr	DrawText
 
 	move.w	UiMode,d0
-	beq.s	.helpView
+	beq	.helpView
 	cmp.w	#UI_INV,d0
 	bne.s	.helpSpell
 	lea	TxtHelpInv,a0
@@ -2282,8 +2345,13 @@ DrawStatus:
 	bra	.help
 .helpLedger:
 	cmp.w	#UI_LEDGER,d0
-	bne.s	.helpOther
+	bne.s	.helpArchive
 	lea	TxtHelpLedger,a0
+	bra	.help
+.helpArchive:
+	cmp.w	#UI_ARCHIVE,d0
+	bne.s	.helpOther
+	lea	TxtHelpArchive,a0
 	bra	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
@@ -4335,6 +4403,8 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.shop
 	cmp.w	#T_LEDGER,d0
 	beq	.ledger
+	cmp.w	#T_ARCHIVE,d0
+	beq	.archive
 	cmp.w	#T_TRAP,d0
 	beq	.trap
 
@@ -4388,6 +4458,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bra	.redraw
 .ledger:
 	lea	TxtLedgerSeen,a0
+	bsr	LogAdd
+	bra	.redraw
+.archive:
+	lea	TxtArchiveSeen,a0
 	bsr	LogAdd
 	bra	.redraw
 
@@ -4531,6 +4605,8 @@ DoAction:
 	beq	.shopOpen
 	cmp.w	#T_LEDGER,d0
 	beq	.ledgerOpen
+	cmp.w	#T_ARCHIVE,d0
+	beq	.archiveOpen
 	cmp.w	#T_TRAP,d0
 	beq	.trapDisarm
 	lea	TxtNothing,a0
@@ -4552,6 +4628,11 @@ DoAction:
 	bsr	SfxPlay
 	lea	TxtLedgerOpen,a0
 	bsr	LogAdd
+	bra	.done
+.archiveOpen:
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	OpenArchive
 	bra	.done
 .trapDisarm:
 	move.w	d4,d0
@@ -4733,7 +4814,7 @@ MapColour:
 	cmp.w	#T_LOCKED,d2
 	bne.s	.notLocked
 	move.w	#C_BLOOD+3,d0		; porte verrouillee
-	bra.s	.done
+	bra	.done
 .notLocked:
 	cmp.w	#T_RUNE,d2
 	bne.s	.notRune
@@ -4760,6 +4841,11 @@ MapColour:
 	move.w	#C_PARCH,d0		; le greffe : on y revient
 	bra.s	.done
 .notLedgerMap:
+	cmp.w	#T_ARCHIVE,d2
+	bne.s	.notShelfMap
+	move.w	#C_PARCHD,d0		; ses rayonnages, un ton en dessous
+	bra.s	.done
+.notShelfMap:
 	cmp.w	#T_STAIRSUP,d2
 	bne.s	.notUpMap
 	move.w	#C_BONE+N_BONE-2,d0	; l'escalier qui remonte
@@ -5723,6 +5809,115 @@ LedgerKey:
 	dbf	d6,.xpLoop
 .done:
 	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Les rayonnages du greffe
+;
+; Le greffe n'est pas qu'un pupitre : c'est la salle ou la maison range
+; ce qu'elle sait. Trois de ses rayonnages portent un livre qu'on peut
+; ouvrir -- les dalles, les portes a question, le guichet -- et disent
+; ce que le groupe n'a fait jusque-la que subir. Les autres sont muets :
+; des comptes, des noms, rien qui le regarde.
+;
+; La premiere lecture de chaque livre vaut de l'experience a tous ; le
+; bit ARCH_READ de la case le retient, et part avec l'etage dans la
+; sauvegarde.
+;----------------------------------------------------------------------
+ARCH_XP		= 25			; ce que vaut une premiere lecture
+ARCHROWS	= 10			; lignes d'un livre, sous sa cote
+
+OpenArchive:				; d0 = x, d1 = y du rayonnage
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	d0,d4
+	move.w	d1,d5
+	bsr	MapGetParam
+	move.w	d0,d3
+	and.w	#ARCH_MUTE,d0
+	cmp.w	#NARCHIVES,d0
+	blo.s	.book
+	lea	TxtArchiveMute,a0	; un rayonnage muet
+	bsr	LogAdd
+	bra	.done
+.book:
+	move.w	d0,ArchiveBook
+	move.w	#UI_ARCHIVE,UiMode
+	moveq	#SFX_CHEST,d0
+	bsr	SfxPlay
+	lea	TxtArchiveOpen,a0
+	bsr	LogAdd
+	btst	#ARCH_READ,d3		; deja lu : la page, sans plus
+	bne.s	.done
+	move.w	d3,d2
+	bset	#ARCH_READ,d2
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapSetParam
+	lea	TxtArchiveLearn,a0
+	bsr	LogAdd
+	lea	Heroes,a6		; lire, c'est comprendre ou l'on est
+	moveq	#NHEROES-1,d6
+.xpLoop:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpNext
+	add.w	#ARCH_XP,hr_Xp(a6)
+	bsr	CheckLevel
+.xpNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.xpLoop
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; DrawArchive : le livre ouvert. Un titre, la cote du livre, puis ses
+; lignes ; une ligne marquee d'une etoile passe a l'or, comme au
+; prologue.
+DrawArchive:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+
+	move.w	ArchiveBook,d0
+	lsl.w	#2,d0
+	lea	ArchiveBooks,a0
+	move.l	(a0,d0.w),a3		; titre, cote, puis les lignes
+	move.l	(a3)+,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	move.l	(a3)+,a0
+	moveq	#3,d0
+	moveq	#32,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	moveq	#0,d7
+.lineLoop:
+	cmp.w	#ARCHROWS,d7		; le panneau s'arrete la
+	bge.s	.done
+	move.l	(a3)+,d0
+	beq.s	.done
+	move.l	d0,a0
+	move.w	#C_TEXT,d2
+	cmp.b	#$2a,(a0)		; l'etoile : la ligne qui reste
+	bne.s	.plain
+	addq.l	#1,a0
+	move.w	#C_HILITE,d2
+.plain:
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#10,d1
+	add.w	#46,d1
+	bsr	DrawText
+	addq.w	#1,d7
+	bra.s	.lineLoop
+.done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -7670,6 +7865,60 @@ TxtPr3L14:	dc.b	"",0
 TxtPr3L15:	dc.b	"*ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
 	even
 
+; Les trois livres du greffe : titre, cote, lignes, long nul.
+ArchiveBooks:
+	dc.l	ArchBook0,ArchBook1,ArchBook2
+ArchBook0:
+	dc.l	TxtAr0T,TxtAr0C
+	dc.l	TxtAr0L0,TxtAr0L1,TxtAr0L2,TxtAr0L3,TxtAr0L4
+	dc.l	TxtAr0L5,TxtAr0L6,TxtAr0L7,TxtAr0L8,TxtAr0L9,0
+ArchBook1:
+	dc.l	TxtAr1T,TxtAr1C
+	dc.l	TxtAr1L0,TxtAr1L1,TxtAr1L2,TxtAr1L3,TxtAr1L4
+	dc.l	TxtAr1L5,TxtAr1L6,TxtAr1L7,TxtAr1L8,TxtAr1L9,0
+ArchBook2:
+	dc.l	TxtAr2T,TxtAr2C
+	dc.l	TxtAr2L0,TxtAr2L1,TxtAr2L2,TxtAr2L3,TxtAr2L4
+	dc.l	TxtAr2L5,TxtAr2L6,TxtAr2L7,TxtAr2L8,TxtAr2L9,0
+
+TxtAr0T:	dc.b	"LES RECOUVREMENTS",0
+TxtAr0C:	dc.b	"LIVRE DES DALLES",0
+TxtAr0L0:	dc.b	"À CHAQUE LIGNE OUVERTE",0
+TxtAr0L1:	dc.b	"SA DALLE, ET SOUS LA",0
+TxtAr0L2:	dc.b	"DALLE UN RESSORT TENDU",0
+TxtAr0L3:	dc.b	"COMME UN PIÈGE À LOUP.",0
+TxtAr0L4:	dc.b	"",0
+TxtAr0L5:	dc.b	"UN RESSORT NE SERT",0
+TxtAr0L6:	dc.b	"QU'UNE FOIS : LA DETTE",0
+TxtAr0L7:	dc.b	"EST SOLDÉE, LA PIERRE",0
+TxtAr0L8:	dc.b	"REDEVIENT PIERRE.",0
+TxtAr0L9:	dc.b	"*LA CROIX : À EXAMINER.",0
+TxtAr1T:	dc.b	"LES PASSAGES",0
+TxtAr1C:	dc.b	"LIVRE DES QUESTIONS",0
+TxtAr1L0:	dc.b	"UNE CLÉ SE VOLE. UNE",0
+TxtAr1L1:	dc.b	"RÉPONSE, ON NE LA SAIT",0
+TxtAr1L2:	dc.b	"QUE SI ON VOUS L'A",0
+TxtAr1L3:	dc.b	"DONNÉE EN VOUS",0
+TxtAr1L4:	dc.b	"INSCRIVANT.",0
+TxtAr1L5:	dc.b	"",0
+TxtAr1L6:	dc.b	"TROIS RÉPONSES, PAS",0
+TxtAr1L7:	dc.b	"UNE DE PLUS : LE LIVRE",0
+TxtAr1L8:	dc.b	"A TROIS COLONNES.",0
+TxtAr1L9:	dc.b	"*LA RUNE VOUS INSCRIT.",0
+TxtAr2T:	dc.b	"LE GUICHET",0
+TxtAr2C:	dc.b	"EMMUREMENT DE GARDE",0
+TxtAr2L0:	dc.b	"OSSIAN VAUGRIS,",0
+TxtAr2L1:	dc.b	"DERNIER GREFFIER, SANS",0
+TxtAr2L2:	dc.b	"HÉRITIER, DEMANDE",0
+TxtAr2L3:	dc.b	"L'EMMUREMENT. SIGNÉ",0
+TxtAr2L4:	dc.b	"DE SA MAIN.",0
+TxtAr2L5:	dc.b	"",0
+TxtAr2L6:	dc.b	"IL RENDRA CONTRE OR CE",0
+TxtAr2L7:	dc.b	"QUE LA MAISON DÉTIENT,",0
+TxtAr2L8:	dc.b	"ET RACHÈTE À MOITIÉ :",0
+TxtAr2L9:	dc.b	"*LE TAUX D'UN DÉPÔT.",0
+	even
+
 FloorLore:				; l'inscription de chaque etage
 	dc.l	TxtFloor0,TxtFloor1,TxtFloor2
 
@@ -7774,6 +8023,11 @@ TxtLedgerOut:	dc.b	"LA MAISON NE VOUS DOIT PLUS RIEN.",0
 TxtDoorHeld:	dc.b	"L'ESCALIER DESCEND SUR UNE PORTE.",0
 TxtDoorHeld2:	dc.b	"ELLE NE CÈDE PAS : RIEN N'EST RAYÉ.",0
 TxtHelpLedger:	dc.b	"ENTRÉE RAYE LA LIGNE   ESC REFERME",0
+TxtHelpArchive:	dc.b	"ESC REFERME LE LIVRE",0
+TxtArchiveSeen:	dc.b	"DES REGISTRES, DU SOL À LA VOÛTE.",0
+TxtArchiveOpen:	dc.b	"VOUS OUVREZ UN LIVRE DU GREFFE.",0
+TxtArchiveLearn: dc.b	"LE GROUPE COMPREND MIEUX LA MAISON.",0
+TxtArchiveMute:	dc.b	"DES COMPTES. RIEN QUI VOUS REGARDE.",0
 TxtShopSeen:	dc.b	"UNE ÉCHOPPE ! ESPACE POUR ENTRER.",0
 TxtShopHello:	dc.b	"UNE VOIX DERRIÈRE LE MUR : BIENVENUE",0
 TxtShopTitle:	dc.b	"ÉCHOPPE",0
@@ -7984,6 +8238,7 @@ Level:		ds.w	1
 Gold:		ds.w	1
 KeyCount:	ds.w	1
 Acquitted:	ds.w	1		; la ligne du registre est rayee
+ArchiveBook:	ds.w	1		; le livre du greffe ouvert
 InCombat:	ds.w	1
 MonKind:	ds.w	1
 MonArt:		ds.w	1

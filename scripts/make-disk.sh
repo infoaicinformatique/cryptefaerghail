@@ -1,12 +1,22 @@
 #!/bin/sh
-# Fabrique dist/Faerghail.adf : une disquette 880 Ko OFS amorcable
-# contenant le jeu, ce qui tient de son source, et le Lisezmoi.
+# Fabrique les deux disquettes 880 Ko OFS du jeu :
+#
+#   dist/Faerghail1.adf   amorcable : le jeu, son Lisezmoi, son
+#                         Startup-Sequence
+#   dist/Faerghail2.adf   le source : tout ce qui s'assemble, ecrit a la
+#                         main ou genere, et les donnees qui tiennent
+#
+# Une seule disquette ne suffisait plus : a huit bitplanes le jeu pese a
+# lui seul plus d'un demi-megaoctet, et il fallait choisir entre le
+# source et les decors. Le jeu a maintenant sa disquette a lui, et la
+# place d'y grandir.
 #
 # Necessite xdftool (paquet amitools) :  pip install amitools
 set -e
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-ADF="$ROOT/dist/Faerghail.adf"
+ADF1="$ROOT/dist/Faerghail1.adf"
+ADF2="$ROOT/dist/Faerghail2.adf"
 STAGE="$ROOT/build/disk"       # copie de travail ; disk/ ne contient que
                               # les fichiers ecrits a la main
 
@@ -25,25 +35,27 @@ cp "$ROOT"/src/*.s "$ROOT"/src/*.i "$STAGE/Src/"
 cp "$ROOT/data/dgnart.bin" "$ROOT/data/dgnmap.bin" "$ROOT/data/sfx.bin" \
 	"$ROOT/data/crawlmus.mod" "$ROOT/data/titlemus.mod" "$STAGE/Src/data/"
 
-rm -f "$ADF"
-xdftool "$ADF" create + format "Faerghail" \
+# --- disquette 1 : le jeu -------------------------------------------------
+rm -f "$ADF1"
+xdftool "$ADF1" create + format "Faerghail" \
 	+ write "$STAGE/AGACrawl" \
 	+ write "$STAGE/Lisezmoi.txt" \
 	+ makedir S \
-	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence \
-	+ makedir Src
+	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence
+xdftool "$ADF1" boot install			# bootblock DOS0 : la disquette demarre
 
-# Il ne reste plus la place de tout mettre. A huit bitplanes le jeu pese
-# a lui seul plus d'un demi-megaoctet -- six cent mille octets une fois
-# sur la disquette, ou un bloc de 512 n'en porte que 488 -- sur huit
-# cent quatre-vingt.
-#
-# On ecrit ce qui rentre, dans l'ordre ci-dessous, et l'on dit ce qu'on
-# laisse ; l'archive LhA, elle, porte tout. Les tables generees ne sont
-# sur aucune des deux : surfgrad.i pese a lui seul quatre-vingt mille
-# octets, et les generateurs Python les refont en une seconde.
+# --- disquette 2 : le source ---------------------------------------------
+# Le source tient tout entier, tables generees comprises : on peut
+# reassembler sur l'Amiga. Les decors, eux, pesent plus d'un
+# demi-megaoctet a eux seuls ; on ecrit ce qui rentre, dans l'ordre
+# ci-dessous, et l'on dit ce qu'on laisse. L'archive LhA porte tout.
+rm -f "$ADF2"
+xdftool "$ADF2" create + format "Faerghail2" \
+	+ write "$STAGE/Lisezmoi.txt" \
+	+ makedir Src + makedir Src/data
+
 blocks_free() {
-	xdftool "$ADF" info | awk '/^free:/ { print $2 }'
+	xdftool "$ADF2" info | awk '/^free:/ { print $2 }'
 }
 
 blocks_for() {			# blocs OFS d'un fichier : donnees, extensions,
@@ -53,17 +65,33 @@ data = max(1, math.ceil(int(sys.argv[1]) / 488))
 print(data + max(0, math.ceil(data / 72) - 1) + 1)' "$1"
 }
 
-for f in hardware.i vblank.i ciatimer.i ptreplay.i crawl.s; do
-	size=$(wc -c < "$STAGE/Src/$f" | tr -d ' ')
+put() {				# $1 = fichier de la copie, $2 = chemin Amiga
+	size=$(wc -c < "$1" | tr -d ' ')
 	if [ "$(blocks_for "$size")" -le "$(blocks_free)" ]; then
-		xdftool "$ADF" write "$STAGE/Src/$f" "Src/$f"
+		xdftool "$ADF2" write "$1" "$2"
 	else
-		echo "    Src/$f reste dans l'archive LhA (pas la place)"
+		echo "    $2 reste dans l'archive LhA (pas la place)"
 	fi
+}
+
+for f in crawl.s hardware.i vblank.i ciatimer.i ptreplay.i; do
+	put "$STAGE/Src/$f" "Src/$f"
 done
-xdftool "$ADF" boot install			# bootblock DOS0 : la disquette demarre
+for f in "$STAGE"/Src/*.i; do			# les tables generees
+	n=$(basename "$f")
+	case " hardware.i vblank.i ciatimer.i ptreplay.i " in
+	*" $n "*) ;;
+	*) put "$f" "Src/$n" ;;
+	esac
+done
+for f in dgnmap.bin sfx.bin titlemus.mod crawlmus.mod dgnart.bin; do
+	put "$STAGE/Src/data/$f" "Src/data/$f"
+done
 
 python3 "$ROOT/tools/make_lha.py"		# meme contenu, en archive LhA
 
-echo "==> $ADF"
-xdftool "$ADF" boot show | grep -E "dos_type|bootable"
+for adf in "$ADF1" "$ADF2"; do
+	echo "==> $adf"
+	xdftool "$adf" info | awk '/^used:|^free:/'
+done
+xdftool "$ADF1" boot show | grep -E "dos_type|bootable"

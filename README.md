@@ -20,7 +20,7 @@ bas.)*
 | Machine | Amiga 1200 (chipset AGA), 68020+ |
 | Système | AmigaOS 3.0 / 3.1 et supérieur (`graphics.library` V39) |
 | Écran | PAL lores 320×256 |
-| Mémoire | environ 700 Ko de Chip : deux tampons d'écran à huit bitplanes, les décors, et les deux modules |
+| Mémoire | environ 800 Ko de Chip : deux tampons d'écran à huit bitplanes, les décors, et les deux modules |
 | Audio | 4 voies Paula, module ProTracker cadencé par le timer A du CIA-B |
 
 ## Compilation
@@ -51,27 +51,34 @@ python3 tools/dungeon_preview.py 0 3 1 1 combat.png 2   # ecran de combat
 make wav           # rejoue les modules en Python et écrit deux WAV
 ```
 
-## Disquette prête à l'emploi
+## Deux disquettes prêtes à l'emploi
 
-`dist/Faerghail.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
-de Kickstart 1.3 à 3.x) contenant le jeu, tout son source écrit à la main, un
-`Lisezmoi.txt` et un `S/Startup-Sequence` qui le lance au démarrage.
+Le jeu tient sur **deux disquettes 880 Ko OFS** (DOS0, lisibles de Kickstart
+1.3 à 3.x) :
 
-Elle est pleine à 98 % : à huit bitplanes le jeu pèse à lui seul plus d'un
-demi-mégaoctet — six cent mille octets une fois sur la disquette, où un bloc de
-512 n'en porte que 488 — sur huit cent quatre-vingt. Le script écrit donc ce
-qui rentre, dans un ordre fixé, et dit ce qu'il laisse.
+| | Contenu |
+|---|---|
+| `dist/Faerghail1.adf` | **amorçable** : le jeu, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui le lance au démarrage |
+| `dist/Faerghail2.adf` | le source : tout ce qui s'assemble, écrit à la main ou généré, et les données qui tiennent à côté |
 
-Ce qui n'y est pas : les **tables générées**, dont `surfgrad.i` qui pèse à lui
-seul quatre-vingt mille octets. Elles vivent dans **`dist/Faerghail.lha`**, qui
-porte tout, et les générateurs Python les refont en une seconde.
+Une seule ne suffisait plus. À huit bitplanes le jeu pèse à lui seul plus d'un
+demi-mégaoctet, et il fallait choisir entre le source et les décors : la
+disquette du jeu était pleine à 98 %. Il a maintenant la sienne, remplie à 87 %,
+et plus de cent Ko de place pour des images plus riches.
+
+La seconde porte `crawl.s`, les fichiers dont il dépend, toutes les tables
+générées, les bruitages, les deux modules et les cartes. Seuls les décors
+(`dgnart.bin`, plus d'un demi-mégaoctet à eux seuls) n'y tiennent pas : ils
+vivent dans **`dist/Faerghail.lha`**, qui porte tout, et les générateurs Python
+les refont en quelques secondes.
 
 ```sh
-make disk          # refabrique les deux -- nécessite pip install amitools
+make disk          # refabrique les trois -- nécessite pip install amitools
 ```
 
-- **Émulateur** : montez l'ADF dans DF0: et démarrez dessus.
-- **Machine réelle** : écrivez l'ADF sur une disquette (ADF Blitzer,
+- **Émulateur** : montez `Faerghail1.adf` dans DF0: et démarrez dessus ;
+  `Faerghail2.adf` dans DF1: si vous voulez lire le source.
+- **Machine réelle** : écrivez les ADF sur deux disquettes (ADF Blitzer,
   X-Copy + Amiga Explorer, Greaseweazle…), ou copiez le `.lha` sur le disque
   dur et faites `lha x Faerghail.lha`.
 
@@ -124,7 +131,7 @@ tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
 tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
 docs/histoire.md     le fond de fiction : ce qu'était Faerghail
 disk/                fichiers écrits à la main pour la disquette
-scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
+scripts/make-disk.sh fabrique les deux ADF (jeu amorçable, source) et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
 ```
 
@@ -244,7 +251,7 @@ ouvre le prologue, `ESC` quitte.
 | Touche | Effet |
 |---|---|
 | Flèches | avancer, reculer, tourner (l'escalier montant est sur la case d'arrivée) |
-| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre, désamorcer un piège |
+| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre ou un livre du greffe, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
 | 1 à 4 | choisir le héros courant |
 | A / S / F | attaquer, lancer un sort, fuir (en combat) |
@@ -299,10 +306,42 @@ qui porte les quatre noms du groupe — ce sont les quatre colonnes de signature
 d'une quittance. `ENTRÉE` raye la ligne, une fois pour toutes, et vaut de
 l'expérience à tout le monde.
 
-Le pupitre donne sur une **petite salle** creusée devant lui : le générateur
-n'ouvre que du mur nu, et jamais au contact d'un levier ou d'une herse — ceux
--là comptent sur le tracé pour couper la route, et une salle percée à côté
-leur ferait un contournement.
+**Le greffe** est une vraie salle. Le pupitre était scellé dans le premier mur
+venu, et la « salle » creusée tout autour de la case d'où on le lisait : il se
+retrouvait souvent en pilier, du couloir des deux côtés. Le générateur cherche
+maintenant un mur dont les deux voisins le long du fond sont du mur aussi, y
+scelle le pupitre, et creuse devant lui une salle de trois sur trois.
+
+Une salle percée dans un labyrinthe relie tous les couloirs qu'elle touche :
+ce serait un carrefour, pas une salle, et un passage de service autour des
+serrures et des herses. Le générateur essaie donc chaque emplacement de la
+moitié du fond de l'étage, mure toute ouverture dont le reste de l'étage peut
+se passer — sans rien couper, ni relier deux zones qu'une serrure, une herse
+ou une porte à runes séparait —, et garde celui qui laisse le moins d'entrées.
+Sur le troisième étage, il n'en reste qu'une : une porte. Et le chemin de la
+sortie passe par le greffe.
+
+Ses murs sont des **rayonnages** : quatre planches de chêne et, dessus, les
+registres des générations passées, reliures de cuir de toutes les teintes,
+une étiquette de parchemin pour la cote, un filet d'or sur les plus anciens,
+une pile couchée là où la planche manquait de place. La texture est définie
+en coordonnées monde, comme la pierre et les portes : le même meuble se
+dessine de face à un, deux ou trois pas, de biais sur les murs latéraux, au
+fond d'un passage et sur le mur extérieur — la salle se lit comme un greffe
+dès sa porte. Le pupitre, lui, se voit maintenant à trois pas, réduit vers le
+point de fuite.
+
+Trois rayonnages portent un **livre** qu'`ESPACE` ouvre : *Les recouvrements*
+(les dalles et leur ressort), *Les passages* (pourquoi les portes posent une
+question, et trois réponses) et *Le guichet* (l'emmurement d'Ossian Vaugris,
+et pourquoi il rachète à moitié). C'est ce que le groupe n'avait fait jusque-là
+que subir. La première lecture de chacun vaut de l'expérience à tous ; le bit
+7 du paramètre de la case le retient, et part avec l'étage dans la sauvegarde.
+Les autres rayonnages sont muets : des comptes, rien qui vous regarde.
+
+![Le greffe, de sa porte](docs/emu-salle-greffe.png)
+![Un rayonnage](docs/emu-rayonnage.png)
+![Le guichet](docs/emu-livre.png)
 
 Sans cela, **l'escalier du dernier étage ne mène nulle part** : la porte des
 quittances ne cède qu'à qui a rayé sa ligne. Le troisième étage a donc un
@@ -310,7 +349,7 @@ objet, et pas seulement une sortie — trouver le greffe, puis trouver
 l'escalier. Le générateur place le registre dans un mur bordé par un couloir
 atteignable **sans forcer une serrure**, jamais collé à l'escalier, et le
 contrôle par parcours en largeur, comme il le fait déjà pour les clés ; il
-tient aussi les dalles piégées à distance de son pupitre. La quittance est
+tient aussi les dalles piégées hors du greffe. La quittance est
 dans la partie sauvée — d'où un nouveau nombre magique, `FAE2` : une
 sauvegarde d'avant le registre n'a plus le bon compte et se refuse.
 
@@ -634,9 +673,11 @@ de Paula.
 
 ## Pistes pour la suite
 
-- Une vraie salle de greffe autour du registre, et une phrase d'accueil par
-  étage pour la voix derrière le comptoir : voir la fin de
-  [docs/histoire.md](docs/histoire.md).
+- Une phrase d'accueil par étage pour la voix derrière le comptoir : voir la
+  fin de [docs/histoire.md](docs/histoire.md).
+- La disquette du jeu a maintenant 115 Ko de marge : de quoi donner à
+  l'échoppe et aux niches leurs vues à deux et trois pas, comme le pupitre,
+  ou une troisième pose aux monstres.
 - Interruption COPER : découper l'image en bandes et changer de palette à
   mi-écran depuis le processeur. Le jeu ne s'en sert pas encore ; le
   gestionnaire de niveau 3 est prêt à accueillir la cause.

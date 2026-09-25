@@ -199,6 +199,7 @@ T_WALL, T_LOCKED, T_NICHE, T_LEVER, T_GATE = 1, 4, 5, 7, 8
 T_SHOP, T_TRAP = 9, 10
 T_LEDGER = 11                                    # le grand registre
 T_STAIRSUP = 12                                  # l'escalier qui remonte
+T_ARCHIVE = 13                                   # un rayonnage du greffe
 C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
 
 
@@ -545,7 +546,7 @@ def ledger_test(g, fails):
     spot = [(lx + dx, ly + dy) for dx, dy in DIRS
             if 0 <= lx + dx < MAPW and 0 <= ly + dy < MAPH
             and grid[ly + dy][lx + dx] & 0x0f not in
-            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER)]
+            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER, T_ARCHIVE)]
     if not check(spot, f"registre mure en {lx},{ly}", fails):
         return
     if not walk_to(g, spot[0], budget=200):
@@ -575,6 +576,8 @@ def ledger_test(g, fails):
     g.key(K_ESC)
     print(f"  registre en {lx},{ly} : la ligne se raye, et une seule fois")
 
+    archive_test(g, fails, (lx, ly))
+
     if not check(stairs, "pas d'escalier au dernier etage", fails):
         return
     g.setw("Acquitted", 0)                # la porte, ligne non rayee
@@ -603,6 +606,69 @@ def ledger_test(g, fails):
     check(g.w("GameOver") == 1, "la sortie reste fermee malgre la quittance",
           fails)
     print("  la porte des quittances : fermee sans, ouverte avec")
+
+
+def archive_test(g, fails, ledger):
+    """Les rayonnages du greffe : trois livres qu'on ouvre, qui valent de
+    l'experience a la premiere lecture et a elle seule, et des rayonnages
+    muets qui n'ouvrent rien. Tous doivent border la salle du pupitre."""
+    grid = grid_of(g)
+    par = g.addr("MapParam")
+    shelves = [(x, y) for y in range(MAPH) for x in range(MAPW)
+               if grid[y][x] & 0x0f == T_ARCHIVE]
+    books = {}
+    for x, y in shelves:
+        b = g.mem.r8(par + y * MAPW + x) & 0x7f
+        if b != 0x7f:
+            books[b] = (x, y)
+    if not check(sorted(books) == [0, 1, 2], f"livres du greffe : "
+                 f"{sorted(books)} au lieu de [0, 1, 2]", fails):
+        return
+    lx, ly = ledger
+    far = [c for c in shelves if abs(c[0] - lx) + abs(c[1] - ly) > 6]
+    check(not far, f"rayonnages loin du pupitre : {far}", fails)
+
+    solid = (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER, T_ARCHIVE)
+    mute = [c for c in shelves if c not in books.values()]
+    for b, (x, y) in sorted(books.items()) + [(None, c) for c in mute[:1]]:
+        spot = [(x + dx, y + dy) for dx, dy in DIRS
+                if 0 <= x + dx < MAPW and 0 <= y + dy < MAPH
+                and grid[y + dy][x + dx] & 0x0f not in solid]
+        if not check(spot, f"rayonnage mure en {x},{y}", fails):
+            continue
+        if not walk_to(g, spot[0], budget=60) or not face_cell(g, (x, y)):
+            fails.append(f"impossible de lire le rayonnage en {x},{y}")
+            continue
+        xp0 = g.hero(0, "hr_Xp")
+        g.key(K_SPACE)
+        ui = g.w("UiMode")
+        if b is None:
+            check(ui == 0, f"un rayonnage muet ouvre un livre (UiMode={ui})",
+                  fails)
+            check(g.hero(0, "hr_Xp") == xp0, "un rayonnage muet vaut de "
+                  "l'experience", fails)
+            continue
+        if not check(ui == 10, f"le livre {b} ne s'ouvre pas (UiMode={ui})",
+                     fails):
+            continue
+        check(g.w("ArchiveBook") == b, f"le rayonnage {b} ouvre le livre "
+              f"{g.w('ArchiveBook')}", fails)
+        check(g.hero(0, "hr_Xp") > xp0, f"le livre {b} ne vaut aucune "
+              "experience a la premiere lecture", fails)
+        check(g.mem.r8(par + y * MAPW + x) & 0x80, f"le livre {b} n'est "
+              "pas marque lu", fails)
+        g.key(K_UP)                           # le livre tient la main :
+        check(g.w("UiMode") == 10, "une fleche referme le livre", fails)
+        g.key(K_ESC)
+        check(g.w("UiMode") == 0, f"le livre {b} ne se referme pas", fails)
+        xp1 = g.hero(0, "hr_Xp")
+        g.key(K_SPACE)                        # relu : la page, sans plus
+        check(g.w("UiMode") == 10, f"le livre {b} ne se rouvre pas", fails)
+        check(g.hero(0, "hr_Xp") == xp1, f"le livre {b} paie deux fois",
+              fails)
+        g.key(K_ESC)
+    print(f"  greffe : {len(shelves)} rayonnages, trois livres lus, "
+          f"payes une fois")
 
 
 def trap_test(g, fails):
@@ -812,7 +878,8 @@ def walk_to(g, target, budget=80):
                     continue
                 t = grid[nxt[1]][nxt[0]] & 0x0f
                 if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE,
-                                        T_SHOP, T_LEDGER, T_TRAP):
+                                        T_SHOP, T_LEDGER, T_ARCHIVE,
+                                        T_TRAP):
                     continue                 # les pieges se testent a part
                 if t == T_LOCKED and g.w("KeyCount") == 0:
                     continue                 # sans cle, ce n'est pas un chemin

@@ -177,7 +177,7 @@ def gate_pixel(u, v, k):
     return None                                      # entre les barreaux
 
 
-def make_front(k, door=False, offset=0, gate=False):
+def make_front(k, door=False, offset=0, gate=False, shelf=False):
     """Face d'une case a la distance k, decalee lateralement de `offset`
     cases : offset 0 ferme le couloir, offset -1 ou +1 ferme le fond d'un
     passage lateral."""
@@ -201,6 +201,8 @@ def make_front(k, door=False, offset=0, gate=False):
                     p.set(x, y, c)
             elif door and -0.22 < u < 0.22 and v > -0.30:
                 p.set(x, y, door_pixel(u, v, k))
+            elif shelf and shelf_pixel(u - offset, v, k, False) is not None:
+                p.set(x, y, shelf_pixel(u - offset, v, k, False))
             else:
                 p.set(x, y, brick(u, v, k, False))
     return p
@@ -229,7 +231,7 @@ def door_pixel(u, v, k):
     return pal.lit("WOOD", max(0.0, min(1.0, t)))
 
 
-def make_side(i, lateral):
+def make_side(i, lateral, shelf=False):
     """Mur vertical a la position laterale `lateral` (en demi-cases :
     -0.5 = mur gauche du couloir, -1.5 = mur du fond d'un passage a
     gauche), vu entre les distances i et i+1.
@@ -254,7 +256,11 @@ def make_side(i, lateral):
         halfw = F / dist
         for y in range(max(0, int(CY - halfw)), min(VIEW_H, int(round(CY + halfw)))):
             v = (y - CY) * dist / (2 * F)
-            p.set(x, y, brick(dist, v, dist, True))
+            c = None
+            if shelf:                                # le long du mur : la
+                a = (dist - i) - 0.5                 # case vue de biais
+                c = shelf_pixel(a if lateral < 0 else -a, v, dist, True)
+            p.set(x, y, c if c is not None else brick(dist, v, dist, True))
             drawn = True
     return p if drawn else Piece(0, 0, 16, 1)
 
@@ -772,6 +778,117 @@ def make_ledger():
         for k in range(1, 4):
             p.set(x - k, y + k, pal.lit("BONE", 0.20 + 0.06 * k))
     return p
+
+
+# --- les rayonnages du greffe -------------------------------------------
+# Une texture en coordonnees monde, comme la pierre et les portes : le
+# meme meuble se dessine alors de face a un, deux ou trois pas, et de
+# biais sur les murs lateraux, sans qu'on ait a le redessiner pour chaque
+# vue. `a` court le long du mur, de -0.5 a 0.5 ; `v` descend de la voute
+# (-0.5) au dallage (0.5).
+SHELF_TOP, SHELF_BAY, SHELF_BAYS = -0.40, 0.21, 4
+LEATHERS = ("BLOOD", "WOOD", "CLOTHR", "HIDE", "CLOTHG", "EARTH",
+            "CLOTHB", "WOOD", "BLOOD", "HIDE", "CLOTHP")
+
+
+def shelf_bays():
+    """Les volumes de chaque planche : des dos debout d'epaisseur et de
+    hauteur inegales, un vide la ou un registre est sorti et n'est pas
+    revenu, et ca et la une pile couchee faute de place."""
+    rnd = random.Random(1717)
+    bays = []
+    for bay in range(SHELF_BAYS):
+        books, a = [], -0.41
+        while True:
+            if rnd.random() < 0.10:                  # un registre sorti
+                a += 0.035
+                continue
+            if rnd.random() < 0.09:                  # une pile couchee
+                w = 0.13
+                if a + w > 0.41:
+                    break
+                books.append(("pile", a, a + w, 0.09,
+                              [rnd.choice(LEATHERS) for _ in range(3)]))
+                a += w + 0.01
+                continue
+            w = rnd.uniform(0.026, 0.058)
+            if a + w > 0.41:
+                break
+            books.append(("dos", a, a + w, rnd.uniform(0.125, 0.172),
+                          (rnd.choice(LEATHERS), rnd.uniform(0.2, 0.5),
+                           rnd.random() < 0.45)))
+            a += w + (0.006 if rnd.random() < 0.3 else 0.0)
+        bays.append(books)
+    return bays
+
+
+SHELF_BOOKS = shelf_bays()
+
+
+def shelf_pixel(a, v, dist, side):
+    """Une teinte du rayonnage, ou None hors du meuble (la pierre)."""
+    base = wall_tone(dist, side)
+
+    def wood(t):
+        return pal.lit("WOOD", max(0.0, min(1.0, base + t)))
+
+    if abs(a) > 0.465 or v < -0.455 or v > 0.475:
+        return None
+    if abs(a) > 0.425:                               # les montants
+        return wood(0.02 + (0.14 if abs(a) > 0.452 else 0.0)
+                    + 0.06 * noise(int((v + 8) * 70), 3, 61))
+    if v < SHELF_TOP:                                # la corniche
+        return wood(-0.04 if v < -0.44 else 0.10)
+    bay = int((v - SHELF_TOP) / SHELF_BAY)
+    if bay >= SHELF_BAYS:                            # le socle
+        return wood(0.16)
+    vb = v - SHELF_TOP - bay * SHELF_BAY             # 0 en haut de la case
+    floor = SHELF_BAY - 0.024                        # le dessus de la planche
+    if vb >= floor:
+        return wood(-0.06 if vb < floor + 0.008 else 0.08)
+    back = wood(0.46 - 0.14 * (vb / floor))          # le fond, ombre de la
+    for kind, a0, a1, h, look in SHELF_BOOKS[bay]:   # planche du dessus
+        if not a0 <= a < a1:
+            continue
+        top = floor - h
+        if vb < top:
+            return back
+        e = (a - a0) / (a1 - a0)
+        if kind == "pile":                           # couches, tranche claire
+            layer = min(2, int((floor - vb) / (h / 3.0)))
+            if e < 0.05 or e > 0.95:
+                return pal.lit("PARCHD", max(0.0, min(1.0, base + 0.10)))
+            y = ((floor - vb) / (h / 3.0)) % 1.0
+            t = base + 0.02 + (0.20 if y < 0.18 else 0.0) + 0.10 * e
+            return pal.lit(look[layer], max(0.0, min(1.0, t)))
+        mat, lab, old = look
+        t = base + 0.02 + 0.40 * abs(e - 0.32)       # le dos est bombe
+        t += 0.10 * ((vb - top) / h)
+        rel = (vb - top) / h
+        if old and (abs(rel - 0.10) < 0.022 or abs(rel - 0.84) < 0.022):
+            return pal.lit("GOLD", max(0.0, min(1.0, base - 0.04 + 0.4 * e)))
+        if abs(rel - lab) < 0.07 and 0.14 < e < 0.86:   # l'etiquette de cote
+            return pal.lit("PARCHD", max(0.0, min(1.0, base - 0.06 + 0.3 * e)))
+        return pal.lit(mat, max(0.0, min(1.0, t)))
+    return back
+
+
+def shrink(p, k):
+    """Un detail dessine a un pas, vu a k pas : tout se rapproche du
+    point de fuite d'un facteur k. On prend le pixel au centre de chaque
+    bloc de k sur k plutot qu'une moyenne -- des index de palette ne se
+    moyennent pas."""
+    xa, xb = snap(CX + (p.x0 - CX) / k, CX + (p.x0 + p.w - CX) / k)
+    ya = int(CY + (p.y0 - CY) / k)
+    yb = int(round(CY + (p.y0 + p.h - CY) / k))
+    q = Piece(xa, ya, xb - xa, yb - ya)
+    for y in range(ya, yb):
+        for x in range(xa, xb):
+            sx = int(CX + (x + 0.5 - CX) * k)
+            sy = int(CY + (y + 0.5 - CY) * k)
+            if 0 <= sx - p.x0 < p.w and 0 <= sy - p.y0 < p.h:
+                q.set(x, y, p.px[sy - p.y0][sx - p.x0])
+    return q
 
 
 def make_trap():
@@ -1413,8 +1530,23 @@ def build_art():
     pieces += [make_niche()]
     ART_INDEX["ART_SHOP"] = len(pieces)
     pieces += [make_shop()]
-    ART_INDEX["ART_LEDGER"] = len(pieces)
-    pieces += [make_ledger()]
+    ART_INDEX["ART_LEDGER"] = len(pieces)          # a un, deux, trois pas :
+    ledger = make_ledger()                         # on le voit du fond de
+    pieces += [ledger, shrink(ledger, 2), shrink(ledger, 3)]    # la salle
+    ART_INDEX["ART_ARCHIVE"] = len(pieces)          # les rayonnages du
+    pieces += [make_front(k, shelf=True) for k in (1, 2, 3)]      # greffe
+    ART_INDEX["ART_ARCHL"] = len(pieces)
+    pieces += [make_side(i, -0.5, shelf=True) for i in range(4)]
+    ART_INDEX["ART_ARCHR"] = len(pieces)
+    pieces += [make_side(i, 0.5, shelf=True) for i in range(4)]
+    ART_INDEX["ART_ARCHFL"] = len(pieces)          # au fond d'un passage
+    pieces += [make_front(k, offset=-1, shelf=True) for k in (1, 2, 3, 4)]
+    ART_INDEX["ART_ARCHFR"] = len(pieces)
+    pieces += [make_front(k, offset=1, shelf=True) for k in (1, 2, 3, 4)]
+    ART_INDEX["ART_ARCHOL"] = len(pieces)          # et le mur exterieur :
+    pieces += [make_side(i, -1.5, shelf=True) for i in (2, 3)]   # la salle
+    ART_INDEX["ART_ARCHOR"] = len(pieces)          # vue de son entree
+    pieces += [make_side(i, 1.5, shelf=True) for i in (2, 3)]
     ART_INDEX["ART_TRAP"] = len(pieces)
     pieces += [make_trap()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
@@ -1503,6 +1635,9 @@ LEVER, GATE = 7, 8                       # herse et son levier
 SHOP, TRAP = 9, 10                       # echoppe et dallage piege
 LEDGER = 11                              # le grand registre, dernier etage
 STAIRSUP = 12                            # l'escalier qui remonte d'un etage
+ARCHIVE = 13                             # un rayonnage du greffe
+NARCHIVES = 3                            # les trois livres qu'on y lit
+SOLID = (WALL, NICHE, LEVER, GATE, SHOP, LEDGER, ARCHIVE)
 NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
@@ -1701,55 +1836,22 @@ def build_level(level, seed):
             free.remove(shop)
 
     # Le grand registre, au dernier etage seulement : le greffe est au
-    # fond, la ou les echeances sont les plus vieilles. On le scelle
-    # dans un mur borde par un couloir, loin du depart -- il faut le
-    # chercher -- mais jamais colle a l'escalier, sinon on tomberait
-    # dessus en sortant. Sans lui, la porte des quittances ne cede pas.
-    ledger, greffe = None, None
+    # fond, la ou les echeances sont les plus vieilles. Loin du depart --
+    # il faut le chercher -- mais jamais colle a l'escalier, sinon on
+    # tomberait dessus en sortant. Sans lui, la porte des quittances ne
+    # cede pas.
+    ledger = greffe = None
     if level == 2:
-        for (cx, cy), d in sorted(reach.items(), key=lambda kv: -kv[1]):
-            if grid[cy][cx] != FLOOR:
-                continue
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                nx, ny = cx + dx, cy + dy
-                if not (0 < nx < MAPW - 1 and 0 < ny < MAPH - 1):
-                    continue
-                if grid[ny][nx] != WALL or par[ny][nx]:
-                    continue
-                if abs(nx - far[0]) + abs(ny - far[1]) < 3:
-                    continue
-                if shop and abs(nx - shop[0]) + abs(ny - shop[1]) < 3:
-                    continue
-                ledger, greffe = (nx, ny), (cx, cy)
-                break
-            if ledger:
-                break
-        assert ledger, "dernier etage sans grand registre"
-        grid[ledger[1]][ledger[0]] = LEDGER
-        if ledger in free:
-            free.remove(ledger)
-
-        # La salle du greffe : le pupitre ne donne plus sur un bout de
-        # couloir mais sur une chambre. On n'ouvre que du mur nu, et
-        # jamais au contact d'un levier ou d'une herse -- ceux-la
-        # comptent sur le trace pour couper la route, et une salle
-        # percee a cote leur ferait un contournement.
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                x, y = greffe[0] + dx, greffe[1] + dy
-                if not (1 <= x < MAPW - 1 and 1 <= y < MAPH - 1):
-                    continue
-                if grid[y][x] != WALL or par[y][x]:
-                    continue
-                if any(grid[y + b][x + a] in (GATE, LEVER)
-                       for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
-                    continue
-                grid[y][x] = FLOOR
-                free.append((x, y))
+        ledger, greffe = place_greffe(grid, par, reach, far, shop,
+                                      start)
+        close_greffe(grid, par, greffe, start)
+        shelve_greffe(grid, par, greffe)
+        free[:] = [c for c in free if grid[c[1]][c[0]] & 0x0f == FLOOR]
+        free.extend(c for c in greffe["room"] if c not in free)
 
     # Les dalles piegees : sur du dallage nu, loin du depart, et jamais
-    # devant l'echoppe ni devant le registre -- on doit pouvoir aller
-    # marchander et signer sans sauter.
+    # devant l'echoppe ni dans le greffe -- on doit pouvoir aller
+    # marchander, lire et signer sans sauter.
     traps = 0
     for x, y in list(free):
         if traps >= 4 + 2 * level:
@@ -1760,7 +1862,7 @@ def build_level(level, seed):
             continue
         if shop and abs(x - shop[0]) + abs(y - shop[1]) <= 1:
             continue
-        if ledger and abs(x - ledger[0]) + abs(y - ledger[1]) <= 1:
+        if greffe and (x, y) in greffe["room"]:
             continue
         grid[y][x] = TRAP
         par[y][x] = rnd.randrange(NTRAPKINDS)
@@ -1788,6 +1890,228 @@ def build_level(level, seed):
         grid[start[1]][start[0]] = STAIRSUP
 
     return grid, par, start, far
+
+
+def components(grid):
+    """Les zones qu'on parcourt sans rien forcer : ni serrure, ni herse,
+    ni porte a runes. -> {case: numero de zone}."""
+    import collections
+    blockers = SOLID + (LOCKED, RUNE)
+    zone, n = {}, 0
+    for y in range(MAPH):
+        for x in range(MAPW):
+            if (x, y) in zone or (grid[y][x] & 0x0f) in blockers:
+                continue
+            zone[(x, y)] = n
+            q = collections.deque([(x, y)])
+            while q:
+                cx, cy = q.popleft()
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = cx + dx, cy + dy
+                    if not (0 <= nx < MAPW and 0 <= ny < MAPH):
+                        continue
+                    if (nx, ny) in zone or (grid[ny][nx] & 0x0f) in blockers:
+                        continue
+                    zone[(nx, ny)] = n
+                    q.append((nx, ny))
+            n += 1
+    return zone
+
+
+def place_greffe(grid, par, reach, far, shop, start):
+    """Le greffe : le pupitre du grand registre au milieu du mur du fond,
+    et devant lui une salle de trois sur trois.
+
+    Le pupitre etait scelle dans le premier mur venu, la salle creusee
+    tout autour de la case d'ou on le lit : il se retrouvait souvent en
+    pilier au milieu, du couloir des deux cotes. On cherche maintenant un
+    mur dont les deux voisins le long du fond sont du mur aussi, et l'on
+    creuse la salle devant, en profondeur.
+
+    Une salle percee dans un labyrinthe relie les couloirs qu'elle
+    touche. Elle ne doit donc jamais joindre deux zones que separait une
+    serrure, une herse ou une porte a runes : ce serait un passage de
+    service autour de l'obstacle. On le verifie zone par zone."""
+    zone = components(grid)
+    best = None
+    deep = max(reach.values()) // 2                  # la moitie du fond
+    for (cx, cy), d in sorted(reach.items(), key=lambda kv: -kv[1]):
+        if grid[cy][cx] & 0x0f != FLOOR or d < deep:
+            continue
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            lx, ly = cx + dx, cy + dy                # le pupitre
+            if not (1 <= lx < MAPW - 1 and 1 <= ly < MAPH - 1):
+                continue
+            if grid[ly][lx] != WALL or par[ly][lx]:
+                continue
+            if abs(lx - far[0]) + abs(ly - far[1]) < 3:
+                continue
+            if shop and abs(lx - shop[0]) + abs(ly - shop[1]) < 3:
+                continue
+            nx, ny = -dx, -dy                        # vers la salle
+            tx, ty = dy, dx                          # le long du fond
+            flanks = [(lx + tx, ly + ty), (lx - tx, ly - ty)]
+            if any(grid[y][x] != WALL for x, y in flanks):
+                continue
+            room = [(lx + nx * k + tx * l, ly + ny * k + ty * l)
+                    for k in (1, 2, 3) for l in (-1, 0, 1)]
+            if not all(1 <= x < MAPW - 1 and 1 <= y < MAPH - 1
+                       for x, y in room):
+                continue
+            ok = True
+            for x, y in room:
+                t = grid[y][x] & 0x0f
+                if t not in (FLOOR, WALL) or (t == WALL and par[y][x]):
+                    ok = False
+                    break
+                if (x, y) == far or any(
+                        (grid[y + b][x + a] & 0x0f) in (GATE, LEVER, STAIRS)
+                        for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                    ok = False
+                    break
+            if not ok:
+                continue
+            touched = set()                          # les zones que la
+            for x, y in room:                        # salle rejoindrait
+                for a, b in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+                    if (x + a, y + b) in zone:
+                        touched.add(zone[(x + a, y + b)])
+            if len(touched) != 1:
+                continue
+            walls = set()                            # le pourtour, en mur nu
+            for x, y in room + [(lx, ly)]:
+                for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    c = (x + a, y + b)
+                    if c in room or c == (lx, ly):
+                        continue
+                    if grid[c[1]][c[0]] == WALL and not par[c[1]][c[0]] \
+                            and 0 < c[0] < MAPW - 1 and 0 < c[1] < MAPH - 1:
+                        walls.add(c)
+            if len(walls) < NARCHIVES + 2:
+                continue
+            # On essaie la salle sur une copie, muree au mieux : le
+            # meilleur greffe est celui qui garde le moins d'entrees --
+            # une salle, pas un carrefour --, et a egalite le plus loin.
+            trial = [row[:] for row in grid]
+            greffe = dig_greffe(trial, (lx, ly), room, flanks, (nx, ny))
+            close_greffe(trial, par, greffe, start)
+            doors = len(openings(trial, room))
+            score = (doors, -d)
+            if best is None or score < best[0]:
+                best = score, greffe
+    assert best, "dernier etage sans place pour le greffe"
+    greffe = dig_greffe(grid, *(best[1][k] for k in
+                                ("ledger", "room", "flanks", "normal")))
+    return greffe["ledger"], greffe
+
+
+def dig_greffe(grid, ledger, room, flanks, normal):
+    grid[ledger[1]][ledger[0]] = LEDGER
+    for x, y in room:
+        if grid[y][x] == WALL:
+            grid[y][x] = FLOOR
+    return {"ledger": ledger, "room": room, "flanks": flanks,
+            "normal": normal}
+
+
+def openings(grid, room):
+    """Les cases de dallage qui touchent la salle du dehors."""
+    room = set(room)
+    out = set()
+    for x, y in room:
+        for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            c = (x + a, y + b)
+            if c not in room and (grid[c[1]][c[0]] & 0x0f) not in \
+                    (WALL, NICHE, LEVER, SHOP, LEDGER, ARCHIVE):
+                out.add(c)
+    return out
+
+
+def close_greffe(grid, par, greffe, start):
+    """Une salle creusee dans le labyrinthe s'ouvre sur tous les couloirs
+    qu'elle touche : ce n'est plus une salle, c'est un carrefour. On mure
+    donc chaque ouverture dont le reste de l'etage peut se passer -- une
+    case de dallage nu, sans rien au contact, dont la fermeture ne coupe
+    rien : ni une case de l'etage de son depart, ni deux cases d'une meme
+    zone, ce qui ferait d'une serrure ou d'une herse le seul chemin. Il
+    reste au moins une entree, puisque la salle elle-meme doit rester
+    atteignable."""
+    room = set(greffe["room"])
+    special = (DOOR, LOCKED, RUNE, LEVER, GATE, SHOP, NICHE, STAIRS,
+               STAIRSUP, LEDGER)
+    around = set()
+    for x, y in room:
+        for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            c = (x + a, y + b)
+            if c not in room and grid[c[1]][c[0]] == FLOOR:
+                around.add(c)
+
+    def everything(g):                               # tout ce qu'on atteint,
+        seen = distances_all(g, start)               # en forcant tout
+        return seen
+
+    for x, y in sorted(around):
+        if par[y][x] or (x, y) == start:
+            continue
+        if any((grid[y + b][x + a] & 0x0f) in special
+               for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            continue
+        before = everything(grid)
+        zones = len(set(components(grid).values()))
+        grid[y][x] = WALL
+        after = everything(grid)
+        if after != before - {(x, y)} or \
+                len(set(components(grid).values())) != zones:
+            grid[y][x] = FLOOR                       # elle servait
+    return greffe
+
+
+def distances_all(grid, start):
+    """Les cases qu'on atteint en ouvrant tout ce qui s'ouvre."""
+    import collections
+    seen, q = {start}, collections.deque([start])
+    while q:
+        x, y = q.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
+                continue
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP, LEDGER,
+                                         ARCHIVE):
+                continue
+            seen.add((nx, ny))
+            q.append((nx, ny))
+    return seen
+
+
+def shelve_greffe(grid, par, greffe):
+    """Les rayonnages : les deux pans du fond qui encadrent le pupitre
+    d'abord, puis les murs lateraux, du fond vers l'entree. Chacun porte
+    en parametre le livre qu'on y lit ; ce qui reste de mur nu dans la
+    salle se couvre aussi de registres, mais muets."""
+    lx, ly = greffe["ledger"]
+    nx, ny = greffe["normal"]
+    room = set(greffe["room"])
+    tx, ty = ny, nx
+    cands = list(greffe["flanks"])
+    for k in (1, 2, 3):                              # les murs lateraux,
+        for l in (-2, 2):                            # du fond vers l'entree
+            cands.append((lx + nx * k + tx * l, ly + ny * k + ty * l))
+    for l in (-1, 0, 1):                             # le mur d'en face
+        cands.append((lx + nx * 4 + tx * l, ly + ny * 4 + ty * l))
+    book = 0
+    for x, y in cands:
+        if not (0 < x < MAPW - 1 and 0 < y < MAPH - 1):
+            continue
+        if grid[y][x] != WALL or par[y][x]:
+            continue
+        if not any((x + a, y + b) in room
+                   for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            continue
+        grid[y][x] = ARCHIVE
+        par[y][x] = book if book < NARCHIVES else 0x7f
+        book += 1
+    assert book >= NARCHIVES, "un greffe sans ses trois livres"
 
 
 def build_maps():
@@ -1820,8 +2144,7 @@ def distances(grid, start, blocked=()):
                 continue
             if (nx, ny) in blocked:
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE, SHOP,
-                                         LEDGER):
+            if (grid[ny][nx] & 0x0f) in SOLID:
                 continue
             dist[(nx, ny)] = dist[(x, y)] + 1
             q.append((nx, ny))
@@ -1848,7 +2171,7 @@ def check_solvable(grid, par, start):
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
             if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER, SHOP,
-                                         LEDGER):
+                                         LEDGER, ARCHIVE):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
@@ -1879,7 +2202,8 @@ def check_solvable(grid, par, start):
                 # Une serrure ne coupe pas la route : le groupe a des
                 # cles. Seule la herse compte, c'est tout l'objet du
                 # controle.
-                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP):
+                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP,
+                                             LEDGER, ARCHIVE):
                     continue
                 reach.add((nx, ny))
                 q.append((nx, ny))
@@ -1915,7 +2239,8 @@ def check_reachable(grid, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP, LEDGER):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP, LEDGER,
+                                         ARCHIVE):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))

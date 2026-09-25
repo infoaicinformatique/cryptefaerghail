@@ -202,6 +202,7 @@ Ils vont chercher le grand registre au dernier étage, et une plume.
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
 | Elle ne s'ouvre qu'une fois la ligne rayée au registre | On ne sort de Faerghail qu'acquitté |
 | La partie se sauve à chaque étage | Le registre est tenu à jour |
+| Le greffe est tapissé de registres, trois s'ouvrent | La maison range ce qu'elle sait ; le reste est aux comptes |
 
 ## Le greffe, et ce qu'on vient y faire
 
@@ -227,8 +228,12 @@ registre dit la dette et la quittance. Le reste — l'échéance de chaque dalle
 la question posée à chaque porte, ce qu'Ossian vend et pourquoi — ne se
 rencontre qu'en jouant, et ne se dit nulle part.
 
-Il manque encore la salle : le registre est un pupitre dans un mur, pas un
-greffe, et Ossian n'a qu'une seule phrase d'accueil aux trois guichets. Ce
-sont les deux endroits où cette histoire dépasse encore ce que le programme
-sait raconter — et donc les deux prochaines choses à écrire, le jour où l'on
-ajoutera un quatrième étage.
+Le greffe a maintenant sa salle : une porte, des rayonnages du sol à la
+voûte, et le pupitre au fond. Trois des livres rangés là s'ouvrent, et disent
+ce qui ne se disait nulle part — le ressort de chaque dalle, la question de
+chaque porte, l'emmurement d'Ossian et le taux de son guichet. Les autres
+tiennent les comptes de quatre siècles, et ne regardent pas le groupe.
+
+Il reste Ossian, qui n'a qu'une seule phrase d'accueil aux trois guichets.
+C'est le dernier endroit où cette histoire dépasse encore ce que le programme
+sait raconter.

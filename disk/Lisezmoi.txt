@@ -77,7 +77,8 @@ COMMANDES
   Fleches haut/bas      avancer, reculer
   Fleches gauche/droite tourner
   ESPACE                ouvrir une porte, fouiller une niche,
-                        entrer a l'echoppe, desamorcer un piege
+                        entrer a l'echoppe, desamorcer un piege,
+                        lire le registre ou un livre du greffe
   C                     fiche d'aventure du heros courant
   I                     sac a dos
   M                     carte du niveau, telle que vous l'avez parcouru
@@ -245,6 +246,15 @@ LE GRAND REGISTRE
   Sans cela, l'escalier du dernier etage ne mene nulle part : la porte
   des quittances ne cede qu'a qui a raye sa ligne. Le greffe apparait
   sur la carte, en couleur de parchemin.
+
+LE GREFFE
+  Le pupitre est au fond d'une salle a une seule porte, tapissee de
+  rayonnages : les registres de quatre siecles, du sol a la voute.
+  Trois d'entre eux portent un livre qu'ESPACE ouvre -- les dalles,
+  les portes a question, le guichet -- et disent ce que le groupe n'a
+  fait jusque-la que subir. La premiere lecture de chacun vaut de
+  l'experience a tous. ESC referme le livre. Les autres rayonnages
+  sont muets.
   Chaque etage a sa porte a runes : elle pose une question et n'accepte
   que trois reponses -- une clef se vole, pas une reponse. Juste, elle
   s'efface ; faux, la rune inscrit un aventurier, au fer.
@@ -259,12 +269,13 @@ MUSIQUE ET BRUITAGES
   niveau, pas et rale -- puis rendue a la musique.
 
 Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
-palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 700 Ko de
+palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 800 Ko de
 Chip RAM libre.
 
-Le tiroir Src contient tout le source ecrit a la main : crawl.s et les
-trois fichiers dont il depend. Les tables generees -- decors, cartes,
-police, degrades -- n'y sont pas : elles pesent trop, et les
-generateurs Python les refont en une seconde. L'archive
-Faerghail.lha, elle, porte tout. Graphismes, cartes, musique et
-bruitages sont generes par programme : rien n'est emprunte.
+Le jeu tient sur deux disquettes. La premiere demarre et lance le
+jeu. La seconde, Faerghail2, porte le source dans son tiroir Src :
+crawl.s, les fichiers dont il depend, les tables generees, les
+bruitages, les musiques et les cartes. Seuls les decors n'y tiennent
+pas -- plus d'un demi-megaoctet a eux seuls. L'archive Faerghail.lha,
+elle, porte tout. Graphismes, cartes, musique et bruitages sont
+generes par programme : rien n'est emprunte.

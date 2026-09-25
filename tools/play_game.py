@@ -22,6 +22,7 @@ T_FLOOR, T_WALL, T_DOOR, T_STAIRS, T_LOCKED, T_NICHE, T_RUNE = range(7)
 T_LEVER, T_GATE = 7, 8
 T_SHOP, T_TRAP = 9, 10
 T_LEDGER = 11                            # le grand registre du dernier etage
+T_ARCHIVE = 13                           # un rayonnage du greffe
 C_CHEST, C_MONSTER, C_ITEM, C_MASK = 0x10, 0x20, 0x30, 0x30
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]     # meme ordre que DirTable
 
@@ -202,7 +203,8 @@ def terrain(g):
 
 def passable(cell):
     t = cell & 0x0f
-    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER)
+    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER,
+                     T_ARCHIVE)
 
 
 def bfs(grid, start, want):

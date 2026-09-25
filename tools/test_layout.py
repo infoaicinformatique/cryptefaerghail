@@ -205,6 +205,14 @@ if __name__ == "__main__":
         g.setw("NeedRedraw", 1)
         shot(g, name, fails)
     g.setw("Acquitted", 0)
+
+    # Les trois livres du greffe : dix lignes sous leur cote, chacune
+    # doit tenir dans la vue.
+    for book in range(T.read_equ("NARCHIVES", 3)):
+        g.setw("ArchiveBook", book)
+        g.setw("UiMode", T.read_equ("UI_ARCHIVE", 10))
+        g.setw("NeedRedraw", 1)
+        shot(g, f"livre-{book}", fails)
     g.setw("UiMode", 0)
     g.setw("NeedRedraw", 1)
 

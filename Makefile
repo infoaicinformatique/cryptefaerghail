@@ -9,8 +9,9 @@
 #   make wav         rend les musiques en WAV pour les ecouter sans Amiga
 #   make test        fait tourner le jeu dans un 68020 emule
 #   make shots       photographie les ecrans du jeu emule
-#   make disk        fabrique dist/Faerghail.adf (disquette amorcable) et
-#                    dist/Faerghail.lha -- necessite pip install amitools
+#   make disk        fabrique dist/Faerghail1.adf (le jeu, amorcable),
+#                    Faerghail2.adf (le source) et Faerghail.lha --
+#                    necessite pip install amitools
 #   make clean       nettoie build/ et bin/
 #-----------------------------------------------------------------------
 

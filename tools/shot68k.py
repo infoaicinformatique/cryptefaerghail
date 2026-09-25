@@ -168,6 +168,45 @@ def png(path, px, surf=None):
                            chunk(b"IEND", b""))
 
 
+def salle(g, grid, ledger):
+    """Le greffe vu de son entree, puis un de ses livres ouvert.
+
+    On se poste sur la case de la salle la plus loin du pupitre, face a
+    lui : les rayonnages courent sur les deux murs, et le pupitre se voit
+    au fond. Puis on se tourne vers le premier livre qu'on trouve."""
+    lx, ly = ledger
+    for dx, dy in P.DIRS:
+        seat = (lx + 3 * dx, ly + 3 * dy)
+        if not (0 <= seat[0] < P.MAPW and 0 <= seat[1] < P.MAPH):
+            continue
+        if not P.passable(grid[seat[1]][seat[0]]):
+            continue
+        if all(P.passable(grid[ly + k * dy][lx + k * dx]) for k in (1, 2)):
+            break
+    else:
+        return
+    if not P.goto(g, seat):
+        return
+    P.face(g, P.DIRS.index((-dx, -dy)), [])
+    shoot(g, "salle-greffe")
+    par = g.addr("MapParam")
+    for y in range(P.MAPH):
+        for x in range(P.MAPW):
+            if grid[y][x] & 0x0f != 13 or \
+                    g.mem.r8(par + y * P.MAPW + x) & 0x7f != 2:
+                continue
+            spot = next(((x + a, y + b) for a, b in P.DIRS
+                         if P.passable(grid[y + b][x + a])), None)
+            if spot and P.goto(g, spot):
+                P.face(g, P.DIRS.index((x - spot[0], y - spot[1])), [])
+                shoot(g, "rayonnage")
+                g.key(T.K_SPACE)
+                if g.w("UiMode") == 10:
+                    shoot(g, "livre")
+                    g.key(T.K_ESC)
+            return
+
+
 def shoot(g, name):
     out = os.path.join(ROOT, "docs", f"emu-{name}.png")
     png(out, grab(g, "ShowBuf"), copper_surf(g))
@@ -318,3 +357,4 @@ if __name__ == "__main__":
                 g.key(T.K_RET)            # la ligne rayee
                 shoot(g, "registre-raye")
                 g.key(T.K_ESC)
+        salle(g, grid, (lx, ly))

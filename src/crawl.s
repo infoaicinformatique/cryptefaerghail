@@ -102,7 +102,16 @@ hr_Spells	= 42			; masque des sorts connus
 hr_AcTemp	= 44			; bonus temporaire de CA
 hr_Slots	= 46			; emplacements de sorts, niveaux 0 a 3
 hr_Race		= 54			; numero dans RaceTable
-hr_SIZEOF	= 56
+hr_Skills	= 56			; NSKILLS octets, 0 a 99 (voir SkillUse)
+hr_SIZEOF	= 62
+
+; les competences, dans l'ordre de SkillNames
+SK_COMBAT	= 0
+SK_DEFENSE	= 1
+SK_CONCENT	= 2
+SK_VIGIL	= 3
+SK_DISARM	= 4
+SK_TRADE	= 5
 NHEROES		= 6			; six aventuriers, comme au temps des
 					; jeux de roles a groupe
 NAMELEN		= 9
@@ -212,10 +221,11 @@ TITLEH		= 176			; hauteur de l'illustration
 LVSTATE		= 3*MAPBYTES+NSHOP
 LVSTORE		= LEVELS*LVSTATE
 
-; "FAE6" : chaque aventurier porte sa race ; "FAE5" avait passe le
-; groupe a six. Une sauvegarde plus ancienne n'a plus le bon compte, et
-; le nombre magique la fait refuser plutot que relire de travers.
-SAVEMAGIC	= $46414536		; "FAE6"
+; "FAE7" : chaque aventurier porte ses competences ; "FAE6" sa race,
+; "FAE5" avait passe le groupe a six. Une sauvegarde plus ancienne n'a
+; plus le bon compte, et le nombre magique la fait refuser plutot que
+; relire de travers.
+SAVEMAGIC	= $46414537		; "FAE7"
 SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+6
 UI_VIEW		= 0
 UI_SHEET	= 1
@@ -3358,6 +3368,9 @@ HeroAc:
 	add.w	it_Dice(a0),d2
 .noShield:
 	add.w	hr_AcTemp(a6),d2
+	moveq	#SK_DEFENSE,d0		; savoir parer
+	bsr	SkillTen
+	add.w	d0,d2
 	move.w	d2,d0
 	movem.l	(sp)+,d1-d2/a0
 	rts
@@ -3525,6 +3538,11 @@ DrawSheet:
 	bsr	DrawText
 	bra	.done
 .ok:
+	tst.w	SheetPage		; TAB : la page des competences
+	beq.s	.page1
+	bsr	DrawSkills
+	bra	.done
+.page1:
 	lea	TmpStr,a1		; nom et classe
 	move.l	a6,a0
 	bsr	StrCopy
@@ -4019,6 +4037,21 @@ CommitHero:
 
 	move.w	CreClass,hr_Class(a6)
 	move.w	CreRace,hr_Race(a6)
+	lea	SkillClass,a0		; les competences : le metier, et ce
+	move.w	CreClass,d0		; que la race y ajoute
+	mulu.w	#NSKILLS,d0
+	add.l	d0,a0
+	lea	SkillRace,a1
+	move.w	CreRace,d0
+	mulu.w	#NSKILLS,d0
+	add.l	d0,a1
+	lea	hr_Skills(a6),a2
+	moveq	#NSKILLS-1,d1
+.skills:
+	move.b	(a0)+,d0
+	add.b	(a1)+,d0
+	move.b	d0,(a2)+
+	dbf	d1,.skills
 	move.w	#1,hr_Level(a6)
 	clr.w	hr_Xp(a6)
 	move.w	CreHp,hr_Hp(a6)
@@ -5416,18 +5449,35 @@ ShopItem:				; d0 = ligne -> d0 = objet, Z si vide
 	tst.w	d0
 	rts
 
+; Le prix se marchande : celui du groupe qui s'y entend le mieux parle,
+; et sa competence MARCHANDAGE retranche jusqu'au quart du prix a
+; l'achat, ajoute jusqu'au quart a la vente.
 ShopPrice:				; d0 = objet -> d0 = prix du cote ouvert
-	movem.l	a0,-(sp)
+	movem.l	d1-d2/a0/a6,-(sp)
 	bsr	ItemPtr
-	move.w	it_Value(a0),d0
+	move.w	it_Value(a0),d1
+	bsr	BestTrader
+	lsr.w	#2,d0			; 0 a 24 pour cent
+	moveq	#100,d2
 	tst.w	ShopMode
-	beq.s	.done
-	lsr.w	#1,d0			; il rachete a moitie
+	bne.s	.selling
+	sub.w	d0,d2			; a l'achat, on paie moins
+	mulu.w	d2,d1
+	divu.w	#100,d1
+	bra.s	.priced
+.selling:
+	lsr.w	#1,d1			; il rachete a moitie
+	add.w	d0,d2			; un peu plus, pour qui sait vendre
+	mulu.w	d2,d1
+	divu.w	#100,d1
+.priced:
+	moveq	#0,d0
+	move.w	d1,d0
 	tst.w	d0
 	bne.s	.done
 	moveq	#1,d0			; jamais pour rien
 .done:
-	movem.l	(sp)+,a0
+	movem.l	(sp)+,d1-d2/a0/a6
 	rts
 
 ShopFillStock:				; l'etal de l'etage courant
@@ -5560,6 +5610,7 @@ DrawShop:
 ; ShopDeal : conclut la ligne visee, dans un sens ou dans l'autre
 ShopDeal:
 	movem.l	d0-d7/a0-a6,-(sp)
+	moveq	#0,d5			; une affaire conclue ?
 	move.w	ShopCursor,d0
 	bsr	ShopItem
 	bne.s	.have
@@ -5589,6 +5640,7 @@ ShopDeal:
 	lea	TxtShopFull,a0		; AddItem l'a deja dit, mais le
 	bra	.say			; panneau reste ouvert
 .taken:
+	moveq	#1,d5
 	sub.w	d6,Gold
 	move.w	d7,d0
 	bsr	CheckKey
@@ -5610,6 +5662,7 @@ ShopDeal:
 	move.w	ShopCursor,InvCursor	; InvClear travaille sur le curseur
 	bsr	InvClear		; du sac : on les fait coincider
 	add.w	d6,Gold
+	moveq	#1,d5
 	lea	TxtShopSold,a0
 
 .receipt:
@@ -5630,6 +5683,12 @@ ShopDeal:
 	lea	TmpStr,a0
 .say:
 	bsr	LogAdd
+	tst.w	d5
+	beq.s	.noDeal
+	bsr	BestTrader		; celui qui a parle y gagne peut-etre
+	moveq	#SK_TRADE,d0
+	bsr	SkillUse
+.noDeal:
 	bsr	ShopClamp
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -5725,26 +5784,30 @@ TrapDC:					; -> d0 = difficulte, selon l'etage
 	add.w	#14,d0
 	rts
 
-; TrapSkill : a6 = heros -> d0 = ce qu'il ajoute a son d20. Le roublard
-; est du metier ; les autres n'ont que leur sagesse et l'habitude.
-TrapSkill:
-	movem.l	d1-d2/a0,-(sp)
-	moveq	#0,d2
-	cmp.w	#2,hr_Class(a6)		; ROUBLARD
-	bne.s	.plain
-	move.w	hr_Level(a6),d2
-	addq.w	#4,d2
-	bra.s	.wis
-.plain:
-	move.w	hr_Level(a6),d2
-	and.l	#$0000ffff,d2
-	divu.w	#3,d2
-	and.l	#$0000ffff,d2
-.wis:
+; TrapSkill, DisarmSkill : a6 = heros -> d0 = ce qu'il ajoute a son
+; d20. Le roublard avait un bonus a part ; ce sont maintenant les
+; competences VIGILANCE et DESAMORCAGE, ou il part avec de l'avance, et
+; que tout le monde fait progresser en s'en servant.
+TrapSkill:				; reperer : l'oeil, et le bon sens
+	movem.l	d1,-(sp)
+	moveq	#SK_VIGIL,d0
+	bsr	SkillFifth
+	move.w	d0,d1
 	move.w	hr_Wis(a6),d0
 	bsr	StatMod
-	add.w	d2,d0
-	movem.l	(sp)+,d1-d2/a0
+	add.w	d1,d0
+	movem.l	(sp)+,d1
+	rts
+
+DisarmSkill:				; desamorcer : le metier, et la main
+	movem.l	d1,-(sp)
+	moveq	#SK_DISARM,d0
+	bsr	SkillFifth
+	move.w	d0,d1
+	move.w	hr_Dex(a6),d0
+	bsr	StatMod
+	add.w	d1,d0
+	movem.l	(sp)+,d1
 	rts
 
 MarkTrapSeen:				; d0 = x, d1 = y
@@ -5778,7 +5841,10 @@ SpotTrap:
 	add.w	d2,d0
 	cmp.w	d5,d0
 	blt.s	.next
+	tst.w	d3
+	bne.s	.next
 	moveq	#1,d3
+	move.l	a6,a5			; le premier qui l'a vu
 .next:
 	lea	hr_SIZEOF(a6),a6
 	dbf	d4,.loop
@@ -5801,6 +5867,9 @@ SpotTrap:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	move.l	a5,a6			; son oeil s'aiguise
+	moveq	#SK_VIGIL,d0
+	bsr	SkillUse
 	moveq	#1,d0
 	bra.s	.done
 .missed:
@@ -5906,7 +5975,7 @@ DisarmTrap:
 	beq	.down
 	bsr	TrapDC
 	move.w	d0,d5
-	bsr	TrapSkill
+	bsr	DisarmSkill
 	move.w	d0,d4
 	bsr	D20
 	add.w	d4,d0
@@ -5930,6 +5999,8 @@ DisarmTrap:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	moveq	#SK_DISARM,d0		; la main s'affermit
+	bsr	SkillUse
 	lea	Heroes,a6		; le tour de main profite a tous
 	moveq	#NHEROES-1,d3
 .xp:
@@ -6776,6 +6847,9 @@ HeroAttack:
 	move.w	d3,AtkMax
 	add.w	d0,d6
 	add.w	PartyBless,d6
+	moveq	#SK_COMBAT,d0		; le metier des armes
+	bsr	SkillTen
+	add.w	d0,d6
 	move.w	d6,d4			; bonus d'attaque total
 	moveq	#0,d7
 	moveq	#0,d2			; numero d'attaque
@@ -6832,6 +6906,9 @@ HeroAttack:
 
 CombatRound:
 	movem.l	d0-d7/a0-a6,-(sp)
+	lea	HitFlags,a0		; qui aura touche ce round
+	clr.l	(a0)
+	clr.w	4(a0)
 	move.l	MonPtr,a2
 	moveq	#0,d7			; degats du groupe
 	moveq	#0,d4			; bruitage de la premiere arme
@@ -6854,6 +6931,12 @@ CombatRound:
 .haveSfx:
 	bsr	HeroAttack
 	add.w	d0,d7
+	tst.w	d0
+	beq.s	.heroNext
+	move.w	#NHEROES-1,d1		; son rang dans le groupe
+	sub.w	d6,d1
+	lea	HitFlags,a0
+	st	(a0,d1.w)
 .heroNext:
 	lea	hr_SIZEOF(a6),a6
 	dbf	d6,.heroLoop
@@ -6882,6 +6965,7 @@ CombatRound:
 	lea	TxtAllMiss,a0
 	bsr	LogAdd
 .check:
+	bsr	CombatProgress		; ceux qui ont touche y gagnent peut-etre
 	tst.w	MonHp
 	bgt.s	.monsterTurn
 	bsr	MonsterDies
@@ -6902,6 +6986,188 @@ MonsterTurn:
 	rts
 .attack:
 	bsr	MonsterAttack
+	rts
+
+;----------------------------------------------------------------------
+; Les competences, qui progressent a l'usage
+;
+; Comme dans Legend of Faerghail, un aventurier ne progresse pas qu'en
+; niveaux : chaque fois qu'il reussit ce qu'une competence mesure --
+; toucher, parer, lancer un sort, reperer ou desamorcer un piege,
+; marchander --, il a une chance d'y gagner un point. Une chance
+; d'autant plus mince que la competence est deja haute : (100 - valeur)
+; sur trois cents. De 0 a 99, un octet par competence dans le heros.
+;----------------------------------------------------------------------
+
+; SkillValue : a6 = heros, d0 = competence -> d0 = valeur (0 a 99)
+SkillValue:
+	move.l	d1,-(sp)
+	moveq	#0,d1
+	move.b	hr_Skills(a6,d0.w),d1
+	move.l	d1,d0
+	move.l	(sp)+,d1
+	rts
+
+; SkillTen : -> d0 = valeur / 10, ce que la competence ajoute a un d20
+; de combat (0 a +9)
+SkillTen:
+	bsr.s	SkillValue
+	divu.w	#10,d0
+	and.l	#$0000ffff,d0
+	rts
+
+; SkillFifth : -> d0 = valeur / 5, pour les pieges (0 a +19) : le
+; metier y compte plus que l'epee au combat
+SkillFifth:
+	bsr.s	SkillValue
+	divu.w	#5,d0
+	and.l	#$0000ffff,d0
+	rts
+
+; SkillUse : a6 = heros, d0 = competence. Il vient de la reussir : il a
+; une chance d'y gagner un point, et le journal le dit.
+SkillUse:
+	movem.l	d0-d3/a0-a1,-(sp)
+	move.w	d0,d3
+	bsr.s	SkillValue
+	cmp.w	#99,d0
+	bhs.s	.done
+	move.w	d0,d2
+	move.w	#300,d1
+	bsr	RndMod
+	moveq	#100,d1
+	sub.w	d2,d1
+	cmp.w	d1,d0
+	bhs.s	.done
+	addq.b	#1,hr_Skills(a6,d3.w)
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtProgress,a0
+	bsr	StrCopy
+	move.w	d3,d0
+	lsl.w	#2,d0
+	lea	SkillNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+.done:
+	movem.l	(sp)+,d0-d3/a0-a1
+	rts
+
+; BestTrader : -> a6 = l'aventurier debout qui marchande le mieux, d0 =
+; sa valeur. Au comptoir, c'est lui qui parle pour tout le groupe.
+BestTrader:
+	movem.l	d1-d3/a0,-(sp)
+	lea	Heroes,a0
+	move.l	a0,a6
+	moveq	#-1,d2
+	moveq	#NHEROES-1,d3
+.loop:
+	tst.w	hr_Hp(a0)
+	beq.s	.next
+	moveq	#0,d1
+	move.b	hr_Skills+SK_TRADE(a0),d1
+	cmp.w	d2,d1
+	ble.s	.next
+	move.w	d1,d2
+	move.l	a0,a6
+.next:
+	lea	hr_SIZEOF(a0),a0
+	dbf	d3,.loop
+	moveq	#0,d0
+	tst.w	d2
+	bmi.s	.done
+	move.w	d2,d0
+.done:
+	movem.l	(sp)+,d1-d3/a0
+	rts
+
+; CombatProgress : ceux qui ont touche pendant le round (HitFlags)
+; tentent leur chance en COMBAT -- apres le recit du round, pour que le
+; journal se lise dans l'ordre.
+CombatProgress:
+	movem.l	d0-d1/a0/a6,-(sp)
+	lea	HitFlags,a0
+	moveq	#0,d1
+.loop:
+	tst.b	(a0,d1.w)
+	beq.s	.next
+	move.w	d1,d0
+	bsr	HeroPtr
+	moveq	#SK_COMBAT,d0
+	bsr	SkillUse
+.next:
+	addq.w	#1,d1
+	cmp.w	#NHEROES,d1
+	blt.s	.loop
+	movem.l	(sp)+,d0-d1/a0/a6
+	rts
+
+; DrawSkills : la deuxieme page de la fiche, TAB depuis la premiere.
+DrawSkills:
+	movem.l	d0-d7/a0-a6,-(sp)
+	lea	TmpStr,a1
+	lea	TxtSkillsOf,a0
+	bsr	StrCopy
+	move.l	a6,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	moveq	#0,d7
+.loop:
+	move.w	d7,d0
+	lsl.w	#2,d0
+	lea	SkillNames,a0
+	move.l	(a0,d0.w),a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#14,d1
+	add.w	#40,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+	lea	TmpStr,a1		; la valeur, calee a droite
+	move.w	d7,d0
+	bsr	SkillValue
+	move.w	d0,d6
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#22,d0
+	cmp.w	#10,d6
+	bhs.s	.two
+	moveq	#23,d0
+.two:
+	move.w	d7,d1
+	mulu.w	#14,d1
+	add.w	#40,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
+	move.w	#24,d0			; et sa jauge, sous le nom
+	move.w	d7,d1
+	mulu.w	#14,d1
+	add.w	#49,d1
+	move.w	#176,d2
+	move.w	d6,d3
+	moveq	#99,d4
+	move.w	#C_GOLD+N_GOLD-3,d5
+	bsr	DrawGauge
+	addq.w	#1,d7
+	cmp.w	#NSKILLS,d7
+	blt	.loop
+	lea	TxtSkillsHelp,a0
+	moveq	#3,d0
+	move.w	#134,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
 ;----------------------------------------------------------------------
@@ -6997,6 +7263,8 @@ MonsterAttack:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	moveq	#SK_DEFENSE,d0		; il a pare : il y gagne peut-etre
+	bsr	SkillUse
 	bra	.done
 .hit:
 	move.w	#STRIKEFRAMES,StrikeTime	; le monstre frappe : sa pose
@@ -7393,6 +7661,10 @@ CastSpell:				; d0 = sort
 	lea	TxtFear,a0
 	bsr	LogAdd
 .after:
+	move.w	SelHero,d0		; le lanceur, qui a reussi sa formule
+	bsr	HeroPtr
+	moveq	#SK_CONCENT,d0
+	bsr	SkillUse
 	tst.w	InCombat		; hors combat, personne ne riposte
 	beq.s	.done
 	tst.w	MonHp
@@ -7430,6 +7702,10 @@ SpellDC:
 	bsr	CastMod
 	add.w	sp_Level(a2),d0
 	add.w	#10,d0
+	move.w	d0,d1
+	moveq	#SK_CONCENT,d0		; la formule, dite sans trembler
+	bsr	SkillTen
+	add.w	d1,d0
 	movem.l	(sp)+,d1-d2
 	rts
 
@@ -7768,6 +8044,7 @@ HandleKey:
 	bra	.redraw
 .openSheet:
 	move.w	#UI_SHEET,UiMode
+	clr.w	SheetPage		; on ouvre toujours sur le heros
 	bra	.redraw
 .notSheet:
 	cmp.w	#KEY_I,d0		; sac a dos
@@ -7803,6 +8080,13 @@ HandleKey:
 	move.w	#UI_OPTS,UiMode
 	bra	.redraw
 .notOptsKey:
+	cmp.w	#KEY_TAB,d0		; la fiche : TAB passe du heros a ses
+	bne.s	.notSheetTab		; competences, et retour
+	cmp.w	#UI_SHEET,UiMode
+	bne.s	.notSheetTab
+	eor.w	#1,SheetPage
+	bra	.redraw
+.notSheetTab:
 	move.w	UiMode,d1		; ces ecrans ont leurs propres fleches
 	cmp.w	#UI_SHOP,d1
 	bne.s	.notInShop
@@ -8400,6 +8684,9 @@ TxtLedgerOut:	dc.b	"LA MAISON NE VOUS DOIT PLUS RIEN.",0
 TxtDoorHeld:	dc.b	"L'ESCALIER DESCEND SUR UNE PORTE.",0
 TxtDoorHeld2:	dc.b	"ELLE NE CÈDE PAS : RIEN N'EST RAYÉ.",0
 TxtHelpLedger:	dc.b	"ENTRÉE RAYE LA LIGNE   ESC REFERME",0
+TxtProgress:	dc.b	" PROGRESSE : ",0
+TxtSkillsOf:	dc.b	"COMPÉTENCES : ",0
+TxtSkillsHelp:	dc.b	"TAB : LA FICHE",0
 TxtHelpArchive:	dc.b	"ESC REFERME LE LIVRE",0
 TxtArchiveSeen:	dc.b	"DES REGISTRES, DU SOL À LA VOÛTE.",0
 TxtArchiveOpen:	dc.b	"VOUS OUVREZ UN LIVRE DU GREFFE.",0
@@ -8560,7 +8847,7 @@ TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
 TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
 TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-6",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
-TxtHelpSheet:	dc.b	"1-6 HÉROS  I SAC  L LIVRE  P RÉGLAGES",0
+TxtHelpSheet:	dc.b	"TAB COMPÉTENCES  1-6 HÉROS  I SAC",0
 TxtHelpShop:	dc.b	"FLÈCHES  TAB COTE  ENTRÉE  ESC SORT",0
 	even
 
@@ -8646,6 +8933,9 @@ SpellCount:	ds.w	1
 SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1
 MonLastVbi:	ds.w	1		; VBI_Count au dernier passage de MonWalk
+HitFlags:	ds.b	NHEROES		; ceux qui ont touche pendant le round
+	even
+SheetPage:	ds.w	1		; fiche : 0 le heros, 1 ses competences
 StrikeTime:	ds.w	1		; trames de pose d'attaque restantes
 FlameFrame:	ds.w	1		; la flamme de la lanterne du guichet
 ShopInSight:	ds.w	1		; le guichet est dans la vue, a un pas

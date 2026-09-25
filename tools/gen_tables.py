@@ -144,6 +144,38 @@ START_GEAR = [
     (6, 14, 16, []),                                     # forgeron : masse
 ]
 
+# --- Competences ----------------------------------------------------------
+# Elles progressent a l'usage, comme dans Legend of Faerghail : chaque
+# reussite a une chance de faire gagner un point, d'autant plus mince
+# que la competence est deja haute. De 0 a 99.
+SKILLS = ["COMBAT", "DÉFENSE", "CONCENTRATION", "VIGILANCE", "DÉSAMORÇAGE",
+          "MARCHANDAGE"]
+
+# point de depart par classe, dans l'ordre de SKILLS
+CLASS_SKILLS = {
+    "GUERRIER":    (30, 25, 0, 10, 5, 10),
+    "BARBARE":     (30, 20, 0, 15, 0, 5),
+    "ROUBLARD":    (15, 15, 0, 30, 35, 20),
+    "RÔDEUR":      (25, 15, 10, 25, 10, 10),
+    "PALADIN":     (25, 25, 15, 10, 5, 10),
+    "CLERC":       (15, 20, 25, 10, 5, 15),
+    "MAGICIEN":    (5, 10, 30, 10, 5, 15),
+    "ENSORCELEUR": (5, 10, 30, 10, 5, 20),
+    "DRUIDE":      (10, 15, 25, 20, 10, 10),
+    "MOINE":       (25, 30, 20, 20, 10, 5),
+    "FORGERON":    (25, 25, 0, 10, 15, 30),
+}
+
+# ce que la race y ajoute
+RACE_SKILLS = {
+    "HUMAIN":    (5, 0, 0, 0, 0, 5),
+    "NAIN":      (0, 5, 0, 0, 5, 5),
+    "ELFE":      (0, 0, 5, 10, 0, 0),
+    "HALFELIN":  (0, 0, 0, 5, 10, 0),
+    "DEMI-ELFE": (0, 0, 0, 5, 0, 5),
+    "DEMI-ORC":  (10, 0, 0, 0, 0, 0),
+}
+
 # --- Races ----------------------------------------------------------------
 # nom, modificateurs (FOR, DEX, CON, INT, SAG, CHA) -- ceux du SRD --, et
 # les classes que la race ne donne pas.
@@ -294,6 +326,24 @@ with open(OUT, "w", encoding="latin-1") as f:
         f.write("\tdc.w\t" + ",".join(str(m) for m in mods)
                 + f",${mask:04x}\n")
     f.write(f"NRACES\t\t= {len(RACES)}\n")
+
+    f.write("\n; competences : leur nom, puis le depart par classe et ce que\n")
+    f.write("; la race y ajoute, un octet par competence\n")
+    f.write(f"NSKILLS\t\t= {len(SKILLS)}\n")
+    f.write("SkillNames:\n")
+    for i in range(len(SKILLS)):
+        f.write(f"\tdc.l\tTxtSkill{i}\n")
+    for i, name in enumerate(SKILLS):
+        f.write(f'TxtSkill{i}:\tdc.b\t"{name}",0\n')
+    f.write("\teven\nSkillClass:\n")
+    for name, *_ in CLASSES:
+        f.write("\tdc.b\t" + ",".join(str(v) for v in CLASS_SKILLS[name])
+                + f"\t; {name}\n")
+    f.write("SkillRace:\n")
+    for name, *_ in RACES:
+        f.write("\tdc.b\t" + ",".join(str(v) for v in RACE_SKILLS[name])
+                + f"\t; {name}\n")
+    f.write("\teven\n")
 
     f.write(f"\nNameList:\t\t\t; {NAMELEN} octets par nom\n")
     for name in NAMES:

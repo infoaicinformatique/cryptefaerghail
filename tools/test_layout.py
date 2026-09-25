@@ -170,6 +170,9 @@ if __name__ == "__main__":
     shot(g, "vue", fails)
     g.key(T.K_C)
     shot(g, "fiche", fails)
+    g.key(T.K_TAB)                        # la page des competences
+    shot(g, "competences", fails)
+    g.key(T.K_TAB)
     g.key(T.K_C); g.key(T.K_I)
     shot(g, "sac", fails)
     g.key(T.K_I); g.key(T.K_S)

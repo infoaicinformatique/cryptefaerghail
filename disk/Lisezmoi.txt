@@ -83,6 +83,14 @@ CREATION DU GROUPE
   des ; R relance le jet, ENTREE valide. Le nom se tape au clavier (TAB
   bascule AZERTY / QWERTY) ou se choisit aux fleches.
 
+LES COMPETENCES
+  Six competences, de 0 a 99 : combat, defense, concentration,
+  vigilance, desamorcage, marchandage. La classe fixe le depart, la
+  race l'ajuste, et elles progressent a l'usage : chaque coup porte,
+  chaque coup pare, chaque sort lance, chaque dalle reperee ou
+  desamorcee, chaque affaire conclue a une chance de faire gagner un
+  point -- de plus en plus rarement. Sur la fiche (C), TAB les montre.
+
 COMMANDES
   Fleches haut/bas      avancer, reculer
   Fleches gauche/droite tourner

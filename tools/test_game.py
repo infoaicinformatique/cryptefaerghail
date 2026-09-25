@@ -47,6 +47,28 @@ def read_equ(name, default):
 
 
 NH = read_equ("NHEROES", 6)                     # six aventuriers
+NSK = 6                                          # competences
+
+
+def skill_tables():
+    """SkillClass et SkillRace, relus dans src/tables.i."""
+    src = open(os.path.join(ROOT, "src", "tables.i"),
+               encoding="latin-1").read()
+    out = {}
+    for label in ("SkillClass", "SkillRace"):
+        rows = []
+        for line in src.split(label + ":\n", 1)[1].splitlines():
+            if "dc.b" not in line:
+                break
+            vals = line.split("dc.b")[1].split(";")[0]
+            rows.append([int(v) for v in vals.split(",")])
+        out[label] = rows
+    return out["SkillClass"], out["SkillRace"]
+
+
+def skills_of(g, i):
+    base = g.addr("Heroes") + i * HR["hr_SIZEOF"] + read_equ("hr_Skills", 56)
+    return [g.mem.r8(base + k) for k in range(NSK)]
 
 
 HR = {k: read_equ(k, 0) for k in
@@ -1030,6 +1052,22 @@ if __name__ == "__main__":
         check(wpn != 0, f"heros {i} : sans arme", fails)
         check(3 <= g.hero(i, "hr_Str") <= 18, f"heros {i} : FOR hors bornes", fails)
 
+    print("--- les competences ---")
+    by_class, by_race = skill_tables()
+    for i, (race, cls) in enumerate(PARTY):
+        want = [a + b for a, b in zip(by_class[cls], by_race[race])]
+        check(skills_of(g, i) == want, f"heros {i} : competences "
+              f"{skills_of(g, i)} au lieu de {want}", fails)
+    start_skills = [skills_of(g, i) for i in range(NH)]
+    g.key(K_C)
+    g.key(K_TAB)
+    check(g.w("UiMode") == 1 and g.w("SheetPage") == 1,
+          "TAB ne passe pas aux competences sur la fiche", fails)
+    g.key(K_TAB)
+    check(g.w("SheetPage") == 0, "TAB ne revient pas a la fiche", fails)
+    g.key(K_C)
+    print(f"  depart : classe et race, {start_skills[0]} pour le premier")
+
     print("--- exploration ---")
     moves = [K_UP, K_DOWN, K_LEFT, K_RIGHT, K_SPACE]
     start = (g.w("PosX"), g.w("PosY"))
@@ -1076,6 +1114,14 @@ if __name__ == "__main__":
           + "a rien eprouve", fails)
     check(rounds == 0 or g.hero(0, "hr_Xp") > 0 or g.w("GameOver"),
           "des combats sans le moindre point d" + chr(39) + "experience", fails)
+
+    grew = 0
+    for i in range(NH):
+        now = skills_of(g, i)
+        check(all(a <= b <= 99 for a, b in zip(start_skills[i], now)),
+              f"heros {i} : competences {start_skills[i]} -> {now}", fails)
+        grew += sum(b - a for a, b in zip(start_skills[i], now))
+    print(f"  apres les combats, {grew} point(s) de competence gagne(s)")
 
     print("--- l'echoppe ---")
     shop_test(g, fails)

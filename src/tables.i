@@ -265,6 +265,44 @@ RaceTable:
 	dc.w	2,0,0,-2,0,-2,$0140
 NRACES		= 6
 
+; competences : leur nom, puis le depart par classe et ce que
+; la race y ajoute, un octet par competence
+NSKILLS		= 6
+SkillNames:
+	dc.l	TxtSkill0
+	dc.l	TxtSkill1
+	dc.l	TxtSkill2
+	dc.l	TxtSkill3
+	dc.l	TxtSkill4
+	dc.l	TxtSkill5
+TxtSkill0:	dc.b	"COMBAT",0
+TxtSkill1:	dc.b	"DÉFENSE",0
+TxtSkill2:	dc.b	"CONCENTRATION",0
+TxtSkill3:	dc.b	"VIGILANCE",0
+TxtSkill4:	dc.b	"DÉSAMORÇAGE",0
+TxtSkill5:	dc.b	"MARCHANDAGE",0
+	even
+SkillClass:
+	dc.b	30,25,0,10,5,10	; GUERRIER
+	dc.b	30,20,0,15,0,5	; BARBARE
+	dc.b	15,15,0,30,35,20	; ROUBLARD
+	dc.b	25,15,10,25,10,10	; RÔDEUR
+	dc.b	25,25,15,10,5,10	; PALADIN
+	dc.b	15,20,25,10,5,15	; CLERC
+	dc.b	5,10,30,10,5,15	; MAGICIEN
+	dc.b	5,10,30,10,5,20	; ENSORCELEUR
+	dc.b	10,15,25,20,10,10	; DRUIDE
+	dc.b	25,30,20,20,10,5	; MOINE
+	dc.b	25,25,0,10,15,30	; FORGERON
+SkillRace:
+	dc.b	5,0,0,0,0,5	; HUMAIN
+	dc.b	0,5,0,0,5,5	; NAIN
+	dc.b	0,0,5,10,0,0	; ELFE
+	dc.b	0,0,0,5,10,0	; HALFELIN
+	dc.b	0,0,0,5,0,5	; DEMI-ELFE
+	dc.b	10,0,0,0,0,0	; DEMI-ORC
+	even
+
 NameList:			; 9 octets par nom
 	dc.b	"ALDER",0,0,0,0
 	dc.b	"MYRA",0,0,0,0,0

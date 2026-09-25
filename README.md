@@ -249,6 +249,26 @@ sauvegardes fortes ; le **forgeron**, solide comme un guerrier. La classe
 décide du dé de vie, de la progression à l'attaque et de l'accès à la magie.
 Celles que la race ne donne pas s'éteignent dans la liste et se refusent.
 
+**Les compétences progressent à l'usage**, comme dans *Legend of Faerghail* :
+un aventurier ne s'améliore pas qu'en niveaux. Six compétences, de 0 à 99,
+dont la classe fixe le départ et que la race ajuste :
+
+| Compétence | Ce qu'elle ajoute | Elle progresse quand… |
+|---|---|---|
+| Combat | valeur/10 au jet d'attaque | le héros touche (après le récit du round) |
+| Défense | valeur/10 à la classe d'armure | le monstre le manque |
+| Concentration | valeur/10 au DD de ses sorts | il lance un sort |
+| Vigilance | valeur/5 au jet pour repérer une dalle | il en repère une |
+| Désamorçage | valeur/5 au jet pour la désamorcer | il y parvient |
+| Marchandage | jusqu'à un quart du prix, à l'achat comme à la vente | le groupe conclut une affaire — c'est le meilleur négociateur qui parle |
+
+Chaque réussite a (100 − valeur) chances sur trois cents de faire gagner un
+point : vite au début, de plus en plus rarement. Le journal le dit —
+« ALDER PROGRESSE : COMBAT. » La fiche a une deuxième page, `TAB`, qui les
+montre avec leur jauge. Le bonus à part du roublard pour les pièges disparaît :
+il part avec de l'avance en vigilance et en désamorçage. La sauvegarde change
+de nombre magique, `FAE7`.
+
 Les sorts de départ se déclarent maintenant par leur nom dans
 `tools/gen_tables.py`, et le masque se calcule. Il était écrit à la main et ne
 correspondait plus à la table : le paladin partait avec le projectile magique

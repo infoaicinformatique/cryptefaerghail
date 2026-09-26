@@ -29,7 +29,7 @@ def party(g):
     return dict(
         heros=[(g.name(i), g.hero(i, "hr_Class"), g.hero(i, "hr_Hp"),
                 g.hero(i, "hr_HpMax"), g.hero(i, "hr_Xp"),
-                g.hero(i, "hr_Weapon")) for i in range(4)],
+                g.hero(i, "hr_Weapon")) for i in range(T.NH)],
         sac=[g.mem.r8(inv + i) for i in range(24)],
         pos=(g.w("PosX"), g.w("PosY"), g.w("Dir")),
         niveau=g.w("Level"), or_=g.w("Gold"), cles=g.w("KeyCount"),
@@ -107,7 +107,7 @@ if __name__ == "__main__":
         print(f"  reprise : {apres['pos']}, or {apres['or_']}, "
               f"{apres['vues']} cases relevees, "
               f"quittance {apres['quittance']}, reglages {apres['reglages']}")
-        for i in range(4):
+        for i in range(T.NH):
             print(f"  {apres['heros'][i][0]:8s} PV {apres['heros'][i][2]}"
                   f"/{apres['heros'][i][3]} PX {apres['heros'][i][4]}")
 
@@ -121,6 +121,26 @@ if __name__ == "__main__":
     if k.w("Phase") != PHASE_TITLE:
         fails.append("le jeu quitte l'accueil sur une sauvegarde illisible")
     print("  refusee, le jeu reste sur l'accueil")
+
+    print("--- sans son donjon ---")
+    # Le paquet du donjon manque : le jeu doit le dire dans le Shell et
+    # rendre la main, sans toucher a l'ecran.
+    import tempfile
+    vide = tempfile.mkdtemp(prefix="aga-progdir-")
+    old_prog = os.environ.get("AGA_PROGDIR")
+    os.environ["AGA_PROGDIR"] = vide
+    try:
+        n = T.Game()
+    finally:
+        if old_prog is None:
+            del os.environ["AGA_PROGDIR"]
+        else:
+            os.environ["AGA_PROGDIR"] = old_prog
+    if not n.finished:
+        fails.append("sans Donjons/Crypte.dgn, le jeu demarre quand meme")
+    if "Crypte.dgn" not in n.console:
+        fails.append(f"sans son donjon, le jeu ne dit rien ({n.console!r})")
+    print(f"  il le dit et rend la main : {n.console.strip()}")
 
     print()
     if fails:

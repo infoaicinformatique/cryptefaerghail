@@ -22,6 +22,8 @@ T_FLOOR, T_WALL, T_DOOR, T_STAIRS, T_LOCKED, T_NICHE, T_RUNE = range(7)
 T_LEVER, T_GATE = 7, 8
 T_SHOP, T_TRAP = 9, 10
 T_LEDGER = 11                            # le grand registre du dernier etage
+T_ARCHIVE = 13                           # un rayonnage du greffe
+T_STAIRSUP = 12                          # l'escalier qui remonte
 C_CHEST, C_MONSTER, C_ITEM, C_MASK = 0x10, 0x20, 0x30, 0x30
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]     # meme ordre que DirTable
 
@@ -202,7 +204,8 @@ def terrain(g):
 
 def passable(cell):
     t = cell & 0x0f
-    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER)
+    return t not in (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER,
+                     T_ARCHIVE)
 
 
 def bfs(grid, start, want):
@@ -273,7 +276,7 @@ def step_to(g, target, log):
 
 def exercise_ui(g, fails, stats):
     """Ouvre la fiche, le sac, le menu de sorts et tape dedans."""
-    for hero in range(4):
+    for hero in range(T.NH):
         g.key(T.K_1 + hero)
         g.key(T.K_C)                      # fiche d'aventure
         if g.w("UiMode") != 1:
@@ -318,7 +321,7 @@ def exercise_ui(g, fails, stats):
 
 def check_state(g, fails):
     """Invariants que rien ne doit briser."""
-    for i in range(4):
+    for i in range(T.NH):
         hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
         if not 0 <= hp <= hpm:
             fails.append(f"heros {i} : PV {hp}/{hpm}")
@@ -358,7 +361,7 @@ def cast_first(g, stats):
 
 def heal_up(g, stats):
     """Entre deux combats : potions et sorts de soin sur les blesses."""
-    for i in range(4):
+    for i in range(T.NH):
         if g.hero(i, "hr_Hp") * 2 > g.hero(i, "hr_HpMax"):
             continue
         g.key(T.K_1 + i)
@@ -377,15 +380,73 @@ def heal_up(g, stats):
         break
 
 
+def ready(g):
+    """Les heros que la guilde attend, et ce que coute la formation."""
+    out = []
+    for i in range(T.NH):
+        if g.hero(i, "hr_Hp") > 0 and g.hero(i, "hr_Flags") & 1:
+            out.append((i, 25 * g.hero(i, "hr_Level")))
+    return out
+
+
+def want_town(g):
+    """Remonter vaut-il la marche ? Deux eleves qu'on peut payer, ou deux
+    morts a relever."""
+    gold = g.w("Gold")
+    payable = [c for _, c in ready(g) if c <= gold]
+    dead = [i for i in range(T.NH) if g.hero(i, "hr_Hp") <= 0]
+    return len(payable) >= 2 or (len(dead) >= 2 and gold >= 60)
+
+
+def in_town(g, fails, stats):
+    """Au bourg : le temple, la guilde, l'auberge, puis on redescend."""
+    stats["bourg"] += 1
+    if g.w("TownPlace") or g.w("UiMode"):
+        fails.append("le bourg ne s'ouvre pas sur la place")
+    def door(row):
+        g.key(T.K_ESC)
+        g.setw("TownCursor", row)
+        g.key(T.K_RET)
+    door(2)                               # le temple, pour les morts
+    for i in range(T.NH):
+        for _ in range(3):
+            if g.hero(i, "hr_Hp") > 0:
+                break
+            g.setw("TownCursor", i)
+            g.key(T.K_RET)
+            if g.hero(i, "hr_Hp") > 0:
+                stats["releves"] += 1
+    door(3)                               # la guilde
+    for i in range(T.NH):
+        lvl = g.hero(i, "hr_Level")
+        g.setw("TownCursor", i)
+        g.key(T.K_RET)
+        if g.hero(i, "hr_Level") == lvl + 1:
+            stats["formations"] += 1
+        elif g.hero(i, "hr_Level") != lvl:
+            fails.append(f"la guilde fait passer {lvl} -> "
+                         f"{g.hero(i, 'hr_Level')}")
+    door(1)                               # l'auberge, une vraie chambre
+    g.setw("TownCursor", 1)
+    g.key(T.K_RET)
+    if g.sw("Gold") < 0:
+        fails.append(f"le bourg laisse l'or negatif : {g.sw('Gold')}")
+    door(6)                               # et l'on redescend
+    if g.w("InTown"):
+        fails.append("on ne quitte pas le bourg")
+    check_state(g, fails)
+
+
+
 def fight(g, fails, stats):
     """Frappe -- et lance un sort de temps en temps -- jusqu'a la fin."""
     guard = 0
-    while g.w("InCombat") and guard < 60:
+    while g.w("InCombat") and guard < 900:
         hp0 = g.sw("MonHp")
-        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
+        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"), g.w("GroupN"))
         guard += 1
         if guard % 4 == 2:
-            g.key(T.K_1 + random.randrange(4))
+            g.key(T.K_1 + random.randrange(T.NH))
             if cast_first(g, stats):
                 stats["rounds"] += 1
                 continue
@@ -394,15 +455,15 @@ def fight(g, fails, stats):
         # Depuis que les monstres marchent, le suivant peut arriver dans
         # la trame ou le precedent tombe : des PV qui remontent ne sont
         # une anomalie que si c'est le meme monstre.
-        encore = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
+        encore = (g.w("MonX"), g.w("MonY"), g.w("MonKind"), g.w("GroupN"))
         if g.w("InCombat") and encore == qui and g.sw("MonHp") > hp0:
             fails.append(f"PV du monstre en hausse : {hp0} -> {g.sw('MonHp')}")
-        for i in range(4):
+        for i in range(T.NH):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not 0 <= hp <= hpm:
                 fails.append(f"heros {i} : PV {hp}/{hpm} en combat")
-    if guard >= 60:
-        fails.append("combat interminable (60 rounds)")
+    if guard >= 900:
+        fails.append("combat interminable (900 touches)")
     else:
         stats["fights"] += 1
     if not g.w("GameOver"):
@@ -415,8 +476,9 @@ def main():
     stats = {"rounds": 0, "fights": 0, "steps": 0, "items": 0,
              "spells": 0, "menus": 0, "heals": 0,
              "levers": 0, "achats": 0, "ventes": 0, "pieges": 0,
-             "registre": 0}
+             "registre": 0, "bourg": 0, "formations": 0, "releves": 0}
     g = T.Game()
+    g.stay_in_town = True                 # le pilote y va de lui-meme
     T.create_party(g)
     if g.w("Phase") != 1:
         print("la creation n'aboutit pas"); return 1
@@ -439,7 +501,10 @@ def main():
         grid = terrain(g)
         here = (g.w("PosX"), g.w("PosY"))
         path = None
-        for label, want in goals:
+        todo = goals
+        if stats["bourg"] < 8 and want_town(g):
+            todo = [("remonter", lambda c: c & 0x0f == T_STAIRSUP)] + goals
+        for label, want in todo:
             path = bfs(grid, here, want)
             if path:
                 break
@@ -450,11 +515,20 @@ def main():
             was = g.mem.r8(g.addr("MapTerrain")
                            + cell[1] * MAPW + cell[0]) & 0x0f
             if not step_to(g, cell, log):
+                # Une creature est venue a nous pendant le pas : on ne
+                # tourne plus en combat, et le pas echoue. On le livre,
+                # puis on repart du but suivant.
+                if g.w("InCombat"):
+                    fight(g, fails, stats)
+                    break
                 log.append(("bloque", here, cell))
                 break
             if was == T_TRAP:
                 stats["pieges"] += 1
             stats["steps"] += 1
+            if g.w("InTown"):
+                in_town(g, fails, stats)
+                break
             check_state(g, fails)
             if g.w("InCombat"):
                 fight(g, fails, stats)
@@ -473,8 +547,10 @@ def main():
           f"soins {stats['heals']}, leviers {stats['levers']}, "
           f"achats {stats['achats']}, ventes {stats['ventes']}, "
           f"pieges {stats['pieges']}, registre {stats['registre']}, "
+          f"bourg {stats['bourg']}, formations {stats['formations']}, "
+          f"releves {stats['releves']}, "
           f"fin {g.w('GameOver')}")
-    for i in range(4):
+    for i in range(T.NH):
         print(f"  {g.name(i):8s} PV {g.hero(i,'hr_Hp')}/{g.hero(i,'hr_HpMax')} "
               f"niv {g.hero(i,'hr_Level')} PX {g.hero(i,'hr_Xp')}")
     for entry in log[-6:]:

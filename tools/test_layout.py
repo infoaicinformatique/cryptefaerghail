@@ -57,7 +57,7 @@ def widest(g):
     for slot in range(24):                # sac rempli des noms les plus longs
         g.mem.w8(inv + slot, order[slot % len(order)])
     spells = T.read_equ("hr_Spells", 40)
-    for h in range(4):                    # et tout le monde equipe pareil
+    for h in range(T.NH):                    # et tout le monde equipe pareil
         base = g.addr("Heroes") + h * T.HR["hr_SIZEOF"]
         g.mem.w16(base + T.HR["hr_Weapon"], order[0])
         g.mem.w16(base + spells, 0xffff)  # tous les sorts connus
@@ -156,17 +156,23 @@ if __name__ == "__main__":
     g.key(T.K_1 + 2)                      # 3 : le prologue, page a page
     prolog_pages(g, fails)                # la derniere page rend l'accueil
     g.key(T.K_1)                          # sortir de l'accueil
-    shot(g, "creation", fails)
+    shot(g, "creation", fails)            # les races
+    g.key(T.K_1 + 2)
+    shot(g, "classes", fails)
     g.key(T.K_1 + 6)
     shot(g, "jets", fails)
     g.key(T.K_RET); g.key(T.K_RET)
-    for c in (0, 5, 2):
-        g.key(T.K_1 + c); g.key(T.K_RET); g.key(T.K_RET)
+    for race, c in T.PARTY[:1] + T.PARTY[2:]:
+        g.key(T.K_1 + race); g.key(T.K_1 + c)
+        g.key(T.K_RET); g.key(T.K_RET)
     widest(g)
     g.key(T.K_1)                          # forcer un redessin
     shot(g, "vue", fails)
     g.key(T.K_C)
     shot(g, "fiche", fails)
+    g.key(T.K_TAB)                        # la page des competences
+    shot(g, "competences", fails)
+    g.key(T.K_TAB)
     g.key(T.K_C); g.key(T.K_I)
     shot(g, "sac", fails)
     g.key(T.K_I); g.key(T.K_S)
@@ -205,6 +211,39 @@ if __name__ == "__main__":
         g.setw("NeedRedraw", 1)
         shot(g, name, fails)
     g.setw("Acquitted", 0)
+
+    # Le resultat d'un round, au plus large : chaque ligne la plus longue
+    # que le panneau puisse avoir -- "LOIN : PARE", des degats a trois
+    # chiffres -- et des creatures qui ont porte beaucoup de coups.
+    res, val = g.addr("ResCode"), g.addr("ResVal")
+    for i, code in enumerate((1, 4, 5, 6, 1, 4)):
+        g.mem.w8(res + i, code)
+        g.mem.w16(val + 2 * i, 999)
+    g.setw("MonHits", 99)
+    g.setw("MonDmg", 999)
+    g.setw("RoundNo", 99)
+    g.setw("UiMode", T.read_equ("UI_ROUND", 11))
+    g.setw("NeedRedraw", 1)
+    shot(g, "round", fails)
+    g.setw("UiMode", 0)
+
+    # Les trois enigmes, sans chercher les portes : le titre depassait
+    # de la vue, et le banc ne le voyait que s'il trouvait un chemin
+    # jusqu'a une porte a runes.
+    for riddle in range(3):
+        g.setw("RiddleIdx", riddle)
+        g.setw("UiMode", T.read_equ("UI_RIDDLE", 4))
+        g.setw("NeedRedraw", 1)
+        shot(g, f"enigme-{riddle}", fails)
+    g.setw("UiMode", 0)
+
+    # Les trois livres du greffe : dix lignes sous leur cote, chacune
+    # doit tenir dans la vue.
+    for book in range(T.read_equ("NARCHIVES", 3)):
+        g.setw("ArchiveBook", book)
+        g.setw("UiMode", T.read_equ("UI_ARCHIVE", 10))
+        g.setw("NeedRedraw", 1)
+        shot(g, f"livre-{book}", fails)
     g.setw("UiMode", 0)
     g.setw("NeedRedraw", 1)
 

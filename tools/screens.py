@@ -46,7 +46,7 @@ def parse_table(label, name_len, nwords):
 
 ITEMS = parse_table("ItemTable", 18, 8)
 SPELLS = parse_table("SpellTable", 20, 9)
-MONSTERS = parse_table("MonTypes", 16, 16)
+MONSTERS = parse_table("MonTypes", 16, 18)
 CLASSES = parse_table("ClassTable", 12, 6)
 RAW, PIECES = D.load_art()
 LEVELS = D.load_maps()

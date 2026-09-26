@@ -179,9 +179,9 @@ depuis un siècle, a recommencé à faire ce qu'elle sait faire. Elle recouvre.
 Elle prend ce qu'on lui doit là où elle le trouve, sur les héritiers, faute de
 débiteurs.
 
-Quatre personnes descendent. Il faut être quatre — le registre a quatre
-colonnes de signature au bas de chaque quittance, et rien de ce que fait cette
-maison ne se fait à trois.
+Six personnes descendent. Il faut être six — le registre a six colonnes de
+signature au bas de chaque quittance, et rien de ce que fait cette maison ne se
+fait à cinq.
 
 Ils vont chercher le grand registre au dernier étage, et une plume.
 
@@ -198,10 +198,11 @@ Ils vont chercher le grand registre au dernier étage, et une plume.
 | Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
 | Une croix à la craie sur la dalle repérée | La marque des greffiers, sur un compte à examiner |
 | Trois étages, de plus en plus dangereux | Un étage par génération, la profondeur vaut l'ancienneté |
-| Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
+| Six aventuriers, ni quatre ni cinq | Six colonnes de signature au bas d'une quittance |
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
 | Elle ne s'ouvre qu'une fois la ligne rayée au registre | On ne sort de Faerghail qu'acquitté |
 | La partie se sauve à chaque étage | Le registre est tenu à jour |
+| Le greffe est tapissé de registres, trois s'ouvrent | La maison range ce qu'elle sait ; le reste est aux comptes |
 
 ## Le greffe, et ce qu'on vient y faire
 
@@ -209,9 +210,9 @@ Le grand registre est au fond du dernier étage, scellé dans un mur : un
 pupitre de chêne, le livre ouvert dessus, une chaîne qui le tient au mur —
 le registre ne sort pas —, l'encrier et la plume.
 
-La page porte quatre noms, et ce sont ceux du groupe. Une quittance de la
-maison a quatre colonnes de signature ; c'est pour cela qu'on descend à
-quatre, et c'est là que la raison de ce nombre se voit enfin. Rayer la ligne
+La page porte six noms, et ce sont ceux du groupe. Une quittance de la
+maison a six colonnes de signature ; c'est pour cela qu'on descend à six, et
+c'est là que la raison de ce nombre se voit enfin. Rayer la ligne
 ne demande rien d'autre que d'être là : le greffier a été emmuré *avec le
 registre et de quoi écrire*, et ce de quoi écrire n'a jamais servi depuis.
 
@@ -220,6 +221,36 @@ nulle part tant que la ligne n'est pas rayée. La porte des quittances tient
 bon, et le groupe repart chercher le greffe. Le troisième étage n'est plus une
 sortie à trouver, mais un compte à solder puis une sortie à trouver.
 
+## Ambelune, en haut de l'escalier
+
+Ambelune est au pied de la colline, et l'entrée de la maison au sommet : on
+entrait par le haut pour déposer. Le village a toujours vécu de Faerghail,
+comme vivent les villages autour des maisons de garde — de quoi loger ceux
+qui venaient déposer, de quoi nourrir ceux qui attendaient l'échéance, de quoi
+prier pour ceux qui ne remontaient pas. Remonter l'escalier du premier étage,
+c'est redescendre la colline et rentrer chez soi pour la nuit.
+
+Ce n'est pas sortir. Les noms à la craie restent sur les portes, et **on ne
+sort de Faerghail qu'acquitté** : par le bas.
+
+Ambelune a gardé les habitudes de la maison, en plus petit et en plus cher.
+Sa **banque** est une maison de dépôt comme l'autre, mais tenue par des
+vivants : elle rend ce qu'on lui confie — presque toujours. Sa **guilde** ne
+croit pas ce qu'on raconte d'en bas ; elle fait passer les épreuves, et fait
+payer le maître, parce qu'un savoir non inscrit ne compte pas. Son **temple**
+relève les morts quand les dieux y consentent, et garde l'offrande quand ils
+refusent : ce n'est pas un commerce, c'est un dépôt fait à plus grand que soi.
+
+Et ses rues ont leurs coupe-bourses, qui sont, eux aussi, une très vieille
+façon de tenir des comptes.
+
+| Ce que le jeu fait | Pourquoi Ambelune le fait |
+|---|---|
+| L'expérience ne fait pas le niveau : la guilde le vend | Un savoir non inscrit ne compte pas — la guilde a pris la manie de la maison |
+| La banque est pillée, rarement | Une maison de dépôt tenue par des vivants |
+| Le temple garde l'offrande d'une résurrection manquée | Un dépôt fait aux dieux ne se reprend pas |
+| Un coupe-bourse à l'arrivée | Le village vit de ceux qui remontent les poches pleines |
+
 ## Ce qui reste à écrire
 
 Le prologue de l'accueil dit le nom, la maison, l'emmurement et Ambelune ; le
@@ -227,8 +258,12 @@ registre dit la dette et la quittance. Le reste — l'échéance de chaque dalle
 la question posée à chaque porte, ce qu'Ossian vend et pourquoi — ne se
 rencontre qu'en jouant, et ne se dit nulle part.
 
-Il manque encore la salle : le registre est un pupitre dans un mur, pas un
-greffe, et Ossian n'a qu'une seule phrase d'accueil aux trois guichets. Ce
-sont les deux endroits où cette histoire dépasse encore ce que le programme
-sait raconter — et donc les deux prochaines choses à écrire, le jour où l'on
-ajoutera un quatrième étage.
+Le greffe a maintenant sa salle : une porte, des rayonnages du sol à la
+voûte, et le pupitre au fond. Trois des livres rangés là s'ouvrent, et disent
+ce qui ne se disait nulle part — le ressort de chaque dalle, la question de
+chaque porte, l'emmurement d'Ossian et le taux de son guichet. Les autres
+tiennent les comptes de quatre siècles, et ne regardent pas le groupe.
+
+Il reste Ossian, qui n'a qu'une seule phrase d'accueil aux trois guichets.
+C'est le dernier endroit où cette histoire dépasse encore ce que le programme
+sait raconter.

@@ -168,6 +168,45 @@ def png(path, px, surf=None):
                            chunk(b"IEND", b""))
 
 
+def salle(g, grid, ledger):
+    """Le greffe vu de son entree, puis un de ses livres ouvert.
+
+    On se poste sur la case de la salle la plus loin du pupitre, face a
+    lui : les rayonnages courent sur les deux murs, et le pupitre se voit
+    au fond. Puis on se tourne vers le premier livre qu'on trouve."""
+    lx, ly = ledger
+    for dx, dy in P.DIRS:
+        seat = (lx + 3 * dx, ly + 3 * dy)
+        if not (0 <= seat[0] < P.MAPW and 0 <= seat[1] < P.MAPH):
+            continue
+        if not P.passable(grid[seat[1]][seat[0]]):
+            continue
+        if all(P.passable(grid[ly + k * dy][lx + k * dx]) for k in (1, 2)):
+            break
+    else:
+        return
+    if not P.goto(g, seat):
+        return
+    P.face(g, P.DIRS.index((-dx, -dy)), [])
+    shoot(g, "salle-greffe")
+    par = g.addr("MapParam")
+    for y in range(P.MAPH):
+        for x in range(P.MAPW):
+            if grid[y][x] & 0x0f != 13 or \
+                    g.mem.r8(par + y * P.MAPW + x) & 0x7f != 2:
+                continue
+            spot = next(((x + a, y + b) for a, b in P.DIRS
+                         if P.passable(grid[y + b][x + a])), None)
+            if spot and P.goto(g, spot):
+                P.face(g, P.DIRS.index((x - spot[0], y - spot[1])), [])
+                shoot(g, "rayonnage")
+                g.key(T.K_SPACE)
+                if g.w("UiMode") == 10:
+                    shoot(g, "livre")
+                    g.key(T.K_ESC)
+            return
+
+
 def shoot(g, name):
     out = os.path.join(ROOT, "docs", f"emu-{name}.png")
     png(out, grab(g, "ShowBuf"), copper_surf(g))
@@ -184,12 +223,15 @@ if __name__ == "__main__":
     shoot(g, "prologue-fin")
     g.key(T.K_ESC)                        # retour a l'accueil
     g.key(T.K_1)                          # 1 : commencer une partie
-    shoot(g, "creation")
-    g.key(T.K_1 + 6)                      # magicien : les jets s'affichent
+    shoot(g, "creation")                  # la race
+    g.key(T.K_1 + 2)                      # une elfe
+    shoot(g, "creation-classe")
+    g.key(T.K_1 + 6)                      # magicienne : les jets s'affichent
     shoot(g, "creation-jets")
     g.key(T.K_RET); g.key(T.K_RET)        # garder les jets, garder le nom
-    for c in (0, 5, 2):                   # guerrier, clerc, roublard
-        g.key(T.K_1 + c); g.key(T.K_RET); g.key(T.K_RET)
+    for race, c in T.PARTY[:1] + T.PARTY[2:]:
+        g.key(T.K_1 + race); g.key(T.K_1 + c)
+        g.key(T.K_RET); g.key(T.K_RET)
     shoot(g, "vue")
     g.key(T.K_C)
     shoot(g, "fiche")
@@ -237,13 +279,46 @@ if __name__ == "__main__":
     path = P.bfs(grid, (g.w("PosX"), g.w("PosY")),
                  lambda c: c & 0x30 == 0x20)
     if path:
-        for cell in path[1:]:
+        # Deux cases avant lui, face a lui : les monstres se voient venir.
+        for i, cell in enumerate(path[1:], 1):
+            if len(path) - i == 2 and len(path) >= 3:
+                (ax, ay), (bx, by) = path[-2], path[-1]
+                here = (g.w("PosX"), g.w("PosY"))
+                if (ax - here[0], ay - here[1]) == (bx - ax, by - ay):
+                    P.face(g, P.DIRS.index((ax - here[0], ay - here[1])), [])
+                    shoot(g, "monstre-couloir")
             if not P.step_to(g, cell, []) or g.w("InCombat"):
                 break
+    if g.w("InCombat") and g.w("MeetPhase"):
+        shoot(g, "rencontre")             # avant le fer, la parole
+        g.key(T.K_A)                      # ici, on degaine
     shoot(g, "combat")
-    g.key(T.K_S)
-    shoot(g, "combat-sorts")
-    g.key(T.K_ESC)
+    if g.w("InCombat"):                   # la pose d'attaque, tenue
+        g.setw("StrikeTime", 400)
+        g.setw("NeedRedraw", 1)
+        g.key(T.K_1)
+        shoot(g, "combat-attaque")
+        g.setw("StrikeTime", 1)
+        g.key(T.K_1)
+    if g.w("InCombat"):                   # les ordres : au premier
+        spells = T.read_equ("hr_Spells", 42)   # lanceur debout de choisir
+        caster = next((i for i in range(T.NH)  # un sort
+                       if g.hero(i, "hr_Hp") and g.mem.r16(
+                           g.addr("Heroes") + i * T.HR["hr_SIZEOF"] + spells)),
+                      0)
+        g.key(T.K_1 + caster)
+        shoot(g, "combat-ordres")
+        g.key(T.K_S)
+        shoot(g, "combat-sorts")
+        g.key(T.K_1)                      # le premier : c'est son ordre
+        g.setw("MonHp", 120)              # qu'il tienne un round : six
+        for _ in range(12):               # contre un kobold, il tombe au
+            if not g.w("InCombat") or g.w("GameOver"):   # premier, et il
+                break                     # n'y a pas de resultat a montrer
+            g.key(T.K_RET)
+            if g.w("UiMode") == 11:
+                shoot(g, "combat-round")  # le resultat, en detail
+                break
     while g.w("InCombat") and not g.w("GameOver"):
         g.key(T.K_A)
     for want in (lambda c: c & 0x30 == 0x30,          # explorer un peu
@@ -276,9 +351,44 @@ if __name__ == "__main__":
             g.key(T.K_A)
     shoot(g, "couloir")
 
+    T.corridor_monster_test(g, [], shot=lambda gg, n, px: png(
+        os.path.join(ROOT, "docs", f"emu-{n}.png"), px, copper_surf(gg)))
+
     g.key(0x37)                           # M : la carte du niveau
     shoot(g, "carte")
     g.key(0x37)
+
+    # Le bourg, au-dessus du premier etage : la place, puis la guilde
+    # avec deux eleves prets et de quoi payer l'un d'eux.
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("MeetPhase", 0)
+    g.setw("UiMode", 0)
+    g.setw("Level", 0)
+    g.call(g.addr("LevelEnter"))
+    g.setw("Gold", 5)
+    g.stay_in_town = True
+    g.call(g.addr("Ascend"))
+    g.setw("Gold", 180)
+    for i in range(T.NH):                 # une nuit a l'auberge, deja
+        base = g.addr("Heroes") + i * T.HR["hr_SIZEOF"]
+        g.mem.w16(base + T.HR["hr_Hp"], g.hero(i, "hr_HpMax"))
+    flags = T.read_equ("hr_Flags", 64)
+    for i in (0, 3):
+        base = g.addr("Heroes") + i * T.HR["hr_SIZEOF"]
+        lvl = g.hero(i, "hr_Level")
+        g.mem.w16(base + T.HR["hr_Xp"], 75 * lvl * (lvl + 1))
+        g.mem.w16(base + flags, 1)
+    g.setw("TownCursor", 3)
+    g.setw("NeedRedraw", 1)
+    g.key(T.K_DOWN); g.key(T.K_UP)
+    shoot(g, "bourg")
+    g.key(T.K_RET)
+    shoot(g, "guilde")
+    g.key(T.K_ESC)
+    g.setw("TownCursor", 6)
+    g.key(T.K_RET)
+    g.stay_in_town = False
 
     # Le greffe du dernier etage. Y arriver en jouant prendrait tout le
     # banc : on descend d'autorite, et on deblaie la traversee -- ce
@@ -286,7 +396,7 @@ if __name__ == "__main__":
     g.setw("GameOver", 0)
     g.setw("InCombat", 0)
     g.setw("UiMode", 0)
-    for i in range(4):
+    for i in range(T.NH):
         base = g.addr("Heroes") + i * T.HR["hr_SIZEOF"]
         g.mem.w16(base + T.HR["hr_Hp"], g.hero(i, "hr_HpMax"))
     g.setw("Level", 2)
@@ -318,3 +428,4 @@ if __name__ == "__main__":
                 g.key(T.K_RET)            # la ligne rayee
                 shoot(g, "registre-raye")
                 g.key(T.K_ESC)
+        salle(g, grid, (lx, ly))

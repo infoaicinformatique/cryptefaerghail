@@ -93,6 +93,42 @@ MONSTERS = [
     ("GÉANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4),
 ]
 
+# --- Langues et temperaments -------------------------------------------
+# Une rencontre ne commence plus forcement par le fer : on peut saluer,
+# discuter -- si quelqu'un du groupe parle la langue --, ou se retirer.
+# Chaque espece a sa langue (0 : elle ne parle pas) et son temperament :
+# 0 toujours hostile, 1 mefiant, 2 plutot paisible.
+TONGUES = ["", "COMMUN", "GOBELIN", "ORC", "GÉANT", "DRACONIQUE"]
+SPECIES_TALK = {
+    "KOBOLD": (2, 1), "GOBELIN": (2, 1), "RAT SANGUIN": (0, 0),
+    "SQUELETTE": (0, 0), "ORC": (3, 1), "HOBGOBELIN": (2, 1),
+    "ZOMBI": (0, 0), "LOUP": (0, 0), "GNOLL": (3, 1), "GOULE": (0, 0),
+    "BUGBEAR": (2, 1), "WORG": (0, 0), "OMBRE": (0, 0), "OGRE": (4, 1),
+    "HOMME-LÉZARD": (5, 2), "GARGOUILLE": (0, 0), "OMBRE BLÊME": (0, 0),
+    "OURSALOUP": (0, 0), "HARPIE": (1, 0), "MINOTAURE": (4, 0),
+    "TROLL": (4, 0), "SPECTRE": (0, 0),
+    # La momie est un Faerghail qui a refuse qu'on le raye : elle parle
+    # la langue du pays, et ne veut rien entendre.
+    "MOMIE": (1, 0), "HYDRE": (0, 0), "GÉANT COLLINE": (4, 1),
+}
+# ce que chaque race parle, en plus du commun
+RACE_TONGUES = {
+    "HUMAIN": [], "NAIN": ["GOBELIN", "GÉANT"], "ELFE": ["DRACONIQUE"],
+    "HALFELIN": ["GOBELIN"], "DEMI-ELFE": ["ORC"],
+    "DEMI-ORC": ["ORC", "GOBELIN"],
+}
+# et ce que la classe apprend
+CLASS_TONGUES = {"MAGICIEN": ["DRACONIQUE"], "ENSORCELEUR": ["DRACONIQUE"],
+                 "DRUIDE": ["GÉANT"], "RÔDEUR": ["ORC"]}
+
+
+def tongue_mask(names):
+    mask = 1 << TONGUES.index("COMMUN")
+    for n in names:
+        mask |= 1 << TONGUES.index(n)
+    return mask
+
+
 # Ce que rapporte une victoire, selon le facteur de puissance (FP) :
 # le SRD donne 300 x FP pour un groupe de niveau egal, divise par quatre
 # aventuriers, ce qui tient dans un mot.
@@ -103,6 +139,13 @@ def monster_xp(cr):
 # nom, de de vie, progression d'attaque (0 complete, 1 trois quarts,
 # 2 demie), sauvegardes fortes (Vig, Ref, Vol), lanceur (0 aucun,
 # 1 profane sur l'Intelligence, 2 divin sur la Sagesse)
+#
+# Onze classes, comme les jeux de role a groupe de l'epoque : les huit
+# du debut, et trois de plus -- le druide, lanceur divin des bois ; le
+# moine, qui se bat sans armure et resiste a tout ; le forgeron, solide
+# comme un guerrier, et qui saura reparer ce que les combats usent.
+# L'ordre compte : c'est le numero de classe des sauvegardes et des
+# portraits, les nouvelles viennent donc a la suite.
 CLASSES = [
     ("GUERRIER",  10, 0, (1, 0, 0), 0),
     ("BARBARE",   12, 0, (1, 0, 0), 0),
@@ -112,18 +155,73 @@ CLASSES = [
     ("CLERC",      8, 1, (1, 0, 1), 2),
     ("MAGICIEN",   4, 2, (0, 0, 1), 1),
     ("ENSORCELEUR", 4, 2, (0, 0, 1), 1),
+    ("DRUIDE",     8, 1, (1, 0, 1), 2),
+    ("MOINE",      8, 1, (1, 1, 1), 0),
+    ("FORGERON",  10, 0, (1, 0, 0), 0),
 ]
 
-# arme, armure, bouclier, sorts connus (masque de 16 bits)
+# arme, armure, bouclier, sorts connus -- par leur nom : le masque
+# (un bit par rang dans SPELLS) se calcule. Il etait ecrit a la main, et
+# ne correspondait plus a la table : le paladin partait avec le
+# projectile magique au lieu des soins, le clerc avec la terreur au lieu
+# de la benediction.
 START_GEAR = [
-    (3, 14, 16, 0),                      # guerrier : epee longue, cotte
-    (4, 13, 0, 0),                       # barbare : hache, cuir
-    (2, 13, 0, 0),                       # roublard : epee courte
-    (7, 13, 0, 0),                       # rodeur : arc
-    (3, 14, 16, 0b10),                   # paladin : soins legers
-    (6, 13, 16, 0b1000010),              # clerc : soins + benediction
-    (8, 12, 0, 0b1101),                  # magicien : givre, projectile, mains
-    (8, 12, 0, 0b101),                   # ensorceleur : givre, projectile
+    (3, 14, 16, []),                                     # guerrier
+    (4, 13, 0, []),                                      # barbare
+    (2, 13, 0, []),                                      # roublard
+    (7, 13, 0, []),                                      # rodeur : arc
+    (3, 14, 16, ["SOINS LÉGERS"]),                       # paladin
+    (6, 13, 16, ["SOINS LÉGERS", "BENEDICTION"]),        # clerc
+    (8, 12, 0, ["RAYON DE GIVRE", "PROJECTILE MAGIQUE",
+                "MAINS BRÛLANTES"]),                     # magicien
+    (8, 12, 0, ["RAYON DE GIVRE", "PROJECTILE MAGIQUE"]),  # ensorceleur
+    (8, 13, 0, ["SOINS LÉGERS", "TERREUR"]),             # druide : baton
+    (8, 12, 0, []),                                      # moine : baton, robe
+    (6, 14, 16, []),                                     # forgeron : masse
+]
+
+# --- Competences ----------------------------------------------------------
+# Elles progressent a l'usage, comme dans Legend of Faerghail : chaque
+# reussite a une chance de faire gagner un point, d'autant plus mince
+# que la competence est deja haute. De 0 a 99.
+SKILLS = ["COMBAT", "DÉFENSE", "CONCENTRATION", "VIGILANCE", "DÉSAMORÇAGE",
+          "MARCHANDAGE"]
+
+# point de depart par classe, dans l'ordre de SKILLS
+CLASS_SKILLS = {
+    "GUERRIER":    (30, 25, 0, 10, 5, 10),
+    "BARBARE":     (30, 20, 0, 15, 0, 5),
+    "ROUBLARD":    (15, 15, 0, 30, 35, 20),
+    "RÔDEUR":      (25, 15, 10, 25, 10, 10),
+    "PALADIN":     (25, 25, 15, 10, 5, 10),
+    "CLERC":       (15, 20, 25, 10, 5, 15),
+    "MAGICIEN":    (5, 10, 30, 10, 5, 15),
+    "ENSORCELEUR": (5, 10, 30, 10, 5, 20),
+    "DRUIDE":      (10, 15, 25, 20, 10, 10),
+    "MOINE":       (25, 30, 20, 20, 10, 5),
+    "FORGERON":    (25, 25, 0, 10, 15, 30),
+}
+
+# ce que la race y ajoute
+RACE_SKILLS = {
+    "HUMAIN":    (5, 0, 0, 0, 0, 5),
+    "NAIN":      (0, 5, 0, 0, 5, 5),
+    "ELFE":      (0, 0, 5, 10, 0, 0),
+    "HALFELIN":  (0, 0, 0, 5, 10, 0),
+    "DEMI-ELFE": (0, 0, 0, 5, 0, 5),
+    "DEMI-ORC":  (10, 0, 0, 0, 0, 0),
+}
+
+# --- Races ----------------------------------------------------------------
+# nom, modificateurs (FOR, DEX, CON, INT, SAG, CHA) -- ceux du SRD --, et
+# les classes que la race ne donne pas.
+RACES = [
+    ("HUMAIN",    (0, 0, 0, 0, 0, 0), []),
+    ("NAIN",      (0, 0, 2, 0, 0, -2), ["MAGICIEN", "ENSORCELEUR"]),
+    ("ELFE",      (0, 2, -2, 0, 0, 0), ["PALADIN", "BARBARE"]),
+    ("HALFELIN",  (-2, 2, 0, 0, 0, 0), ["BARBARE", "FORGERON"]),
+    ("DEMI-ELFE", (0, 0, 0, 0, 0, 0), []),
+    ("DEMI-ORC",  (2, 0, 0, -2, 0, -2), ["DRUIDE", "MAGICIEN"]),
 ]
 
 # --- Sorts du SRD 3.5 -------------------------------------------------
@@ -213,14 +311,16 @@ with open(OUT, "w", encoding="latin-1") as f:
 
     f.write("\n; nom (16), des de vie, faces, bonus PV, CA, attaque, des,\n")
     f.write("; faces, bonus degats, marge critique, multiplicateur,\n")
-    f.write("; Vigueur, Reflexes, Volonte, PX, or, silhouette\n")
+    f.write("; Vigueur, Reflexes, Volonte, PX, or, silhouette, langue,\n")
+    f.write("; temperament (0 hostile, 1 mefiant, 2 paisible)\n")
     f.write("MonTypes:\n")
     for (name, hd, hdf, hpb, ac, atk, dice, faces, dmg, crit, mult,
          fort, ref, will, cr, gold, art) in MONSTERS:
         f.write(pad(name, 16))
+        tongue, temper = SPECIES_TALK[name]
         f.write(f"\tdc.w\t{hd},{hdf},{hpb},{ac},{atk},{dice},{faces},{dmg},"
                 f"{crit},{mult},{fort},{ref},{will},{monster_xp(cr)},"
-                f"{gold},{art}\n")
+                f"{gold},{art},{tongue},{temper}\n")
     f.write(f"NMONSTERS\t= {len(MONSTERS)}\n")
 
     f.write("\n; rencontres par niveau de donjon : numeros de monstres\n")
@@ -245,8 +345,58 @@ with open(OUT, "w", encoding="latin-1") as f:
         f.write("\tdc.w\t" + ",".join(str(v) for v in row) + "\n")
 
     f.write("\nStartGear:\t\t\t; arme, armure, bouclier, sorts\n")
-    for w, a, sh, sp in START_GEAR:
-        f.write(f"\tdc.w\t{w},{a},{sh},{sp}\n")
+    names = [sp[0] for sp in SPELLS]
+    assert len(START_GEAR) == len(CLASSES)
+    for w, a, sh, known in START_GEAR:
+        mask = 0
+        for name in known:
+            mask |= 1 << names.index(name)
+        f.write(f"\tdc.w\t{w},{a},{sh},${mask:04x}\t; {', '.join(known)}\n")
+
+    f.write("\n; nom (12), FOR, DEX, CON, INT, SAG, CHA, classes interdites\n")
+    f.write("RaceTable:\n")
+    cnames = [c[0] for c in CLASSES]
+    for name, mods, banned in RACES:
+        mask = 0
+        for c in banned:
+            mask |= 1 << cnames.index(c)
+        f.write(pad(name, 12))
+        f.write("\tdc.w\t" + ",".join(str(m) for m in mods)
+                + f",${mask:04x}\n")
+    f.write(f"NRACES\t\t= {len(RACES)}\n")
+
+    f.write("\n; les langues : leur nom, puis ce que parlent races et classes\n")
+    f.write(f"NTONGUES\t= {len(TONGUES)}\n")
+    f.write("TongueNames:\n")
+    for i in range(len(TONGUES)):
+        f.write(f"\tdc.l\tTxtTongue{i}\n")
+    for i, name in enumerate(TONGUES):
+        f.write(f'TxtTongue{i}:\tdc.b\t"{name}",0\n')
+    f.write("\teven\nRaceTongues:\n")
+    for name, *_ in RACES:
+        f.write(f"\tdc.w\t${tongue_mask(RACE_TONGUES[name]):04x}\t; {name}\n")
+    f.write("ClassTongues:\n")
+    for name, *_ in CLASSES:
+        f.write(f"\tdc.w\t${tongue_mask(CLASS_TONGUES.get(name, [])):04x}"
+                f"\t; {name}\n")
+
+    f.write("\n; competences : leur nom, puis le depart par classe et ce que\n")
+    f.write("; la race y ajoute, un octet par competence\n")
+    f.write(f"NSKILLS\t\t= {len(SKILLS)}\n")
+    f.write("SkillNames:\n")
+    for i in range(len(SKILLS)):
+        f.write(f"\tdc.l\tTxtSkill{i}\n")
+    for i, name in enumerate(SKILLS):
+        f.write(f'TxtSkill{i}:\tdc.b\t"{name}",0\n')
+    f.write("\teven\nSkillClass:\n")
+    for name, *_ in CLASSES:
+        f.write("\tdc.b\t" + ",".join(str(v) for v in CLASS_SKILLS[name])
+                + f"\t; {name}\n")
+    f.write("SkillRace:\n")
+    for name, *_ in RACES:
+        f.write("\tdc.b\t" + ",".join(str(v) for v in RACE_SKILLS[name])
+                + f"\t; {name}\n")
+    f.write("\teven\n")
 
     f.write(f"\nNameList:\t\t\t; {NAMELEN} octets par nom\n")
     for name in NAMES:
@@ -258,4 +408,5 @@ with open(OUT, "w", encoding="latin-1") as f:
     f.write(keymap("KeyQwerty", QWERTY))
 
 print(f"{OUT} : {len(ITEMS)} objets, {len(SPELLS)} sorts, "
-      f"{len(MONSTERS)} monstres, {len(NAMES)} noms")
+      f"{len(MONSTERS)} monstres, {len(CLASSES)} classes, {len(RACES)} races, "
+      f"{len(NAMES)} noms")

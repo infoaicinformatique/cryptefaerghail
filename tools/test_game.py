@@ -46,9 +46,35 @@ def read_equ(name, default):
     return default
 
 
+NH = read_equ("NHEROES", 6)                     # six aventuriers
+NSK = 6                                          # competences
+
+
+def skill_tables():
+    """SkillClass et SkillRace, relus dans src/tables.i."""
+    src = open(os.path.join(ROOT, "src", "tables.i"),
+               encoding="latin-1").read()
+    out = {}
+    for label in ("SkillClass", "SkillRace"):
+        rows = []
+        for line in src.split(label + ":\n", 1)[1].splitlines():
+            if "dc.b" not in line:
+                break
+            vals = line.split("dc.b")[1].split(";")[0]
+            rows.append([int(v) for v in vals.split(",")])
+        out[label] = rows
+    return out["SkillClass"], out["SkillRace"]
+
+
+def skills_of(g, i):
+    base = g.addr("Heroes") + i * HR["hr_SIZEOF"] + read_equ("hr_Skills", 56)
+    return [g.mem.r8(base + k) for k in range(NSK)]
+
+
 HR = {k: read_equ(k, 0) for k in
       ("hr_Name", "hr_Class", "hr_Level", "hr_Xp", "hr_Hp", "hr_HpMax",
-       "hr_Mp", "hr_MpMax", "hr_Str", "hr_Weapon", "hr_SIZEOF", "hr_Slots")}
+       "hr_Mp", "hr_MpMax", "hr_Str", "hr_Weapon", "hr_SIZEOF", "hr_Slots",
+       "hr_Tongues", "hr_Flags")}
 MAPW = 24
 
 
@@ -182,10 +208,23 @@ class Game(R.Harness):
         err = self.run(slices=slices, idle=self.idle)
         assert err is None or "termine" in err, err
 
+    # La marche au hasard remonte parfois l'escalier du premier etage,
+    # et Ambelune ne se quitte que par son menu : sans cela, les bancs
+    # qui errent y resteraient. Ceux qui visitent le village expres
+    # (town_test, play_game, les captures) mettent stay_in_town.
+    stay_in_town = False
+
     def key(self, code, slices=80):
         self.press(code)
         err = self.run(slices=slices, idle=self.idle)
         assert err is None or "termine" in err, err
+        if not self.stay_in_town and self.w("InTown"):
+            self.setw("UiMode", 0)
+            self.setw("TownPlace", 0)
+            self.setw("TownCursor", 6)       # DESCENDRE A LA CRYPTE
+            self.press(K_RET)
+            err = self.run(slices=slices, idle=self.idle)
+            assert err is None or "termine" in err, err
 
     def keys(self, seq, slices=40):
         for k in seq:
@@ -193,12 +232,15 @@ class Game(R.Harness):
 
 
 MAPH = 24
-PANEL_X, PANEL_TOP, PANEL_STEP = 224, 12, 37
+PANEL_X, PANEL_TOP, PANEL_STEP = (read_equ("PANEL_X", 224),
+                                  read_equ("PANEL_TOP", 12),
+                                  read_equ("PANEL_STEP", 24))
 DIRS = [(0, -1), (1, 0), (0, 1), (-1, 0)]        # meme ordre que DirTable
 T_WALL, T_LOCKED, T_NICHE, T_LEVER, T_GATE = 1, 4, 5, 7, 8
 T_SHOP, T_TRAP = 9, 10
 T_LEDGER = 11                                    # le grand registre
 T_STAIRSUP = 12                                  # l'escalier qui remonte
+T_ARCHIVE = 13                                   # un rayonnage du greffe
 C_MASK, C_MONSTER = 0x30, 0x20      # contenu de la case, cf. crawl.s
 
 
@@ -295,15 +337,22 @@ def prolog_test(g, fails):
     print(f"  {pages} pages, les fleches reviennent, ESC rend l'accueil")
 
 
-def create_party(g, classes=(0, 6, 1, 5)):
-    """Choix de classe, acceptation des jets, nom par defaut.
+# (race, classe) : chaque race y donne sa classe -- pas de mage nain, de
+# barbare halfelin, ni de magicien demi-orc.
+PARTY = ((0, 0), (2, 6), (1, 1), (4, 5), (3, 3), (5, 7))
+
+
+def create_party(g, party=PARTY):
+    """Choix de la race, de la classe, acceptation des jets, nom par
+    defaut.
 
     Le jeu s'ouvre sur l'ecran d'accueil : on demande d'abord une
     nouvelle partie."""
     if g.w("Phase") == 2:
         g.key(K_1)
-    for c in classes:
-        g.key(K_1 + c)                   # touche 1 a 8
+    for race, c in party:
+        g.key(K_1 + race)                # touche 1 a 6
+        g.key(K_1 + c)                   # touche 1 a 9, puis fleches
         g.key(K_RET)                     # garder les caracteristiques
         g.key(K_RET)                     # garder le nom propose
     return g.w("Phase")
@@ -403,10 +452,31 @@ def walk_test(g, fails):
     heal(g)
     px, py = g.w("PosX"), g.w("PosY")
     grid = grid_of(g)
-    spot = next(((x, y) for d in (2, 3, 4)
-                 for x in range(MAPW) for y in range(MAPH)
-                 if abs(x - px) + abs(y - py) == d and grid[y][x] == 0
-                 and g.mem.r8(par + y * MAPW + x) == 0), None)
+    # Deux a quatre cases devant, en ligne et sans rien entre : un
+    # monstre pose de l'autre cote d'un mur, a deux cases a vol
+    # d'oiseau, marche droit sur le groupe et bute contre la pierre.
+    def open_line(dx, dy, d):
+        return all(0 <= px + dx * k < MAPW and 0 <= py + dy * k < MAPH
+                   and grid[py + dy * k][px + dx * k] == 0
+                   and g.mem.r8(par + (py + dy * k) * MAPW + px + dx * k) == 0
+                   for k in range(1, d + 1))
+    spot = next(((px + dx * d, py + dy * d) for d in (2, 3, 4)
+                 for dx, dy in DIRS if open_line(dx, dy, d)), None)
+    if spot is None:                      # pas de couloir droit ici : on
+        for y in range(1, MAPH - 1):      # mene le groupe au premier venu
+            for x in range(1, MAPW - 1):
+                if grid[y][x] or g.mem.r8(par + y * MAPW + x):
+                    continue
+                px, py = x, y
+                spot = next(((px + dx * 2, py + dy * 2) for dx, dy in DIRS
+                             if open_line(dx, dy, 2)), None)
+                if spot:
+                    break
+            if spot:
+                break
+        if spot:
+            g.setw("PosX", px)
+            g.setw("PosY", py)
     if not check(spot, "pas de dallage nu ou poser un monstre", fails):
         return
     mx, my = spot
@@ -545,7 +615,7 @@ def ledger_test(g, fails):
     spot = [(lx + dx, ly + dy) for dx, dy in DIRS
             if 0 <= lx + dx < MAPW and 0 <= ly + dy < MAPH
             and grid[ly + dy][lx + dx] & 0x0f not in
-            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER)]
+            (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER, T_ARCHIVE)]
     if not check(spot, f"registre mure en {lx},{ly}", fails):
         return
     if not walk_to(g, spot[0], budget=200):
@@ -574,6 +644,8 @@ def ledger_test(g, fails):
     check(g.w("Acquitted") == 1, "la quittance se defait", fails)
     g.key(K_ESC)
     print(f"  registre en {lx},{ly} : la ligne se raye, et une seule fois")
+
+    archive_test(g, fails, (lx, ly))
 
     if not check(stairs, "pas d'escalier au dernier etage", fails):
         return
@@ -605,6 +677,495 @@ def ledger_test(g, fails):
     print("  la porte des quittances : fermee sans, ouverte avec")
 
 
+def archive_test(g, fails, ledger):
+    """Les rayonnages du greffe : trois livres qu'on ouvre, qui valent de
+    l'experience a la premiere lecture et a elle seule, et des rayonnages
+    muets qui n'ouvrent rien. Tous doivent border la salle du pupitre."""
+    grid = grid_of(g)
+    par = g.addr("MapParam")
+    shelves = [(x, y) for y in range(MAPH) for x in range(MAPW)
+               if grid[y][x] & 0x0f == T_ARCHIVE]
+    books = {}
+    for x, y in shelves:
+        b = g.mem.r8(par + y * MAPW + x) & 0x7f
+        if b != 0x7f:
+            books[b] = (x, y)
+    if not check(sorted(books) == [0, 1, 2], f"livres du greffe : "
+                 f"{sorted(books)} au lieu de [0, 1, 2]", fails):
+        return
+    lx, ly = ledger
+    far = [c for c in shelves if abs(c[0] - lx) + abs(c[1] - ly) > 6]
+    check(not far, f"rayonnages loin du pupitre : {far}", fails)
+
+    solid = (T_WALL, T_NICHE, T_LEVER, T_GATE, T_SHOP, T_LEDGER, T_ARCHIVE)
+    mute = [c for c in shelves if c not in books.values()]
+    for b, (x, y) in sorted(books.items()) + [(None, c) for c in mute[:1]]:
+        spot = [(x + dx, y + dy) for dx, dy in DIRS
+                if 0 <= x + dx < MAPW and 0 <= y + dy < MAPH
+                and grid[y + dy][x + dx] & 0x0f not in solid]
+        if not check(spot, f"rayonnage mure en {x},{y}", fails):
+            continue
+        if not walk_to(g, spot[0], budget=60) or not face_cell(g, (x, y)):
+            fails.append(f"impossible de lire le rayonnage en {x},{y}")
+            continue
+        xp0 = g.hero(0, "hr_Xp")
+        g.key(K_SPACE)
+        ui = g.w("UiMode")
+        if b is None:
+            check(ui == 0, f"un rayonnage muet ouvre un livre (UiMode={ui})",
+                  fails)
+            check(g.hero(0, "hr_Xp") == xp0, "un rayonnage muet vaut de "
+                  "l'experience", fails)
+            continue
+        if not check(ui == 10, f"le livre {b} ne s'ouvre pas (UiMode={ui})",
+                     fails):
+            continue
+        check(g.w("ArchiveBook") == b, f"le rayonnage {b} ouvre le livre "
+              f"{g.w('ArchiveBook')}", fails)
+        check(g.hero(0, "hr_Xp") > xp0, f"le livre {b} ne vaut aucune "
+              "experience a la premiere lecture", fails)
+        check(g.mem.r8(par + y * MAPW + x) & 0x80, f"le livre {b} n'est "
+              "pas marque lu", fails)
+        g.key(K_UP)                           # le livre tient la main :
+        check(g.w("UiMode") == 10, "une fleche referme le livre", fails)
+        g.key(K_ESC)
+        check(g.w("UiMode") == 0, f"le livre {b} ne se referme pas", fails)
+        xp1 = g.hero(0, "hr_Xp")
+        g.key(K_SPACE)                        # relu : la page, sans plus
+        check(g.w("UiMode") == 10, f"le livre {b} ne se rouvre pas", fails)
+        check(g.hero(0, "hr_Xp") == xp1, f"le livre {b} paie deux fois",
+              fails)
+        g.key(K_ESC)
+    print(f"  greffe : {len(shelves)} rayonnages, trois livres lus, "
+          f"payes une fois")
+
+
+def corridor_monster_test(g, fails, shot=None):
+    """Les monstres se voient venir : une creature posee deux cases devant
+    le groupe, dans un couloir degage, doit changer la vue -- et se
+    retirer doit la rendre telle qu'elle etait."""
+    import shot68k as S
+    grid = grid_of(g)
+    spot = None
+    for y in range(1, MAPH - 1):
+        for x in range(1, MAPW - 1):
+            if grid[y][x] & 0x3f:
+                continue
+            for d, (dx, dy) in enumerate(DIRS):
+                cells = [(x + dx * k, y + dy * k) for k in (1, 2, 3)]
+                if all(0 <= cx < MAPW and 0 <= cy < MAPH
+                       and grid[cy][cx] == 0 for cx, cy in cells):
+                    spot = (x, y, d, cells[1])
+                    break
+            if spot:
+                break
+        if spot:
+            break
+    if not check(spot, "aucun couloir droit pour voir venir un monstre",
+                 fails):
+        return
+    x, y, d, (mx, my) = spot
+    saved = (g.w("PosX"), g.w("PosY"), g.w("Dir"))
+    g.setw("PosX", x)
+    g.setw("PosY", y)
+    g.setw("Dir", d)
+    # On appelle Redraw directement et on lit le tampon de dessin : faire
+    # tourner la boucle laisserait a l'orc le temps de marcher sur nous.
+    g.call(g.addr("Redraw"))
+    empty = S.grab(g, "DrawBuf")
+    ter, par = g.addr("MapTerrain"), g.addr("MapParam")
+    g.mem.w8(ter + my * MAPW + mx, 0x20)
+    g.mem.w8(par + my * MAPW + mx, 4)        # un orc
+    g.call(g.addr("Redraw"))
+    seen = S.grab(g, "DrawBuf")
+    if shot:
+        shot(g, "monstre-couloir", seen)
+    changed = sum(1 for a, b in zip(empty, seen) if a != b)
+    check(changed > 200, f"le monstre deux cases devant ne se voit pas "
+          f"({changed} pixels changent)", fails)
+    check(g.w("InCombat") == 0, "voir un monstre engage le combat", fails)
+    g.mem.w8(ter + my * MAPW + mx, 0)
+    g.mem.w8(par + my * MAPW + mx, 0)
+    g.call(g.addr("Redraw"))
+    check(S.grab(g, "DrawBuf") == empty, "le monstre parti laisse une trace",
+          fails)
+    g.setw("PosX", saved[0])
+    g.setw("PosY", saved[1])
+    g.setw("Dir", saved[2])
+    g.setw("NeedRedraw", 1)
+    print(f"  un orc deux cases devant, en {mx},{my} : {changed} pixels")
+
+
+def combat_test(g, fails):
+    """Le combat par rounds : un groupe, des rangs, un ordre par heros.
+
+    On provoque la rencontre d'autorite, devant le groupe, puis on
+    verifie chaque regle : la taille du groupe, l'ordre qui passe d'un
+    heros au suivant, l'arriere qui ne frappe qu'a l'arc, la parade, le
+    resultat du round, ENTREE qui rejoue les ordres retenus, et la
+    creature suivante qui s'avance quand celle de devant tombe."""
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    g.setw("OptQuick", 0)
+    heal(g)
+    g.setw("MonKind", 4)                  # des orcs
+    g.setw("MonX", g.w("PosX"))
+    g.setw("MonY", g.w("PosY"))
+    g.setw("MeetAmbush", 0)               # c'est nous qui venons : pas de
+    if not check(g.call(g.addr("StartCombat")), "StartCombat ne rend pas "
+                 "la main", fails):       # surprise
+        return
+    check(g.w("MeetPhase") == 1, "pas de rencontre avant le combat", fails)
+    g.key(K_A)                            # A : aux armes
+    check(g.w("MeetPhase") == 0, "A ne tourne pas la rencontre au combat",
+          fails)
+    n = g.w("GroupN")
+    check(1 <= n <= 4, f"groupe de {n} creatures", fails)
+    check(g.w("OrderHero") == 0, f"l'ordre commence au heros "
+          f"{g.w('OrderHero')}", fails)
+
+    orders = g.addr("Orders")
+    for i in range(NH):                   # tout le monde frappe...
+        g.mem.w8(orders + i, 0)
+    g.key(K_A)
+    check(g.mem.r8(orders) == 0 and g.w("OrderHero") == 1,
+          f"A ne donne pas l'ordre au premier (ordre {g.w('OrderHero')})",
+          fails)
+    g.key(K_D)                            # ...sauf le deuxieme, qui pare
+    check(g.mem.r8(orders + 1) == 1, "D ne donne pas l'ordre de parer",
+          fails)
+    round0 = g.w("RoundNo")
+    for _ in range(NH - 2):
+        g.key(K_A)
+    check(g.w("RoundNo") == round0 + 1, "le round ne se joue pas apres le "
+          "dernier ordre", fails)
+    if g.w("InCombat"):
+        check(g.w("UiMode") == 11, f"pas de resultat du round en detail "
+              f"(UiMode={g.w('UiMode')})", fails)
+        res = [g.mem.r8(g.addr("ResCode") + i) for i in range(NH)]
+        guard = [g.mem.r8(g.addr("Guarding") + i) for i in range(NH)]
+        check(res[1] == 3 and guard[1], f"le deuxieme ne pare pas "
+              f"(resultat {res[1]})", fails)
+        # PARTY : Selva, clerc a l'arriere, n'a pas d'arc ; Thorgal,
+        # rodeur, en a un.
+        if g.hero(3, "hr_Hp"):
+            check(res[3] == 4 and guard[3], f"l'arriere sans arc frappe "
+                  f"(resultat {res[3]})", fails)
+        if g.hero(4, "hr_Hp"):
+            check(res[4] in (1, 2), f"l'arc ne porte pas depuis l'arriere "
+                  f"(resultat {res[4]})", fails)
+        g.key(K_SPACE)                    # une touche referme le resultat
+        check(g.w("UiMode") == 0, "le resultat du round ne se referme pas",
+              fails)
+
+    if g.w("InCombat"):                   # la suivante s'avance
+        g.setw("GroupN", 2)
+        g.setw("GroupNext", 1)
+        g.mem.w16(g.addr("GroupHp") + 2, 250)
+        g.setw("MonHp", 1)
+        for i in range(NH):
+            g.mem.w8(orders + i, 0)
+        for _ in range(12):
+            if g.w("GroupN") < 2 or not g.w("InCombat"):
+                break
+            g.key(K_RET)                  # les ordres retenus, d'un coup
+            if g.w("UiMode") == 11:
+                g.key(K_SPACE)
+        check(g.w("GroupN") == 1 and g.w("InCombat") == 1,
+              f"la creature suivante ne s'avance pas (groupe "
+              f"{g.w('GroupN')}, combat {g.w('InCombat')})", fails)
+        check(g.sw("MonHp") > 200, f"la suivante n'a pas ses propres PV "
+              f"({g.sw('MonHp')})", fails)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    heal(g)
+    print(f"  un groupe de {n}, les ordres un par un, l'arriere a l'arc, "
+          f"la parade, et la suivante qui s'avance")
+
+
+def meet(g, kind):
+    """Provoque une rencontre d'autorite, sur la case du groupe."""
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    g.setw("MonKind", kind)
+    g.setw("MonX", g.w("PosX"))
+    g.setw("MonY", g.w("PosY"))
+    g.setw("MeetAmbush", 0)
+    return g.call(g.addr("StartCombat"))
+
+
+def meet_test(g, fails):
+    """La rencontre avant le combat : saluer, discuter, payer, degainer.
+
+    Le rat ne parle pas et ne repond qu'au fer. L'orc parle la langue
+    des orcs, que le demi-elfe et le demi-orc du groupe connaissent : il
+    laisse passer, demande un peage ou degaine, selon le jet de
+    reaction -- on essaie assez de fois pour voir chaque issue, et on
+    verifie que chacune tient ses promesses."""
+    heal(g)
+    if not check(meet(g, 2), "StartCombat ne rend pas la main", fails):
+        return
+    check(g.w("MeetPhase") == 1, "pas de rencontre avec le rat", fails)
+    g.key(K_D)
+    check(g.w("MeetPhase") == 1 and g.w("InCombat") == 1,
+          "discuter avec un rat change quelque chose", fails)
+    g.key(K_S)
+    check(g.w("MeetPhase") == 0 and g.w("InCombat") == 1,
+          "le rat salue ne tourne pas au combat", fails)
+
+    seen = {"passe": 0, "peage": 0, "combat": 0}
+    for _ in range(40):
+        heal(g)
+        g.setw("Gold", 5000)
+        if not meet(g, 4):
+            fails.append("StartCombat ne rend pas la main")
+            break
+        g.key(K_D)
+        if not g.w("InCombat"):
+            seen["passe"] += 1
+            check(g.w("MeetPhase") == 0, "ils passent, la rencontre reste",
+                  fails)
+        elif g.w("MeetPhase") == 2:
+            seen["peage"] += 1
+            toll, gold0 = g.w("MeetToll"), g.w("Gold")
+            check(toll > 0, "un peage de zero piece", fails)
+            g.key(0x18)                   # O : payer
+            check(g.w("Gold") == gold0 - toll, f"le peage de {toll} coute "
+                  f"{gold0 - g.w('Gold')}", fails)
+            check(not g.w("InCombat"), "le peage paye, ils restent", fails)
+        else:
+            seen["combat"] += 1
+            check(g.w("MeetPhase") == 0 and g.w("InCombat") == 1,
+                  f"discussion sans issue (rencontre {g.w('MeetPhase')}, "
+                  f"combat {g.w('InCombat')})", fails)
+    check(seen["passe"] + seen["peage"] > 0, f"les orcs ne se laissent "
+          f"jamais parler : {seen}", fails)
+    g.setw("InCombat", 0)
+    g.setw("MeetPhase", 0)
+    g.setw("Gold", 100)
+    heal(g)
+    print(f"  le rat ne parle pas ; quarante orcs : {seen}")
+
+
+def sethero(g, i, field, val):
+    base = g.addr("Heroes") + i * HR["hr_SIZEOF"]
+    g.mem.w16(base + HR[field], val & 0xffff)
+
+
+def town_goto(g, row):
+    """Revenir sur la place, puis ouvrir la porte de la ligne voulue."""
+    g.key(K_ESC)
+    g.setw("TownCursor", row)
+    g.key(K_RET)
+
+
+def town_test(g, fails):
+    """Le bourg, au-dessus du premier etage : chaque porte tient-elle ce
+    qu'elle affiche ? L'auberge rend les forces, le temple soigne et
+    releve, la guilde forme contre or et experience -- l'experience
+    seule ne fait plus passer de niveau -- et enseigne les langues, la
+    banque garde l'or, la rue le risque, et la sauvegarde s'en souvient."""
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("MeetPhase", 0)
+    g.setw("UiMode", 0)
+    g.setw("Level", 0)
+    heal(g)
+    g.call(g.addr("LevelEnter"))
+    up = [(x, y) for y in range(MAPH) for x in range(MAPW)
+          if grid_of(g)[y][x] & 0x0f == T_STAIRSUP]
+    if not check(up, "pas d'escalier montant au premier etage", fails):
+        return
+    g.setw("PosX", up[0][0])
+    g.setw("PosY", up[0][1])
+    g.setw("Gold", 5)                     # pas de quoi tenter un coupe-bourse
+    g.stay_in_town = True
+    g.call(g.addr("Ascend"))
+    if not check(g.w("InTown") == 1, "remonter du premier etage ne mene pas "
+                 "au bourg", fails):
+        g.stay_in_town = False
+        return
+    check(g.w("Level") == 0 and g.w("UiMode") == 0 and g.w("TownPlace") == 0,
+          "l'arrivee au bourg n'ouvre pas la place", fails)
+    ter = g.addr("MapTerrain")
+    stair = g.mem.r8(ter + g.w("PosY") * MAPW + g.w("PosX")) & 0x0f
+    g.key(K_UP)                           # pas un pas au bourg
+    check(g.w("TownCursor") == 0 and g.w("InTown"), "la fleche fait autre "
+          "chose que viser une porte", fails)
+    g.key(K_M_QW)
+    check(g.w("UiMode") == 0, "la carte s'ouvre au bourg", fails)
+    living = sum(1 for i in range(NH) if g.hero(i, "hr_Hp") > 0)
+
+    # --- l'auberge : la chambre rend tout, pour cinq pieces par tete
+    g.setw("Gold", 1000)
+    town_goto(g, 1)
+    check(g.w("TownPlace") == 1, "la porte de l'auberge ne s'ouvre pas", fails)
+    sethero(g, 0, "hr_Hp", 1)
+    g.setw("TownCursor", 1)
+    g.key(K_RET)
+    check(g.w("Gold") == 1000 - 5 * living, f"la chambre coute "
+          f"{1000 - g.w('Gold')} au lieu de {5 * living}", fails)
+    check(g.hero(0, "hr_Hp") == g.hero(0, "hr_HpMax"), "la chambre ne rend "
+          "pas les points de vie", fails)
+    g.key(K_ESC)
+    check(g.w("TownPlace") == 0 and g.w("InTown"), "ESC ne ramene pas sur "
+          "la place", fails)
+
+    # --- le temple : soigner, et relever -- les dieux refusent parfois
+    town_goto(g, 2)
+    sethero(g, 2, "hr_Hp", 3)
+    g.setw("Gold", 1000)
+    g.setw("TownCursor", 2)
+    g.key(K_RET)
+    cost = (g.hero(2, "hr_HpMax") - 3 + 1) // 2
+    check(g.hero(2, "hr_Hp") == g.hero(2, "hr_HpMax")
+          and g.w("Gold") == 1000 - cost, "le temple soigne mal", fails)
+    sethero(g, 1, "hr_Hp", 0)
+    price = 30 * g.hero(1, "hr_Level")
+    tries = 0
+    while g.hero(1, "hr_Hp") == 0 and tries < 20:
+        g.setw("Gold", 1000)
+        g.setw("TownCursor", 1)
+        g.key(K_RET)
+        tries += 1
+        check(g.w("Gold") == 1000 - price, f"relever coute "
+              f"{1000 - g.w('Gold')} au lieu de {price}", fails)
+    check(g.hero(1, "hr_Hp") == g.hero(1, "hr_HpMax"), "vingt offrandes et "
+          "le mort reste mort", fails)
+    g.setw("Gold", 0)
+    sethero(g, 1, "hr_Hp", 0)
+    g.key(K_RET)
+    check(g.hero(1, "hr_Hp") == 0 and g.w("Gold") == 0, "le temple releve "
+          "a credit", fails)
+    heal(g)
+    print(f"  auberge et temple : releve en {tries} offrande(s) de {price}")
+
+    # --- l'experience ne suffit plus : la guilde forme contre or
+    sethero(g, 0, "hr_Xp", 150)
+    lvl0 = g.hero(0, "hr_Level")
+    base0 = g.addr("Heroes")
+    g.call(g.addr("CheckLevel"), a6=base0)
+    check(g.hero(0, "hr_Level") == lvl0, "l'experience fait encore passer le "
+          "niveau toute seule", fails)
+    check(g.hero(0, "hr_Flags") & 1, "le heros pret n'est pas marque", fails)
+    town_goto(g, 3)
+    g.setw("Gold", 1000)
+    sethero(g, 3, "hr_Xp", 0)
+    g.setw("TownCursor", 3)
+    g.key(K_RET)
+    check(g.hero(3, "hr_Level") == 1 and g.w("Gold") == 1000, "la guilde "
+          "forme sans experience", fails)
+    hpm = g.hero(0, "hr_HpMax")
+    g.setw("TownCursor", 0)
+    g.key(K_RET)
+    check(g.hero(0, "hr_Level") == lvl0 + 1, "la guilde ne forme pas", fails)
+    check(g.w("Gold") == 1000 - 25 * lvl0, f"la formation coute "
+          f"{1000 - g.w('Gold')}", fails)
+    check(g.hero(0, "hr_HpMax") > hpm and not g.hero(0, "hr_Flags") & 1,
+          "former n'ajoute pas de vie ou laisse le drapeau", fails)
+
+    # --- les langues : TAB, puis 1 a 6 pour l'eleve
+    g.key(K_TAB)
+    check(g.w("GuildPage") == 1, "TAB n'ouvre pas les langues", fails)
+    learner, tongue = None, None
+    race_off = read_equ("hr_Race", 54)
+    for i in range(NH):                   # g.call rend les registres : on
+        base = base0 + i * HR["hr_SIZEOF"]   # relit les tables a la main
+        known = (g.mem.r16(g.addr("RaceTongues") + 2 * g.mem.r16(base + race_off))
+                 | g.mem.r16(g.addr("ClassTongues") + 2 * g.hero(i, "hr_Class"))
+                 | g.hero(i, "hr_Tongues"))
+        missing = [t for t in range(1, 6) if not (known >> t) & 1]
+        if missing and g.hero(i, "hr_Hp") > 0:
+            learner, tongue = i, missing[0]
+            break
+    if check(learner is not None, "tout le groupe parle deja tout", fails):
+        g.key(K_1 + learner)
+        check(g.w("SelHero") == learner and g.w("InTown"), "1 a 6 ne "
+              "choisit pas l'eleve", fails)
+        g.setw("Gold", 1000)
+        g.setw("TownCursor", tongue - 1)
+        g.key(K_RET)
+        check((g.hero(learner, "hr_Tongues") >> tongue) & 1
+              and g.w("Gold") == 900, "la langue ne s'apprend pas pour 100",
+              fails)
+        g.key(K_RET)
+        check(g.w("Gold") == 900, "une langue sue se paie deux fois", fails)
+    print(f"  guilde : niveau {lvl0} -> {g.hero(0, 'hr_Level')}, "
+          f"langue {tongue} apprise par le heros {learner}")
+
+    # --- la banque
+    town_goto(g, 4)
+    g.setw("Gold", 120)
+    g.setw("Bank", 0)
+    for row, want in ((0, (70, 50)), (1, (0, 120)), (2, (50, 70)),
+                      (3, (120, 0))):
+        g.setw("TownCursor", row)
+        g.key(K_RET)
+        check((g.w("Gold"), g.w("Bank")) == want, f"banque, ligne {row} : "
+              f"or/depot {(g.w('Gold'), g.w('Bank'))} au lieu de {want}",
+              fails)
+
+    # --- la rue : le guet s'eveille, et l'or ne devient jamais negatif
+    town_goto(g, 5)
+    heat0 = g.w("StreetHeat")
+    seen = {"bourse": 0, "rien": 0, "pris": 0}
+    for _ in range(12):
+        heal(g)
+        g.setw("Gold", 200)
+        g.setw("TownCursor", 0)
+        g.key(K_RET)
+        gold = g.w("Gold")
+        seen["bourse" if gold > 200 else "rien" if gold == 200
+             else "pris"] += 1
+        check(gold == 200 or 211 <= gold <= 230 or gold == 150,
+              f"la rue laisse {gold} pieces", fails)
+    check(g.w("StreetHeat") == heat0 + 36, "le guet ne s'eveille pas", fails)
+    check(seen["pris"] > 0, f"le guet n'attrape jamais personne : {seen}",
+          fails)
+    print(f"  la rue, douze essais : {seen}")
+
+    # --- le comptoir : l'etal du bourg, et ESC ramene sur la place
+    town_goto(g, 0)
+    check(g.w("UiMode") == 8, "le comptoir ne s'ouvre pas", fails)
+    stock = [g.byte("ShopStock", k) for k in range(8)]
+    check(stock == [17, 17, 18, 7, 4, 13, 14, 16], f"l'etal du bourg : "
+          f"{stock}", fails)
+    g.key(K_ESC)
+    check(g.w("UiMode") == 0 and g.w("InTown"), "on sort du comptoir hors "
+          "du bourg", fails)
+
+    # --- la sauvegarde s'en souvient
+    g.setw("Bank", 77)
+    g.call(g.addr("SaveGame"))
+    g.setw("Bank", 0)
+    g.setw("InTown", 0)
+    g.call(g.addr("LoadGame"))
+    check(g.w("InTown") == 1 and g.w("Bank") == 77, "la sauvegarde oublie "
+          f"le bourg ({g.w('InTown')}) ou la banque ({g.w('Bank')})", fails)
+    stock = [g.byte("ShopStock", k) for k in range(8)]
+    check(stock[:3] == [17, 17, 18], "relue au bourg, la partie a l'etal "
+          "du guichet", fails)
+
+    # --- et l'on redescend
+    g.setw("TownPlace", 0)
+    g.setw("TownCursor", 6)
+    g.key(K_RET)
+    check(not g.w("InTown") and g.w("Level") == 0, "on ne redescend pas",
+          fails)
+    here = g.mem.r8(ter + g.w("PosY") * MAPW + g.w("PosX")) & 0x0f
+    check(here == stair == T_STAIRSUP, f"on ne redescend pas sur "
+          f"l'escalier (terrain {here})", fails)
+    stock = [g.byte("ShopStock", k) for k in range(8)]
+    check(stock != [17, 17, 18, 7, 4, 13, 14, 16], "le guichet de la crypte "
+          "garde l'etal du bourg", fails)
+    g.stay_in_town = False
+    g.setw("Bank", 0)
+    g.setw("Gold", 100)
+    heal(g)
+
+
 def trap_test(g, fails):
     """Marcher jusqu'a un piege et voir ce qu'il fait."""
     grid = grid_of(g)
@@ -613,7 +1174,7 @@ def trap_test(g, fails):
     if not check(traps, "aucun piege sur cet etage", fails):
         return
     print(f"  {len(traps)} dalles piegees sur l'etage")
-    hp0 = sum(g.hero(i, "hr_Hp") for i in range(4))
+    hp0 = sum(g.hero(i, "hr_Hp") for i in range(NH))
     sprung = spotted = disarmed = 0
     for tx, ty in traps:
         if g.w("GameOver") or spotted + sprung >= 6:
@@ -631,7 +1192,7 @@ def trap_test(g, fails):
             continue
         heal(g)                           # on veut voir le piege, pas mourir
         before = (g.w("PosX"), g.w("PosY"))
-        hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+        hpa = sum(g.hero(i, "hr_Hp") for i in range(NH))
         g.key(K_UP)                       # marcher dessus
         par = g.mem.r8(g.addr("MapParam") + ty * MAPW + tx)
         now = grid_of(g)[ty][tx] & 0x0f
@@ -643,7 +1204,7 @@ def trap_test(g, fails):
             check(par & 0x80, "le piege reste arme sans etre marque", fails)
             check(not moved, "le piege est repere et le groupe avance quand"
                   " meme", fails)
-            check(sum(g.hero(i, "hr_Hp") for i in range(4)) == hpa,
+            check(sum(g.hero(i, "hr_Hp") for i in range(NH)) == hpa,
                   "un piege repere blesse quand meme", fails)
             g.key(K_SPACE)                # tenter le desamorcage
             if grid_of(g)[ty][tx] & 0x0f != T_TRAP:
@@ -655,11 +1216,11 @@ def trap_test(g, fails):
                   fails)
             check(g.mem.r8(g.addr("MapParam") + ty * MAPW + tx) == 0,
                   "un piege detendu garde son parametre", fails)
-        for i in range(4):
+        for i in range(NH):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
                 return
-    hp1 = sum(g.hero(i, "hr_Hp") for i in range(4))
+    hp1 = sum(g.hero(i, "hr_Hp") for i in range(NH))
     print(f"  {spotted} reperes ({disarmed} desamorces), {sprung} declenches, "
           f"PV du groupe {hp0} -> {hp1}")
     check(spotted + sprung > 0, "aucun piege n'a pu etre approche", fails)
@@ -686,10 +1247,10 @@ def trap_test(g, fails):
         heal(g)
         par = g.addr("MapParam") + ty * MAPW + tx
         g.mem.w8(par, g.mem.r8(par) | 0x80)     # le groupe sait, et y va
-        hpa = sum(g.hero(i, "hr_Hp") for i in range(4))
+        hpa = sum(g.hero(i, "hr_Hp") for i in range(NH))
         g.key(K_UP)
         now = grid_of(g)[ty][tx] & 0x0f
-        hpb = sum(g.hero(i, "hr_Hp") for i in range(4))
+        hpb = sum(g.hero(i, "hr_Hp") for i in range(NH))
         check(now != T_TRAP, "on enjambe une dalle reperee et elle reste"
               " armee", fails)
         check((g.w("PosX"), g.w("PosY")) == (tx, ty),
@@ -727,7 +1288,10 @@ def mouse_test(g, fails):
           f"{vstop - vstart} lignes")
 
     g.setw("UiMode", 0)                   # --- la rose des vents
+    g.setw("InCombat", 0)                 # hors combat : en combat, un clic
+    g.setw("GameOver", 0)                 # dans la vue frappe
     g.setw("NeedRedraw", 1)
+    g.key(K_1)
     d0 = g.w("Dir")
     g.click(40, 80)                       # colonne de gauche : tourner
     check(g.w("Dir") == (d0 + 3) % 4, "cliquer a gauche ne tourne pas", fails)
@@ -771,7 +1335,7 @@ def mouse_test(g, fails):
 
 def heal(g):
     """Remet le groupe d'aplomb, pour eprouver un piege et non l'usure."""
-    for i in range(4):
+    for i in range(NH):
         base = g.addr("Heroes") + i * HR["hr_SIZEOF"]
         g.mem.w16(base + HR["hr_Hp"], g.hero(i, "hr_HpMax"))
 
@@ -812,7 +1376,8 @@ def walk_to(g, target, budget=80):
                     continue
                 t = grid[nxt[1]][nxt[0]] & 0x0f
                 if nxt in seen or t in (T_WALL, T_NICHE, T_LEVER, T_GATE,
-                                        T_SHOP, T_LEDGER, T_TRAP):
+                                        T_SHOP, T_LEDGER, T_ARCHIVE,
+                                        T_TRAP):
                     continue                 # les pieges se testent a part
                 if t == T_LOCKED and g.w("KeyCount") == 0:
                     continue                 # sans cle, ce n'est pas un chemin
@@ -860,7 +1425,7 @@ if __name__ == "__main__":
     print("--- creation du groupe ---")
     phase = create_party(g)
     check(phase == 1, f"phase {phase} apres creation, attendu 1", fails)
-    for i in range(4):
+    for i in range(NH):
         hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
         lvl, wpn = g.hero(i, "hr_Level"), g.hero(i, "hr_Weapon")
         print(f"  {g.name(i):8s} classe {g.hero(i,'hr_Class')} "
@@ -870,6 +1435,22 @@ if __name__ == "__main__":
         check(lvl == 1, f"heros {i} : niveau {lvl}", fails)
         check(wpn != 0, f"heros {i} : sans arme", fails)
         check(3 <= g.hero(i, "hr_Str") <= 18, f"heros {i} : FOR hors bornes", fails)
+
+    print("--- les competences ---")
+    by_class, by_race = skill_tables()
+    for i, (race, cls) in enumerate(PARTY):
+        want = [a + b for a, b in zip(by_class[cls], by_race[race])]
+        check(skills_of(g, i) == want, f"heros {i} : competences "
+              f"{skills_of(g, i)} au lieu de {want}", fails)
+    start_skills = [skills_of(g, i) for i in range(NH)]
+    g.key(K_C)
+    g.key(K_TAB)
+    check(g.w("UiMode") == 1 and g.w("SheetPage") == 1,
+          "TAB ne passe pas aux competences sur la fiche", fails)
+    g.key(K_TAB)
+    check(g.w("SheetPage") == 0, "TAB ne revient pas a la fiche", fails)
+    g.key(K_C)
+    print(f"  depart : classe et race, {start_skills[0]} pour le premier")
 
     print("--- exploration ---")
     moves = [K_UP, K_DOWN, K_LEFT, K_RIGHT, K_SPACE]
@@ -888,23 +1469,23 @@ if __name__ == "__main__":
     print("--- combats ---")
     fights = rounds = 0
     monster = lambda c: (c & C_MASK) == C_MONSTER
-    for _ in range(300):
+    for _ in range(1500):
         if fights >= 3:
             break
         if not g.w("InCombat") and not walk_towards(g, monster, 30):
             g.key(random.choice(moves))
             continue
         hp0 = g.w("MonHp")
-        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"))
+        qui = (g.w("MonX"), g.w("MonY"), g.w("MonKind"), g.w("GroupN"))
         g.key(K_A)
         rounds += 1
         if not g.w("InCombat"):
             fights += 1
         # Le monstre suivant peut arriver dans la trame ou le precedent
         # tombe : on ne compare que si c'est le meme.
-        if (g.w("MonX"), g.w("MonY"), g.w("MonKind")) == qui:
+        if (g.w("MonX"), g.w("MonY"), g.w("MonKind"), g.w("GroupN")) == qui:
             check(g.sw("MonHp") <= hp0, "les PV du monstre remontent", fails)
-        for i in range(4):
+        for i in range(NH):
             hp, hpm = g.hero(i, "hr_Hp"), g.hero(i, "hr_HpMax")
             if not check(0 <= hp <= hpm, f"heros {i} PV {hp}/{hpm}", fails):
                 break
@@ -917,6 +1498,14 @@ if __name__ == "__main__":
           + "a rien eprouve", fails)
     check(rounds == 0 or g.hero(0, "hr_Xp") > 0 or g.w("GameOver"),
           "des combats sans le moindre point d" + chr(39) + "experience", fails)
+
+    grew = 0
+    for i in range(NH):
+        now = skills_of(g, i)
+        check(all(a <= b <= 99 for a, b in zip(start_skills[i], now)),
+              f"heros {i} : competences {start_skills[i]} -> {now}", fails)
+        grew += sum(b - a for a, b in zip(start_skills[i], now))
+    print(f"  apres les combats, {grew} point(s) de competence gagne(s)")
 
     print("--- l'echoppe ---")
     shop_test(g, fails)
@@ -938,7 +1527,7 @@ if __name__ == "__main__":
     for n in range(800):
         g.key(random.choice(allkeys))
         ui, phase = g.w("UiMode"), g.w("Phase")
-        if not check(ui <= 9, f"UiMode={ui}", fails):
+        if not check(ui <= 10, f"UiMode={ui}", fails):
             break
         if not check(phase <= 3, f"Phase={phase}", fails):
             break
@@ -949,10 +1538,25 @@ if __name__ == "__main__":
         if not check(g.sw("Gold") >= 0, f"Or negatif {g.sw('Gold')}", fails):
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
-          f"niveau {g.w('Level')} or {g.w('Gold')}")
+          f"niveau {g.w('Level')} or {g.w('Gold')} bourg {g.w('InTown')}")
+
+    print("--- les rencontres ---")
+    meet_test(g, fails)
+
+    print("--- le combat par rounds ---")
+    combat_test(g, fails)
+
+    print("--- les monstres se voient venir ---")
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    corridor_monster_test(g, fails)
 
     print("--- l'escalier qui remonte ---")
     stairs_test(g, fails)
+
+    print("--- le bourg ---")
+    town_test(g, fails)
 
     print("--- le grand registre ---")
     ledger_test(g, fails)

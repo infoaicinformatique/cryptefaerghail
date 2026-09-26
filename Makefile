@@ -9,8 +9,9 @@
 #   make wav         rend les musiques en WAV pour les ecouter sans Amiga
 #   make test        fait tourner le jeu dans un 68020 emule
 #   make shots       photographie les ecrans du jeu emule
-#   make disk        fabrique dist/Faerghail.adf (disquette amorcable) et
-#                    dist/Faerghail.lha -- necessite pip install amitools
+#   make disk        fabrique dist/Faerghail1.adf (le jeu, amorcable),
+#                    Faerghail2.adf (le source) et Faerghail.lha --
+#                    necessite pip install amitools
 #   make clean       nettoie build/ et bin/
 #-----------------------------------------------------------------------
 
@@ -19,7 +20,7 @@ CPU     := -m68020
 VASM    ?= $(if $(wildcard tools/bin/vasmm68k_mot),tools/bin/vasmm68k_mot,vasmm68k_mot)
 VLINK   ?= $(if $(wildcard tools/bin/vlink),tools/bin/vlink,vlink)
 
-TARGETS := bin/AGACrawl
+TARGETS := bin/AGACrawl bin/Donjons/Crypte.dgn
 
 .PHONY: all clean score wav dungeon disk test shots toolchain
 
@@ -32,10 +33,16 @@ bin/%: build/%.o
 
 build/AGACrawl.o: src/crawl.s src/hardware.i src/ptreplay.i src/vblank.i \
                   src/ciatimer.i src/dgnpal.i \
-                  src/font8.i src/tables.i data/dgnart.bin data/dgnmap.bin \
+                  src/font8.i src/tables.i data/dgnart.bin \
                   data/sfx.bin data/crawlmus.mod data/titlemus.mod
 	@mkdir -p build
 	$(VASM) $(CPU) -Fhunk -I src -I . -o $@ src/crawl.s
+
+# Le paquet du donjon se range a cote de l'executable, ou le jeu le
+# cherche (PROGDIR:Donjons/).
+bin/Donjons/Crypte.dgn: data/crypte.dgn
+	@mkdir -p bin/Donjons
+	cp $< $@
 
 score:
 	python3 tools/gen_score.py

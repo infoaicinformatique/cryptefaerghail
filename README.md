@@ -20,7 +20,7 @@ bas.)*
 | Machine | Amiga 1200 (chipset AGA), 68020+ |
 | Système | AmigaOS 3.0 / 3.1 et supérieur (`graphics.library` V39) |
 | Écran | PAL lores 320×256 |
-| Mémoire | environ 700 Ko de Chip : deux tampons d'écran à huit bitplanes, les décors, et les deux modules |
+| Mémoire | environ 800 Ko de Chip : deux tampons d'écran à huit bitplanes, les décors, et les deux modules |
 | Audio | 4 voies Paula, module ProTracker cadencé par le timer A du CIA-B |
 
 ## Compilation
@@ -51,35 +51,70 @@ python3 tools/dungeon_preview.py 0 3 1 1 combat.png 2   # ecran de combat
 make wav           # rejoue les modules en Python et écrit deux WAV
 ```
 
-## Disquette prête à l'emploi
+## Deux disquettes prêtes à l'emploi
 
-`dist/Faerghail.adf` est une disquette 880 Ko **OFS amorçable** (DOS0, lisible
-de Kickstart 1.3 à 3.x) contenant le jeu, tout son source écrit à la main, un
-`Lisezmoi.txt` et un `S/Startup-Sequence` qui le lance au démarrage.
+Le jeu tient sur **deux disquettes 880 Ko** : celle du jeu en **FFS** (DOS1,
+512 octets utiles par bloc au lieu de 488 — cinq pour cent de place en plus, et
+le jeu demande de toute façon un Kickstart 3), celle du source en OFS (DOS0,
+lisible dès le Kickstart 1.3) :
 
-Elle est pleine à 98 % : à huit bitplanes le jeu pèse à lui seul plus d'un
-demi-mégaoctet — six cent mille octets une fois sur la disquette, où un bloc de
-512 n'en porte que 488 — sur huit cent quatre-vingt. Le script écrit donc ce
-qui rentre, dans un ordre fixé, et dit ce qu'il laisse.
+| | Contenu |
+|---|---|
+| `dist/Faerghail1.adf` | **amorçable**, en FFS : le jeu, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui le lance au démarrage |
+| `dist/Faerghail2.adf` | le source : tout ce qui s'assemble, écrit à la main ou généré, et les données qui tiennent à côté |
 
-Ce qui n'y est pas : les **tables générées**, dont `surfgrad.i` qui pèse à lui
-seul quatre-vingt mille octets. Elles vivent dans **`dist/Faerghail.lha`**, qui
-porte tout, et les générateurs Python les refont en une seconde.
+Une seule ne suffisait plus. À huit bitplanes le jeu pèse à lui seul plus d'un
+demi-mégaoctet, et il fallait choisir entre le source et les décors : la
+disquette du jeu était pleine à 98 %. Il a maintenant la sienne, remplie à 87 %,
+et plus de cent Ko de place pour des images plus riches.
+
+La seconde porte `crawl.s`, les fichiers dont il dépend, toutes les tables
+générées, les bruitages, les deux modules et les cartes. Seuls les décors
+(`dgnart.bin`, plus d'un demi-mégaoctet à eux seuls) n'y tiennent pas : ils
+vivent dans **`dist/Faerghail.lha`**, qui porte tout, et les générateurs Python
+les refont en quelques secondes.
 
 ```sh
-make disk          # refabrique les deux -- nécessite pip install amitools
+make disk          # refabrique les trois -- nécessite pip install amitools
 ```
 
-- **Émulateur** : montez l'ADF dans DF0: et démarrez dessus.
-- **Machine réelle** : écrivez l'ADF sur une disquette (ADF Blitzer,
+- **Émulateur** : montez `Faerghail1.adf` dans DF0: et démarrez dessus ;
+  `Faerghail2.adf` dans DF1: si vous voulez lire le source.
+- **Machine réelle** : écrivez les ADF sur deux disquettes (ADF Blitzer,
   X-Copy + Amiga Explorer, Greaseweazle…), ou copiez le `.lha` sur le disque
   dur et faites `lha x Faerghail.lha`.
+
+## Un donjon, c'est un fichier
+
+Tout était incorporé à l'exécutable : décors, cartes, bestiaire. Un donjon est
+maintenant un **paquet** à part, `Donjons/Crypte.dgn`, que le jeu lit sur la
+disquette au démarrage — comme dans les jeux de l'époque, où chaque donjon
+avait ses fichiers et se chargeait en y entrant. C'est la fondation de ce qui
+vient : plusieurs donjons, chacun avec ses étages et son peuple, sans que
+l'exécutable grossisse d'autant (voir
+[docs/analyse-faerghail.md](docs/analyse-faerghail.md)).
+
+Le paquet porte les cartes de ses étages et son bestiaire. Il est lu tel quel
+en Chip RAM (`DgnPack`) : le blitter y prend les créatures directement.
+`BlitPiece` ne fait qu'une différence : un morceau d'indice au moins
+`ART_BANK` se cherche dans le paquet du donjon, les autres dans l'exécutable.
+
+| Octets | Contenu |
+|---|---|
+| 0–3 | `FDG1` |
+| 4–11 | décalage et taille des cartes |
+| 12–19 | décalage et taille du banc de morceaux (calé sur quatre octets) |
+| … | les cartes, puis le banc : nombre de morceaux, descripteurs de douze octets, plans |
+
+Sans son paquet, le jeu le dit dans le Shell et rend la main avec le code 20,
+avant d'avoir touché à l'écran. Le banc 68020 sert `PROGDIR:` depuis `bin/`
+(ou `$AGA_PROGDIR`), et connaît maintenant `Output()` pour ce message.
 
 ## Exécution
 
 - **FS-UAE / WinUAE** : configurez une A1200 (Kickstart 3.1, AGA, 68020, 2 Mo
-  Chip), montez le dossier `bin/` comme disque dur, puis depuis le Shell :
-  `AGACrawl`.
+  Chip), montez le dossier `bin/` comme disque dur — il porte l'exécutable
+  et son tiroir `Donjons/` —, puis depuis le Shell : `AGACrawl`.
 - **Machine réelle** : copiez l'exécutable et lancez-le **depuis un Shell** (il
   ne gère pas le message `WBStartup` d'un lancement depuis le Workbench).
 
@@ -98,12 +133,15 @@ src/font8.i      police 8x8 de l'interface                       (généré)
 src/surfgrad.i   dégradés que le copper pose ligne par ligne     (généré)
 src/pointer.i    sprite 0 : le pointeur de souris                (généré)
 src/artidx.i     index des morceaux de décor                     (généré)
-data/dgnart.bin  décors en perspective et monstres               (généré)
-data/dgnmap.bin  les trois niveaux                               (généré)
+data/dgnart.bin  décors communs : murs, portes, interface        (généré)
+data/crypte.dgn  le paquet du donjon : ses étages, son bestiaire (généré)
+bin/Donjons/     les paquets, là où le jeu les cherche (PROGDIR:)
 data/sfx.bin     bruitages synthétisés                           (généré)
 data/crawlmus.mod  la marche du donjon                           (généré)
 data/titlemus.mod  la procession de l'accueil                    (généré)
 tools/gen_dungeon.py générateur des décors, des cartes et de la police 8x8
+tools/monsters.py    le bestiaire, modelé en volumes (trois poses par famille)
+tools/bestiary_sheet.py  la planche du bestiaire (docs/bestiaire.png)
 tools/gen_tables.py  générateur des tables du jeu
 tools/gen_sfx.py     générateur des bruitages
 tools/gen_score.py   générateur des deux musiques (accueil et donjon)
@@ -124,7 +162,7 @@ tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
 tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
 docs/histoire.md     le fond de fiction : ce qu'était Faerghail
 disk/                fichiers écrits à la main pour la disquette
-scripts/make-disk.sh fabrique l'ADF amorçable et le .lha
+scripts/make-disk.sh fabrique les deux ADF (jeu amorçable, source) et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
 ```
 
@@ -152,7 +190,7 @@ déjà écrite y trouve sa raison.
 | Ce que le jeu fait | Pourquoi la maison le fait |
 |---|---|
 | Le grand registre, au fond du dernier étage | C'est un greffe : la maison tient ses comptes, et la ligne se raye là où elle est écrite |
-| Les quatre noms du groupe y font les quatre colonnes | Une quittance porte quatre signatures |
+| Les six noms du groupe y font les six colonnes | Une quittance porte six signatures |
 | La sortie ne s'ouvre qu'une fois la ligne rayée | On ne sort de Faerghail qu'acquitté |
 | Un marchand scellé dans un mur, un par étage | L'emmurement de garde du dernier greffier : il est devenu une clause de la maison, et un guichet est un endroit, pas un homme |
 | Il rachète à moitié prix | Le taux d'un dépôt refait |
@@ -161,7 +199,7 @@ déjà écrite y trouve sa raison.
 | Des dalles piégées, deux fois plus en bas | Une dette impayée, un ressort tendu ; en bas, les échéances sont plus vieilles |
 | Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
 | Une croix à la craie sur la dalle repérée | La marque des greffiers, sur un compte à examiner |
-| Quatre aventuriers, ni trois ni cinq | Quatre colonnes de signature au bas d'une quittance |
+| Six aventuriers, ni quatre ni cinq | Six colonnes de signature au bas d'une quittance |
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
 
 Dans le jeu, cela se lit à l'accueil — **touche 3**, quatre pages tournées à
@@ -181,14 +219,171 @@ trop déborderait du plan et retomberait en haut du suivant, ce que
 `tools/test_layout.py` va justement chercher, page par page, en regardant la
 bordure de l'écran et la bande laissée entre le texte et le pied de page.
 
+### Le panneau du groupe
+
+Le groupe est passé de quatre à six, et le panneau n'a pas grandi : six blocs
+de vingt-quatre lignes. Chacun porte le nom et le niveau, un visage réduit de
+seize pixels — le grand portrait reste sur la fiche —, les points de vie, et
+deux jauges : la vie, et la magie pour qui en a. Le visage est tiré du
+portrait, chaque pixel prenant la teinte la plus présente de son carré de deux
+sur deux. La sauvegarde change de nombre magique, `FAE5`.
+
 ### Création du groupe
 
-Quatre aventuriers, chacun d'une classe (guerrier, barbare, éclaireur, clerc)
-qui décide du dé de vie, de la progression à l'attaque et de l'accès à la
-magie. Les six caractéristiques sont tirées **à 4d6 en gardant les trois
+**Six aventuriers**, comme dans les jeux de rôle à groupe de l'époque. Chacun
+choisit d'abord sa **race**, puis sa **classe** :
+
+| Race | Caractéristiques | Ne donne pas |
+|---|---|---|
+| Humain | — | — |
+| Nain | CON +2, CHA −2 | magicien, ensorceleur |
+| Elfe | DEX +2, CON −2 | paladin, barbare |
+| Halfelin | DEX +2, FOR −2 | barbare, forgeron |
+| Demi-elfe | — | — |
+| Demi-orc | FOR +2, INT −2, CHA −2 | druide, magicien |
+
+Onze classes : les huit du début — guerrier, barbare, roublard, rôdeur,
+paladin, clerc, magicien, ensorceleur — et trois de plus : le **druide**,
+lanceur divin des bois ; le **moine**, qui se bat sans armure et a les trois
+sauvegardes fortes ; le **forgeron**, solide comme un guerrier. La classe
+décide du dé de vie, de la progression à l'attaque et de l'accès à la magie.
+Celles que la race ne donne pas s'éteignent dans la liste et se refusent.
+
+**Les compétences progressent à l'usage**, comme dans *Legend of Faerghail* :
+un aventurier ne s'améliore pas qu'en niveaux. Six compétences, de 0 à 99,
+dont la classe fixe le départ et que la race ajuste :
+
+| Compétence | Ce qu'elle ajoute | Elle progresse quand… |
+|---|---|---|
+| Combat | valeur/10 au jet d'attaque | le héros touche (après le récit du round) |
+| Défense | valeur/10 à la classe d'armure | le monstre le manque |
+| Concentration | valeur/10 au DD de ses sorts | il lance un sort |
+| Vigilance | valeur/5 au jet pour repérer une dalle | il en repère une |
+| Désamorçage | valeur/5 au jet pour la désamorcer | il y parvient |
+| Marchandage | jusqu'à un quart du prix, à l'achat comme à la vente | le groupe conclut une affaire — c'est le meilleur négociateur qui parle |
+
+Chaque réussite a (100 − valeur) chances sur trois cents de faire gagner un
+point : vite au début, de plus en plus rarement. Le journal le dit —
+« ALDER PROGRESSE : COMBAT. » La fiche a une deuxième page, `TAB`, qui les
+montre avec leur jauge. Le bonus à part du roublard pour les pièges disparaît :
+il part avec de l'avance en vigilance et en désamorçage. La sauvegarde change
+de nombre magique, `FAE7`.
+
+Les sorts de départ se déclarent maintenant par leur nom dans
+`tools/gen_tables.py`, et le masque se calcule. Il était écrit à la main et ne
+correspondait plus à la table : le paladin partait avec le projectile magique
+au lieu des soins, le clerc avec la terreur au lieu de la bénédiction. Les six caractéristiques sont tirées **à 4d6 en gardant les trois
 meilleurs dés**, comme il se doit ; `R` relance, `ENTRÉE` valide. Le nom se
 tape au clavier — et comme le CIA rend des **positions de touches**, pas des
 caractères, `TAB` bascule entre AZERTY et QWERTY.
+
+### Les rencontres : avant le fer, la parole
+
+Une rencontre ne commence plus forcément par un combat. Le groupe voit ce qui
+vient, et choisit : `S` saluer, `D` discuter, `F` se retirer, `A` attaquer.
+
+Chaque espèce a sa **langue** et son **tempérament**. Les morts, les bêtes et
+les monstres ne répondent qu'au fer ; les kobolds, gobelins, orcs, gnolls,
+ogres et géants sont méfiants ; les hommes-lézards plutôt paisibles. La momie
+parle la langue du pays — c'est un Faerghail qui a refusé qu'on le raye — et
+ne veut rien entendre.
+
+On ne discute qu'avec qui l'on comprend. Les langues viennent de la race et de
+la classe :
+
+| | Parle, en plus du commun |
+|---|---|
+| Nain | gobelin, géant |
+| Elfe | draconique |
+| Halfelin | gobelin |
+| Demi-elfe | orc |
+| Demi-orc | orc, gobelin |
+| Magicien, ensorceleur | draconique |
+| Druide | géant |
+| Rôdeur | orc |
+
+Le meilleur négociateur parle pour tout le groupe. Un **jet de réaction** —
+d20, trois fois le tempérament, son charisme, le dixième de son marchandage, et
+quatre de plus si on leur parle leur langue — décide : ils passent leur chemin,
+ils **demandent un péage** (`O` payer, `N` refuser), ou ils dégainent. Saluer
+ne marche qu'une fois ; la seconde, ils perdent patience. Une rencontre réglée
+à l'amiable ne rapporte ni or ni expérience — seulement du temps et du sang
+épargné. Les langues de chaque héros sont sur la page des compétences.
+
+Quand c'est la créature qui vient au groupe, elle peut le **surprendre** :
+trente pour cent, moins le cinquième de la meilleure vigilance du groupe.
+Surpris, on n'a rien à dire : elle frappe la première. Sinon, on la voit
+venir, et la vigilance progresse.
+
+![La rencontre](docs/emu-rencontre.png)
+
+### Ambelune, au-dessus de la crypte
+
+L'escalier qui remonte du premier étage ne donne plus sur « le jour » : il
+ramène à **Ambelune**, le village d'où le groupe est descendu. Comme dans *Legend of Faerghail*,
+la ville ne se parcourt pas : c'est une place et des portes, chacune un menu
+(`HAUT`/`BAS` et `ENTRÉE`, `ESC` ramène sur la place). La fiche, le sac, le
+grimoire et les réglages s'y ouvrent comme ailleurs.
+
+| Porte | Ce qu'on y fait | Prix |
+|---|---|---|
+| Le comptoir | acheter, vendre (l'étal du village : potions, arc, hache, armures) | celui de l'objet, marchandage compris |
+| L'auberge | le dortoir rend la moitié des forces et les sorts ; une chambre, tout | 2 ou 5 pièces par aventurier debout |
+| Le temple | soigner ; **relever un mort** — une fois sur quatre, les dieux se détournent (moins pour les robustes), et l'offrande reste | 1 pièce les 2 PV ; 30 par niveau du mort |
+| La guilde | **passer le niveau** que l'expérience a gagné ; `TAB` : apprendre une **langue**, pour le héros choisi (`1` à `6`) | 25 par niveau ; 100 la langue |
+| La banque | déposer et retirer, par 50 ou tout | — |
+| La rue | le vol à la tire : Dextérité et désamorçage contre le guet, qui s'éveille à chaque essai. Pris : 50 pièces d'amende, ou la nuit au cachot | — |
+
+**L'expérience ne suffit plus.** Comme dans le jeu d'origine, un héros qui a
+assez appris sous terre ne passe pas son niveau tout seul : le journal dit
+« … EST PRÊT POUR LA GUILDE », et c'est le maître qui le forme, contre or. Il
+faut donc remonter — et le chemin du retour compte.
+
+**Le village a ses risques.** À l'arrivée, un coupe-bourse tente sa chance une
+fois sur trois — la vigilance du groupe l'arrête, sinon il prend le dixième de
+la bourse. La banque le met à l'abri… sauf une fois sur vingt, où elle a été
+pillée d'un quart entre deux visites.
+
+Les langues apprises, le drapeau « prêt », le village, la banque et le guet
+partent avec la sauvegarde, dont le nombre magique devient `FAE9`.
+
+![Ambelune](docs/emu-bourg.png)
+![La guilde](docs/emu-guilde.png)
+
+### Le combat par rounds
+
+Le combat se joue comme dans *Legend of Faerghail* et les jeux de rôle à
+groupe de l'époque : par rounds, avec un ordre pour chacun.
+
+**Un groupe en face.** Une rencontre met en face de un à quatre créatures de
+la même espèce — d'autant moins que l'espèce est lourde, d'autant plus qu'on
+est bas. Chacune a ses points de vie ; quand celle de devant tombe, la
+suivante s'avance, et chacune frappe à son tour. La vue le dit : « ORC X3 ».
+
+**Deux rangs.** Les trois premiers du groupe se tiennent devant, les trois
+autres derrière — un trait les sépare dans le panneau. Les créatures visent
+l'avant trois fois sur quatre, tant qu'il y reste quelqu'un debout.
+Derrière, on ne frappe qu'à l'arc : sans arc, l'ordre de frapper devient une
+parade. Devant, celui qui lance un sort a l'ennemi sous le nez et peut perdre
+sa concentration — 40 % moins la moitié de sa compétence. `O`, hors combat,
+fait passer le héros choisi de l'avant à l'arrière, en changeant de place avec
+celui qui se tient au même rang de l'autre ligne.
+
+**Un ordre par héros.** Chaque round commence par les ordres, à tour de rôle :
+`A` frapper, `D` parer (+4 à la classe d'armure pour le round), `S` un sort,
+choisi dans le menu. `1` à `6` donnent la main à un autre héros. Les ordres
+sont **retenus** d'un round et d'un combat à l'autre : `ENTRÉE` les rejoue pour
+tous ceux qui restent, et le round part. `F` tente la fuite pour tout le
+groupe.
+
+**Le round se joue** : les héros dans l'ordre du groupe, puis chaque créature
+debout. Le résultat s'affiche **en détail** — un panneau qui dit ce que chacun
+a fait (FRAPPE 7, MANQUE, PARE, LOIN : PARE, SORT 12, DÉCONCENTRÉ) et ce que
+les créatures ont porté —, ou se résume au journal en mode **rapide**. Le choix
+est dans les réglages (`P`) et part avec la sauvegarde.
+
+![Les ordres](docs/emu-combat-ordres.png)
+![Le résultat du round](docs/emu-combat-round.png)
 
 ### Règles
 
@@ -244,10 +439,13 @@ ouvre le prologue, `ESC` quitte.
 | Touche | Effet |
 |---|---|
 | Flèches | avancer, reculer, tourner (l'escalier montant est sur la case d'arrivée) |
-| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre, désamorcer un piège |
+| Espace | ouvrir une porte, fouiller une niche, entrer à l'échoppe, lire le grand registre ou un livre du greffe, désamorcer un piège |
 | C / I | fiche d'aventure, sac à dos |
-| 1 à 4 | choisir le héros courant |
-| A / S / F | attaquer, lancer un sort, fuir (en combat) |
+| 1 à 6 | choisir le héros courant |
+| A / D / S | en combat : l'ordre du héros dont c'est le tour — frapper, parer, un sort |
+| ENTRÉE | en combat : rejouer les ordres retenus pour tous ceux qui restent |
+| F | en combat : fuir, tout le groupe |
+| O | l'ordre de marche : le héros choisi passe de l'avant à l'arrière, ou l'inverse |
 | E / U / D | équiper, utiliser, jeter (dans le sac) |
 | M / L / P | carte du niveau, grimoire, réglages |
 | Souris | clic gauche : rose des vents dans la vue, choisir un aventurier, poser un curseur ; clic droit : agir, ou refermer un panneau |
@@ -257,17 +455,47 @@ ouvre le prologue, `ESC` quitte.
 ### Contenu
 
 Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
-clés, trésors), 4 monstres animés sur deux poses, coffres, objets au sol,
+clés, trésors), 25 créatures en neuf familles modelées en volumes, trois
+poses chacune, coffres, objets au sol,
 niches creusées dans les murs, portes ordinaires, portes verrouillées, le
 grand registre au fond du dernier étage — et
 une **porte à runes** par niveau, qui pose une énigme à trois réponses :
 juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
 un aventurier.
 
+**Le bestiaire** est modelé, et non plus peint à plat. Les premières
+silhouettes avaient été dessinées pour seize couleurs : des ellipses d'une
+teinte, des traits d'un pixel. `tools/monsters.py` compose chaque famille de
+volumes — ellipsoïdes pour un crâne ou une panse, troncs de cône pour un
+membre, plaques pour une aile ou une lame —, les rend à travers un tampon de
+profondeur, éclaire chaque pixel selon sa normale (la lumière des portraits,
+d'en haut à gauche), trame d'un demi-cran pour fondre les gammes courtes, puis
+cerne la silhouette et chaque recouvrement d'un trait sombre. Fourrure,
+écailles, bandelettes, pierre et haillons ont chacun leur grain ; les yeux, les
+crocs et les griffes se posent au pixel.
+
+Chaque famille a **trois poses** : deux qui respirent, que le combat alterne,
+et une qui frappe — le jeu la montre quelques trames quand la créature porte
+un coup. Chaque pose est rognée à la boîte de ses pixels : un cadre fixe de
+96 × 88 coûtait le masque et les huit plans du vide autour d'elle.
+
+![Le bestiaire](docs/bestiaire.png)
+
+**Les monstres se voient venir.** Ils marchaient, mais ne se montraient
+qu'une fois le combat engagé : un couloir d'où quelque chose avançait avait
+l'air vide jusqu'au dernier pas. La vue pose maintenant ce qui se tient dans
+les trois cases devant, jusqu'au premier mur — à un pas la créature du combat,
+au-delà la même réduite vers le point de fuite, à un pas et demi, deux et demi
+et trois et demi.
+
+![Un orc, deux cases devant](docs/emu-monstre-couloir.png)
+![Il frappe](docs/emu-combat-attaque.png)
+
 **Les monstres marchent.** Ils tenaient leur case et attendaient qu'on leur
 rentre dedans : un couloir vide était sûr, et le donjon n'avait pas de nerf.
-Ils font maintenant un pas toutes les quatorze trames vers le groupe, s'il est
-à moins de six cases — de plus loin, ils n'ont rien entendu. Le pas se pose
+Ils font maintenant un pas toutes les quatorze trames vers le groupe — des
+trames comptées par l'interruption, pas des tours de boucle : un redessin qui
+en prend deux ne les ralentit pas —, s'il est à moins de six cases — de plus loin, ils n'ont rien entendu. Le pas se pose
 sur du dallage nu et rien d'autre : ni porte, ni dalle piégée, ni escalier, ni
 la case d'un autre. Celui qui arrive sur le groupe engage le combat lui-même,
 et **meurt chez lui** : la case nettoyée à sa mort est la sienne, plus celle
@@ -295,14 +523,46 @@ emporte.
 
 **Le grand registre**, au greffe du dernier étage. Scellé dans un mur comme
 l'échoppe, mais loin du départ : il faut le chercher. `ESPACE` ouvre la page,
-qui porte les quatre noms du groupe — ce sont les quatre colonnes de signature
+qui porte les six noms du groupe — ce sont les six colonnes de signature
 d'une quittance. `ENTRÉE` raye la ligne, une fois pour toutes, et vaut de
 l'expérience à tout le monde.
 
-Le pupitre donne sur une **petite salle** creusée devant lui : le générateur
-n'ouvre que du mur nu, et jamais au contact d'un levier ou d'une herse — ceux
--là comptent sur le tracé pour couper la route, et une salle percée à côté
-leur ferait un contournement.
+**Le greffe** est une vraie salle. Le pupitre était scellé dans le premier mur
+venu, et la « salle » creusée tout autour de la case d'où on le lisait : il se
+retrouvait souvent en pilier, du couloir des deux côtés. Le générateur cherche
+maintenant un mur dont les deux voisins le long du fond sont du mur aussi, y
+scelle le pupitre, et creuse devant lui une salle de trois sur trois.
+
+Une salle percée dans un labyrinthe relie tous les couloirs qu'elle touche :
+ce serait un carrefour, pas une salle, et un passage de service autour des
+serrures et des herses. Le générateur essaie donc chaque emplacement de la
+moitié du fond de l'étage, mure toute ouverture dont le reste de l'étage peut
+se passer — sans rien couper, ni relier deux zones qu'une serrure, une herse
+ou une porte à runes séparait —, et garde celui qui laisse le moins d'entrées.
+Sur le troisième étage, il n'en reste qu'une : une porte. Et le chemin de la
+sortie passe par le greffe.
+
+Ses murs sont des **rayonnages** : quatre planches de chêne et, dessus, les
+registres des générations passées, reliures de cuir de toutes les teintes,
+une étiquette de parchemin pour la cote, un filet d'or sur les plus anciens,
+une pile couchée là où la planche manquait de place. La texture est définie
+en coordonnées monde, comme la pierre et les portes : le même meuble se
+dessine de face à un, deux ou trois pas, de biais sur les murs latéraux, au
+fond d'un passage et sur le mur extérieur — la salle se lit comme un greffe
+dès sa porte. Le pupitre, lui, se voit maintenant à trois pas, réduit vers le
+point de fuite.
+
+Trois rayonnages portent un **livre** qu'`ESPACE` ouvre : *Les recouvrements*
+(les dalles et leur ressort), *Les passages* (pourquoi les portes posent une
+question, et trois réponses) et *Le guichet* (l'emmurement d'Ossian Vaugris,
+et pourquoi il rachète à moitié). C'est ce que le groupe n'avait fait jusque-là
+que subir. La première lecture de chacun vaut de l'expérience à tous ; le bit
+7 du paramètre de la case le retient, et part avec l'étage dans la sauvegarde.
+Les autres rayonnages sont muets : des comptes, rien qui vous regarde.
+
+![Le greffe, de sa porte](docs/emu-salle-greffe.png)
+![Un rayonnage](docs/emu-rayonnage.png)
+![Le guichet](docs/emu-livre.png)
 
 Sans cela, **l'escalier du dernier étage ne mène nulle part** : la porte des
 quittances ne cède qu'à qui a rayé sa ligne. Le troisième étage a donc un
@@ -310,7 +570,7 @@ objet, et pas seulement une sortie — trouver le greffe, puis trouver
 l'escalier. Le générateur place le registre dans un mur bordé par un couloir
 atteignable **sans forcer une serrure**, jamais collé à l'escalier, et le
 contrôle par parcours en largeur, comme il le fait déjà pour les clés ; il
-tient aussi les dalles piégées à distance de son pupitre. La quittance est
+tient aussi les dalles piégées hors du greffe. La quittance est
 dans la partie sauvée — d'où un nouveau nombre magique, `FAE2` : une
 sauvegarde d'avant le registre n'a plus le bon compte et se refuse.
 
@@ -320,6 +580,17 @@ sauvegarde d'avant le registre n'a plus le bon compte et se refuse.
 ne servait à rien : chaque objet portait pourtant un prix dans `ItemTable`, et
 personne ne le lisait. Le marchand est scellé dans un mur comme une niche, à
 trois à neuf pas du départ pour qu'on puisse s'équiper avant de s'enfoncer.
+
+C'est le **guichet d'Ossian** : une baie taillée sous un linteau à la marque
+de la maison, une grille de fer et, derrière, le noir d'où vient la voix — deux
+yeux y luisent à peine. Sur le comptoir de chêne, des fioles de verre, un
+parchemin roulé, une épée couchée, une pile de pièces, et la balance où se pèse
+le taux d'un dépôt refait. Il se voit à trois pas, comme le pupitre du greffe ;
+de près, la flamme de sa lanterne vacille, trois flammes en boucle, et le jeu
+ne redessine la vue pour elle que quand on la regarde.
+
+![Le guichet](docs/emu-echoppe-vue.png)
+
 Espace ouvre son étal : huit articles choisis pour l'étage, au prix de
 l'objet ; Tab passe de l'autre côté du comptoir, où il rachète le butin à
 moitié prix. Ce qui est vendu reste vendu — l'étal fait partie de la partie
@@ -634,9 +905,11 @@ de Paula.
 
 ## Pistes pour la suite
 
-- Une vraie salle de greffe autour du registre, et une phrase d'accueil par
-  étage pour la voix derrière le comptoir : voir la fin de
-  [docs/histoire.md](docs/histoire.md).
+- Une phrase d'accueil par étage pour la voix derrière le comptoir : voir la
+  fin de [docs/histoire.md](docs/histoire.md).
+- Le game design de *Legend of Faerghail* (1990) — un groupe de six, des
+  races, un extérieur, des villes, huit donjons, le combat à rangs : voir
+  [docs/analyse-faerghail.md](docs/analyse-faerghail.md).
 - Interruption COPER : découper l'image en bandes et changer de palette à
   mi-écran depuis le processeur. Le jeu ne s'en sert pas encore ; le
   gestionnaire de niveau 3 est prêt à accueillir la cause.

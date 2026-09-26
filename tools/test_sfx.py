@@ -206,7 +206,9 @@ def check_in_game(g, sfx, fails):
     if SFX_GROWL not in heard:
         fails.append("le monstre apparait sans grogner")
     armes = set()
-    for _ in range(8):
+    # Un round, c'est un ordre par heros debout, puis un resultat a
+    # refermer : une vingtaine de touches couvrent deux rounds.
+    for _ in range(20):
         if not g.w("InCombat"):
             break
         g.setw("PT_SfxLock", 0)

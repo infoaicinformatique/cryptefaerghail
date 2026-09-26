@@ -118,6 +118,7 @@ _LVOOpen        = -30
 _LVOClose       = -36
 _LVORead        = -42
 _LVOWrite       = -48
+_LVOOutput      = -60
 MODE_OLDFILE    = 1005
 MODE_NEWFILE    = 1006
 

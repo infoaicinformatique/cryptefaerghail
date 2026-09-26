@@ -45,6 +45,13 @@ T_SHOP		= 9			; echoppe scellee dans un mur
 T_TRAP		= 10			; dallage piege, invisible au depart
 T_LEDGER	= 11			; le grand registre, scelle au greffe
 T_STAIRSUP	= 12			; l'escalier qui remonte d'un etage
+T_ARCHIVE	= 13			; un rayonnage du greffe
+
+; MapParam d'un rayonnage : les sept bits bas donnent le livre qu'on y
+; lit ($7f pour un rayonnage muet), le bit 7 dit que le groupe l'a lu.
+ARCH_READ	= 7			; numero de bit
+ARCH_MUTE	= $7f
+NARCHIVES	= 3
 
 ; MapParam d'un piege : le quartet bas donne l'espece, le bit 7 dit que
 ; le groupe l'a repere. Un piege desamorce redevient du dallage.
@@ -94,8 +101,22 @@ hr_Shield	= 40
 hr_Spells	= 42			; masque des sorts connus
 hr_AcTemp	= 44			; bonus temporaire de CA
 hr_Slots	= 46			; emplacements de sorts, niveaux 0 a 3
-hr_SIZEOF	= 54
-NHEROES		= 4
+hr_Race		= 54			; numero dans RaceTable
+hr_Skills	= 56			; NSKILLS octets, 0 a 99 (voir SkillUse)
+hr_Tongues	= 62			; langues apprises a la guilde (masque)
+hr_Flags	= 64			; bit HF_READY : la guilde l'attend
+hr_SIZEOF	= 66
+HF_READY	= 0
+
+; les competences, dans l'ordre de SkillNames
+SK_COMBAT	= 0
+SK_DEFENSE	= 1
+SK_CONCENT	= 2
+SK_VIGIL	= 3
+SK_DISARM	= 4
+SK_TRADE	= 5
+NHEROES		= 6			; six aventuriers, comme au temps des
+					; jeux de roles a groupe
 NAMELEN		= 9
 
 ; --- objets ---
@@ -150,7 +171,9 @@ mt_Will		= 40
 mt_Xp		= 42
 mt_Gold		= 44
 mt_Art		= 46
-mt_SIZEOF	= 48
+mt_Tongue	= 48			; langue parlee (TongueNames), 0 aucune
+mt_Temper	= 50			; 0 hostile, 1 mefiant, 2 paisible
+mt_SIZEOF	= 52
 
 ; --- classes ---
 cl_Name		= 0			; 12 octets
@@ -161,6 +184,13 @@ cl_Ref		= 18
 cl_Will		= 20
 cl_Cast		= 22			; 0 aucun, 1 profane (INT), 2 divin (SAG)
 cl_SIZEOF	= 24
+
+; RaceTable : nom, modificateurs des six caracteristiques, et un bit
+; par classe que la race ne donne pas.
+rc_Name		= 0			; 12 octets
+rc_Mods		= 12			; FOR, DEX, CON, INT, SAG, CHA
+rc_Ban		= 24			; masque des classes interdites
+rc_SIZEOF	= 26
 CLS_ROUBLARD	= 2
 CLS_CLERC	= 5
 
@@ -196,12 +226,14 @@ TITLEH		= 176			; hauteur de l'illustration
 LVSTATE		= 3*MAPBYTES+NSHOP
 LVSTORE		= LEVELS*LVSTATE
 
-; "FAE4" : les trois etages sont maintenant gardes chacun dans son etat,
-; puisqu'on peut remonter. Une sauvegarde plus ancienne n'a plus le bon
+; "FAE9" : la ville -- langues apprises, drapeaux du heros, le bourg,
+; la banque et le guet. "FAE8" : le reglage du combat, detaille ou rapide, part avec les
+; autres ; "FAE7" avait ajoute les competences, "FAE6" la race, "FAE5"
+; passe le groupe a six. Une sauvegarde plus ancienne n'a plus le bon
 ; compte, et le nombre magique la fait refuser plutot que relire de
 ; travers.
-SAVEMAGIC	= $46414534		; "FAE4"
-SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+6
+SAVEMAGIC	= $46414539		; "FAE9"
+SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+8+6
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -212,6 +244,8 @@ UI_BOOK		= 6			; le grimoire
 UI_OPTS		= 7			; les reglages
 UI_SHOP		= 8			; l'echoppe du marchand
 UI_LEDGER	= 9			; le grand registre
+UI_ARCHIVE	= 10			; un livre des rayonnages du greffe
+UI_ROUND	= 11			; le resultat d'un round de combat
 
 rd_SIZEOF	= 28
 MAXCLEVEL	= 10			; plafond de niveau des heros
@@ -245,6 +279,8 @@ KEY_S		= $21
 KEY_M_QW	= $37			; M sur un clavier anglais
 KEY_M_AZ	= $29			; M sur un clavier francais
 KEY_U		= $16
+KEY_O		= $18
+KEY_N		= $36			; meme place en AZERTY et en QWERTY			; meme place en AZERTY et en QWERTY
 
 ; --- disposition de l'ecran ---
 PANEL_X		= 224
@@ -261,7 +297,10 @@ VIEW_R		= 208
 VIEW_T		= 16
 VIEW_B		= 152
 PANEL_TOP	= 12			; premier bloc d'aventurier
-PANEL_STEP	= 37			; hauteur d'un bloc
+PANEL_STEP	= 24			; hauteur d'un bloc : six dans le panneau
+PANEL_GAUGE	= 64			; longueur des jauges
+FRONTRANK	= 3			; les trois premiers se tiennent devant
+GROUPMAX	= 4			; creatures d'une meme rencontre, au plus
 PANEL_BOT	= 160
 SPELLROW_Y	= 40			; premiere ligne du menu de sorts
 RIDDLEROW_Y	= 60			; premiere reponse d'une enigme
@@ -284,7 +323,11 @@ Start:
 	moveq	#0,d0
 	jsr	_LVOOpenLibrary(a6)
 	move.l	d0,DosBase
+	bsr	LoadDungeon		; le paquet du donjon, depuis la disquette
+	tst.w	d0
+	beq	ExitNoDungeon
 	bsr	CheckSave
+	move.l	4.w,a6
 	jsr	_LVOForbid(a6)
 
 	move.l	GfxBase,a6
@@ -352,8 +395,34 @@ MainLoop:
 	move.w	VHPOSR+CUSTOM,d0	; le balayage brasse le hasard : sans
 	eor.w	d0,RngSeed+2		; cela, chaque partie serait identique
 
+	tst.w	InCombat		; la lanterne du guichet, si on la
+	bne.s	.noFlame		; regarde : trois flammes en boucle
+	tst.w	UiMode
+	bne.s	.noFlame
+	tst.w	ShopInSight
+	beq.s	.noFlame
+	addq.w	#1,AnimCount
+	move.w	AnimCount,d0
+	and.w	#7,d0
+	bne.s	.noFlame
+	move.w	FlameFrame,d0
+	addq.w	#1,d0
+	cmp.w	#3,d0
+	blo.s	.flameOk
+	moveq	#0,d0
+.flameOk:
+	move.w	d0,FlameFrame
+	move.w	#1,NeedRedraw
+.noFlame:
 	tst.w	InCombat		; les monstres respirent
 	beq.s	.noAnim
+	tst.w	StrikeTime		; le coup porte, la pose d'attaque
+	beq.s	.breath			; tient quelques trames
+	subq.w	#1,StrikeTime
+	bne.s	.noAnim
+	move.w	#1,NeedRedraw
+	bra.s	.noAnim
+.breath:
 	addq.w	#1,AnimCount
 	move.w	AnimCount,d0
 	and.w	#7,d0
@@ -417,6 +486,91 @@ ExitNoGfx:
 	movem.l	(sp)+,d0-d7/a0-a6
 	moveq	#0,d0
 	rts
+
+; Sans son donjon, le jeu n'a rien a montrer : on le dit dans le Shell
+; et l'on rend la main avec un code d'echec, avant d'avoir touche a
+; l'ecran ou aux interruptions.
+ExitNoDungeon:
+	move.l	DosBase,d0
+	beq.s	.noDos
+	move.l	d0,a6
+	jsr	_LVOOutput(a6)
+	move.l	d0,d1
+	beq.s	.silent
+	move.l	#TxtNoDungeon,d2
+	move.l	#TXTNODUNGEON_LEN,d3
+	jsr	_LVOWrite(a6)
+.silent:
+	move.l	DosBase,a1
+	move.l	4.w,a6
+	jsr	_LVOCloseLibrary(a6)
+.noDos:
+	move.l	4.w,a6
+	move.l	GfxBase,a1
+	jsr	_LVOCloseLibrary(a6)
+	movem.l	(sp)+,d0-d7/a0-a6
+	moveq	#20,d0
+	rts
+
+;----------------------------------------------------------------------
+; LoadDungeon : le paquet du donjon, lu depuis la disquette
+;
+; Tout etait incorpore a l'executable : les decors, les cartes, le
+; bestiaire. Un donjon est maintenant un fichier a part, comme dans
+; les jeux de l'epoque ou chaque donjon avait ses fichiers sur la
+; disquette -- c'est ce qui permettra d'en avoir plusieurs sans que
+; l'executable grossisse d'autant. Le paquet porte les cartes de ses
+; etages et son bestiaire ; il est lu tel quel en Chip, le blitter y
+; prend les creatures directement.
+;
+; Format : "FDG1", puis decalage et taille des cartes, decalage et
+; taille du banc de morceaux (quatre mots longs), puis les donnees.
+; -> d0 = 1 si le donjon est charge
+;----------------------------------------------------------------------
+LoadDungeon:
+	movem.l	d1-d7/a0-a6,-(sp)
+	moveq	#0,d5
+	move.l	DosBase,d0
+	beq.s	.done
+	move.l	d0,a6
+	move.l	#DungeonName,d1
+	move.l	#MODE_OLDFILE,d2
+	jsr	_LVOOpen(a6)
+	move.l	d0,d4
+	beq.s	.done
+	move.l	d4,d1
+	move.l	#DgnPack,d2
+	move.l	#DGNPACKMAX,d3
+	jsr	_LVORead(a6)
+	move.l	d0,d6			; ce qui a ete lu
+	move.l	d4,d1
+	jsr	_LVOClose(a6)
+	cmp.l	#20,d6			; au moins l'en-tete
+	blt.s	.done
+	lea	DgnPack,a0
+	cmp.l	#DGNMAGIC,(a0)
+	bne.s	.done
+	move.l	4(a0),d0		; les cartes
+	move.l	d0,d1
+	add.l	8(a0),d1
+	cmp.l	d6,d1			; le fichier doit les contenir
+	bgt.s	.done
+	add.l	a0,d0
+	move.l	d0,DgnMapPtr
+	move.l	12(a0),d0		; le bestiaire
+	move.l	d0,d1
+	add.l	16(a0),d1
+	cmp.l	d6,d1
+	bgt.s	.done
+	add.l	a0,d0
+	move.l	d0,DgnBank
+	moveq	#1,d5
+.done:
+	move.l	d5,d0
+	movem.l	(sp)+,d1-d7/a0-a6
+	rts
+
+DGNMAGIC	= $46444731		; "FDG1"
 
 RestoreSystem:
 	lea	CUSTOM,a5
@@ -710,6 +864,12 @@ MouseAct:
 	bsr	HandleKey
 	bra	.done
 .panelLeft:
+	cmp.w	#UI_ROUND,d4		; le resultat du round : un clic
+	bne.s	.notRoundClick		; vaut une touche
+	moveq	#KEY_SPACE,d0
+	bsr	HandleKey
+	bra	.done
+.notRoundClick:
 	cmp.w	#UI_SPELL,d4		; ces deux-la se repondent au chiffre
 	beq.s	.digits
 	cmp.w	#UI_RIDDLE,d4
@@ -1041,7 +1201,12 @@ BlitPiece:
 BlitPieceAt:
 	movem.l	d0-d7/a0-a6,-(sp)
 	lea	CUSTOM,a6
-	lea	DgnArt,a0
+	lea	DgnArt,a0		; les morceaux communs, dans l'executable
+	cmp.w	#ART_BANK,d0
+	blo.s	.common
+	move.l	DgnBank,a0		; ceux du donjon, dans son paquet
+	sub.w	#ART_BANK,d0
+.common:
 	move.w	d0,d3
 	mulu.w	#12,d3
 	lea	2(a0,d3.w),a1
@@ -1685,6 +1850,8 @@ IsSolid:				; d0 = terrain -> d2 = 1 si opaque
 	beq.s	.yes
 	cmp.w	#T_LEDGER,d2
 	beq.s	.yes
+	cmp.w	#T_ARCHIVE,d2
+	beq.s	.yes
 	moveq	#0,d2
 	rts
 .yes:
@@ -1736,7 +1903,7 @@ DrawScene:
 	bra	.done
 .inGame:
 	move.w	UiMode,d0
-	beq.s	.world
+	beq	.world
 	cmp.w	#UI_SHEET,d0
 	bne.s	.notSheet
 	bsr	DrawSheet
@@ -1777,25 +1944,48 @@ DrawScene:
 	bsr	DrawLedger
 	bra	.done
 .notLedger:
+	cmp.w	#UI_ARCHIVE,d0
+	bne.s	.notArchive
+	bsr	DrawArchive
+	bra	.done
+.notArchive:
+	cmp.w	#UI_ROUND,d0
+	bne.s	.notRound
+	bsr	DrawRound
+	bra	.done
+.notRound:
 	bsr	DrawSpellMenu
 	bra	.done
 
 .world:
+	tst.w	InTown			; le bourg : la place, ou une porte
+	beq.s	.notTown
+	bsr	DrawTown
+	bra	.done
+.notTown:
 	moveq	#ART_BG,d0
 	moveq	#1,d1
 	bsr	BlitPiece
 
 	tst.w	InCombat
 	beq.s	.dungeon
-	move.w	MonArt,d0
-	add.w	d0,d0
+	move.w	MonArt,d0		; trois poses par famille : deux qui
+	mulu.w	#NMONPOSES,d0		; respirent, et celle qui frappe
+	tst.w	StrikeTime
+	beq.s	.breathe
+	addq.w	#2,d0
+	bra.s	.posed
+.breathe:
 	add.w	AnimFrame,d0
+.posed:
 	add.w	#ART_MONSTER,d0
 	moveq	#0,d1
 	bsr	BlitPiece
+	bsr	DrawOrderTag		; a qui l'ordre, et combien ils sont
 	bra	.done
 
 .dungeon:
+	clr.w	ShopInSight		; le guichet le reposera s'il se voit
 	moveq	#0,d7			; distance du premier mur
 	moveq	#1,d6
 .scan:
@@ -1825,6 +2015,14 @@ DrawScene:
 	beq.s	.asDoor
 	cmp.w	#T_RUNE,d4
 	beq.s	.asDoor
+	cmp.w	#T_ARCHIVE,d4		; un rayonnage, a toute distance
+	bne.s	.notShelf
+	cmp.w	#4,d7
+	bge.s	.stone
+	move.w	d7,d0
+	add.w	#ART_ARCHIVE-1,d0
+	bra.s	.blitFront
+.notShelf:
 	cmp.w	#T_GATE,d4
 	bne.s	.stone
 	cmp.w	#4,d7			; herse : barreaux, le couloir se voit
@@ -1848,8 +2046,35 @@ DrawScene:
 .blitFront:
 	moveq	#0,d1
 	bsr	BlitPiece
-	cmp.w	#1,d7			; les details ne se voient que de pres
-	bne.s	.noFront
+	cmp.w	#T_LEDGER,d4		; le pupitre se voit du fond du greffe
+	bne.s	.notLedgerArt
+	cmp.w	#4,d7
+	bge	.noFront
+	move.w	d7,d0
+	add.w	#ART_LEDGER-1,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	bra	.noFront
+.notLedgerArt:
+	cmp.w	#T_SHOP,d4		; le guichet aussi, a trois pas
+	bne.s	.notShopFar
+	cmp.w	#4,d7
+	bge	.noFront
+	move.w	d7,d0
+	add.w	#ART_SHOP-1,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	cmp.w	#1,d7			; de pres, sa lanterne brule
+	bne	.noFront
+	move.w	FlameFrame,d0
+	add.w	#ART_FLAME,d0
+	moveq	#0,d1
+	bsr	BlitPiece
+	move.w	#1,ShopInSight
+	bra	.noFront
+.notShopFar:
+	cmp.w	#1,d7			; les autres details, de pres seulement
+	bne	.noFront
 	cmp.w	#T_NICHE,d4
 	bne.s	.notNicheArt
 	moveq	#ART_NICHE,d0
@@ -1857,20 +2082,6 @@ DrawScene:
 	bsr	BlitPiece
 	bra.s	.noFront
 .notNicheArt:
-	cmp.w	#T_SHOP,d4		; l'etal du marchand
-	bne.s	.notShopArt
-	moveq	#ART_SHOP,d0
-	moveq	#0,d1
-	bsr	BlitPiece
-	bra.s	.noFront
-.notShopArt:
-	cmp.w	#T_LEDGER,d4		; le pupitre du greffe
-	bne.s	.notLedgerArt
-	moveq	#ART_LEDGER,d0
-	moveq	#0,d1
-	bsr	BlitPiece
-	bra.s	.noFront
-.notLedgerArt:
 	cmp.w	#T_LEVER,d4		; levier : leve ou abaisse
 	bne.s	.noFront
 	move.w	d7,d2
@@ -1923,7 +2134,19 @@ DrawScene:
 	bsr	MapCell
 	bsr	IsSolid
 	tst.w	d2
-	beq.s	.open
+	beq	.open
+	and.w	#$000f,d0		; un rayonnage de biais : les
+	cmp.w	#T_ARCHIVE,d0		; registres courent le long du mur
+	bne.s	.stoneSide
+	move.w	d6,d0
+	tst.w	d5
+	bmi.s	.shelfLeft
+	add.w	#ART_ARCHR,d0
+	bra.s	.blitSide
+.shelfLeft:
+	add.w	#ART_ARCHL,d0
+	bra.s	.blitSide
+.stoneSide:
 	move.w	d6,d0
 	tst.w	d5
 	bmi.s	.leftWall
@@ -1944,6 +2167,18 @@ DrawScene:
 	bsr	IsSolid
 	tst.w	d2
 	beq.s	.noBack
+	and.w	#$000f,d0		; des registres au fond du passage
+	cmp.w	#T_ARCHIVE,d0
+	bne.s	.stoneBack
+	move.w	d6,d0
+	tst.w	d5
+	bmi.s	.shelfBackL
+	add.w	#ART_ARCHFR,d0
+	bra.s	.blitBack
+.shelfBackL:
+	add.w	#ART_ARCHFL,d0
+	bra.s	.blitBack
+.stoneBack:
 	move.w	d6,d0
 	tst.w	d5
 	bmi.s	.leftBack
@@ -1965,6 +2200,19 @@ DrawScene:
 	bsr	IsSolid
 	tst.w	d2
 	beq.s	.sideNext
+	and.w	#$000f,d0		; le mur d'en face du passage peut
+	cmp.w	#T_ARCHIVE,d0		; etre un rayonnage : le greffe vu
+	bne.s	.stoneOuter		; de son entree
+	move.w	d6,d0
+	subq.w	#2,d0
+	tst.w	d5
+	bmi.s	.shelfOuterL
+	add.w	#ART_ARCHOR,d0
+	bra.s	.blitOuter
+.shelfOuterL:
+	add.w	#ART_ARCHOL,d0
+	bra.s	.blitOuter
+.stoneOuter:
 	move.w	d6,d0
 	subq.w	#2,d0
 	tst.w	d5
@@ -1983,6 +2231,7 @@ DrawScene:
 	bra	.sideEach
 .sideDone:
 	dbf	d6,.sideLoop
+	bsr	DrawCorridorMon		; ce qui vient vers le groupe
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -2047,14 +2296,23 @@ Redraw:
 ;----------------------------------------------------------------------
 ; DrawParty : portrait, nom, points de vie et de magie
 ;----------------------------------------------------------------------
+;----------------------------------------------------------------------
+; DrawParty : six blocs de vingt-quatre lignes
+;
+; Le groupe est passe de quatre a six, et le panneau n'a pas grandi :
+; chaque bloc perd le grand portrait, qui reste sur la fiche, pour un
+; visage reduit de seize pixels. Le nom et le niveau sur la premiere
+; ligne ; a cote du visage, les points de vie, puis deux jauges -- la
+; vie, et la magie pour qui en a.
+;----------------------------------------------------------------------
 DrawParty:
 	movem.l	d0-d7/a0-a6,-(sp)
 	lea	Heroes,a6
 	moveq	#0,d7
 .heroLoop:
 	move.w	d7,d5
-	mulu.w	#36,d5
-	add.w	#14,d5			; ligne du bloc
+	mulu.w	#PANEL_STEP,d5
+	add.w	#PANEL_TOP,d5		; ligne du bloc
 
 	tst.w	hr_HpMax(a6)
 	bne.s	.exists
@@ -2065,10 +2323,7 @@ DrawParty:
 	bsr	DrawText
 	bra	.heroNext
 .exists:
-	; --- le nom prend toute la largeur du panneau, le niveau se range
-	; a sa droite : plus besoin d'abreger, et le portrait descend
-	; sous cette ligne.
-	move.l	a6,a0
+	move.l	a6,a0			; le nom, puis le niveau cale a droite
 	move.w	#29,d0
 	move.w	d5,d1
 	move.w	#C_TEXT,d2
@@ -2082,12 +2337,12 @@ DrawParty:
 .notSel:
 	bsr	DrawText
 
-	lea	TmpStr,a1		; niveau, cale sur le bord droit
+	lea	TmpStr,a1
 	move.w	hr_Level(a6),d0
 	bsr	StrNum
 	clr.b	(a1)
 	lea	TmpStr,a0
-	move.w	#37,d0
+	move.w	#38,d0
 	cmp.w	#10,hr_Level(a6)
 	blt.s	.lvlOne
 	subq.w	#1,d0			; deux chiffres : une colonne de plus
@@ -2096,17 +2351,17 @@ DrawParty:
 	move.w	#C_PARCHD,d2		; l'or est reserve au heros choisi
 	bsr	DrawText
 
-	move.w	hr_Class(a6),d0		; portrait, sous le nom
-	add.w	#ART_PORTRAIT,d0
+	move.w	hr_Class(a6),d0		; le visage, sous le nom
+	add.w	#ART_FACE,d0
 	moveq	#0,d1
 	move.w	d5,d2
 	addq.w	#8,d2
 	mulu.w	#SCRBPL,d2
-	add.w	#28,d2
+	add.w	#PANEL_X/8,d2
 	bsr	BlitPieceAt
 
-	lea	TmpStr,a1		; points de vie, sans etiquette :
-	move.w	hr_Hp(a6),d0		; la jauge dit deja de quoi il s'agit
+	lea	TmpStr,a1		; les points de vie, a cote
+	move.w	hr_Hp(a6),d0
 	bsr	StrNum
 	cmp.w	#100,hr_HpMax(a6)	; au-dela de cent, le total ne tient
 	bge.s	.hpShort		; pas dans le panneau
@@ -2116,9 +2371,9 @@ DrawParty:
 .hpShort:
 	clr.b	(a1)
 	lea	TmpStr,a0
-	move.w	#32,d0
+	move.w	#30,d0
 	move.w	d5,d1
-	add.w	#10,d1
+	addq.w	#8,d1
 	move.w	#C_HEALTH,d2
 	move.w	hr_Hp(a6),d3
 	add.w	d3,d3
@@ -2129,52 +2384,24 @@ DrawParty:
 	move.w	d2,d6			; on garde la teinte pour la jauge
 	bsr	DrawText
 
-	movem.l	d5-d6,-(sp)		; d5 porte la ligne du bloc
-	move.w	#256,d0
+	movem.l	d5-d6,-(sp)		; la jauge de vie
+	move.w	#PANEL_X+16,d0
 	move.w	d5,d1
-	add.w	#19,d1
-	moveq	#48,d2
+	add.w	#17,d1
+	moveq	#PANEL_GAUGE,d2
 	move.w	hr_Hp(a6),d3
 	move.w	hr_HpMax(a6),d4
 	move.w	d6,d5
 	bsr	DrawGauge
 	movem.l	(sp)+,d5-d6
 
-	tst.w	hr_MpMax(a6)		; la magie, si la classe en a
-	bne.s	.hasMp
-	lea	TmpStr,a1		; sinon la classe d'armure, qui
-	lea	TxtCa,a0		; comblait un blanc pour rien
-	bsr	StrCopy
-	bsr	HeroAc
-	bsr	StrNum
-	clr.b	(a1)
-	lea	TmpStr,a0
-	move.w	#32,d0
-	move.w	d5,d1
-	add.w	#23,d1
-	move.w	#C_TEXTDIM,d2
-	bsr	DrawText
-	bra	.heroNext
-.hasMp:
-	lea	TmpStr,a1
-	move.w	hr_Mp(a6),d0
-	bsr	StrNum
-	move.b	#'/',(a1)+
-	move.w	hr_MpMax(a6),d0
-	bsr	StrNum
-	clr.b	(a1)
-	lea	TmpStr,a0
-	move.w	#32,d0
-	move.w	d5,d1
-	add.w	#23,d1
-	move.w	#C_MANA,d2
-	bsr	DrawText
-
+	tst.w	hr_MpMax(a6)		; et celle de la magie, si la classe
+	beq.s	.heroNext		; en a
 	movem.l	d5-d6,-(sp)
-	move.w	#256,d0
+	move.w	#PANEL_X+16,d0
 	move.w	d5,d1
-	add.w	#32,d1
-	moveq	#48,d2
+	add.w	#21,d1
+	moveq	#PANEL_GAUGE,d2
 	move.w	hr_Mp(a6),d3
 	move.w	hr_MpMax(a6),d4
 	move.w	#C_MANA,d5
@@ -2185,6 +2412,12 @@ DrawParty:
 	addq.w	#1,d7
 	cmp.w	#NHEROES,d7
 	blt	.heroLoop
+
+	move.w	#PANEL_X+4,d0		; entre l'avant et l'arriere, un trait
+	move.w	#PANEL_TOP+FRONTRANK*PANEL_STEP-2,d1
+	moveq	#80,d2
+	move.w	#C_FRAME,d3
+	bsr	HLine
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -2224,11 +2457,18 @@ DrawStatus:
 	bra	.help
 .playing:
 	lea	TmpStr,a1
+	tst.w	InTown
+	beq.s	.inCrypt
+	lea	TxtTownStatus,a0
+	bsr	StrCopy
+	bra.s	.gold
+.inCrypt:
 	lea	TxtNiveau,a0
 	bsr	StrCopy
 	move.w	Level,d0
 	addq.w	#1,d0
 	bsr	StrNum
+.gold:
 	lea	TxtOr,a0
 	bsr	StrCopy
 	move.w	Gold,d0
@@ -2245,7 +2485,7 @@ DrawStatus:
 	bsr	DrawText
 
 	move.w	UiMode,d0
-	beq.s	.helpView
+	beq	.helpView
 	cmp.w	#UI_INV,d0
 	bne.s	.helpSpell
 	lea	TxtHelpInv,a0
@@ -2282,8 +2522,18 @@ DrawStatus:
 	bra	.help
 .helpLedger:
 	cmp.w	#UI_LEDGER,d0
-	bne.s	.helpOther
+	bne.s	.helpArchive
 	lea	TxtHelpLedger,a0
+	bra	.help
+.helpArchive:
+	cmp.w	#UI_ARCHIVE,d0
+	bne.s	.helpRound
+	lea	TxtHelpArchive,a0
+	bra	.help
+.helpRound:
+	cmp.w	#UI_ROUND,d0
+	bne.s	.helpOther
+	lea	TxtRoundGo,a0
 	bra	.help
 .helpOther:
 	lea	TxtHelpSheet,a0
@@ -2292,9 +2542,18 @@ DrawStatus:
 	tst.w	InCombat
 	beq.s	.helpMove
 	lea	TxtHelpFight,a0
+	tst.w	MeetPhase
+	beq	.help
+	lea	TxtHelpMeet,a0
+	cmp.w	#MEET_TOLL,MeetPhase
+	bne	.help
+	lea	TxtHelpToll,a0
 	bra	.help
 .helpMove:
 	lea	TxtHelpMove,a0
+	tst.w	InTown
+	beq.s	.help
+	lea	TxtHelpTown,a0
 .help:
 	move.w	#2,d0
 	move.w	#238,d1
@@ -2512,7 +2771,7 @@ BookKey:				; d0 = touche
 	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
-OPTROWS		= 5			; lignes de reglage
+OPTROWS		= 6			; lignes de reglage
 
 ;----------------------------------------------------------------------
 ; Reglages, accessibles en cours de partie.
@@ -2595,11 +2854,19 @@ OptValue:				; d0 = ligne -> d0 = texte, 0 si aucun
 	bra.s	.done
 .notSfx:
 	cmp.w	#2,d1
-	bne.s	.done
+	bne.s	.notKb
 	move.l	#TxtOptAzerty,d0
 	tst.w	KbLayout
 	beq.s	.done
 	move.l	#TxtOptQwerty,d0
+	bra.s	.done
+.notKb:
+	cmp.w	#3,d1
+	bne.s	.done
+	move.l	#TxtOptDetail,d0
+	tst.w	OptQuick
+	beq.s	.done
+	move.l	#TxtOptQuick,d0
 .done:
 	movem.l	(sp)+,d1
 	rts
@@ -2641,6 +2908,11 @@ OptToggle:				; agit sur la ligne visee
 	bra.s	.redraw
 .notKb:
 	cmp.w	#3,d0
+	bne.s	.notCombat
+	eor.w	#1,OptQuick
+	bra.s	.redraw
+.notCombat:
+	cmp.w	#4,d0
 	bne.s	.notSave
 	bsr	SaveGame
 	lea	TxtSaved,a0
@@ -3002,7 +3274,10 @@ SaveGame:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	DosBase,d0
 	beq	.done
+	tst.w	InTown			; au bourg, l'etage est deja range et
+	bne.s	.stashed		; l'etal est celui du comptoir
 	bsr	LevelStash		; l'etage courant d'abord, il n'est
+.stashed:
 	bsr	PackSave		; dans la sauvegarde que par son etat
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
@@ -3059,6 +3334,11 @@ LoadGame:				; -> d0 = 1 si la partie est reprise
 	tst.w	d5
 	beq.s	.done
 	bsr	LevelRestore		; la copie de travail vient de l'etat
+	clr.w	TownPlace
+	clr.w	TownCursor
+	tst.w	InTown
+	beq.s	.done
+	bsr	ShopFillTown
 .done:
 	move.w	d5,d0
 	movem.l	(sp)+,d1-d7/a0-a6
@@ -3165,6 +3445,17 @@ HeroAc:
 	add.w	it_Dice(a0),d2
 .noShield:
 	add.w	hr_AcTemp(a6),d2
+	moveq	#SK_DEFENSE,d0		; savoir parer
+	bsr	SkillTen
+	add.w	d0,d2
+	tst.w	InCombat		; et parer ce round-ci
+	beq.s	.noGuard
+	bsr	HeroIndex
+	lea	Guarding,a0
+	tst.b	(a0,d0.w)
+	beq.s	.noGuard
+	addq.w	#GUARDAC,d2
+.noGuard:
 	move.w	d2,d0
 	movem.l	(sp)+,d1-d2/a0
 	rts
@@ -3332,6 +3623,11 @@ DrawSheet:
 	bsr	DrawText
 	bra	.done
 .ok:
+	tst.w	SheetPage		; TAB : la page des competences
+	beq.s	.page1
+	bsr	DrawSkills
+	bra	.done
+.page1:
 	lea	TmpStr,a1		; nom et classe
 	move.l	a6,a0
 	bsr	StrCopy
@@ -3346,6 +3642,15 @@ DrawSheet:
 	moveq	#3,d0
 	moveq	#20,d1
 	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	move.w	hr_Race(a6),d0		; la race, dessous
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	add.l	d0,a0
+	moveq	#3,d0
+	moveq	#30,d1
+	move.w	#C_PARCHD,d2
 	bsr	DrawText
 
 	lea	TmpStr,a1		; niveau et experience
@@ -3367,7 +3672,7 @@ DrawSheet:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	moveq	#3,d0
-	moveq	#32,d1
+	moveq	#40,d1
 	move.w	#C_TEXT,d2
 	bsr	DrawText
 
@@ -3400,8 +3705,8 @@ DrawSheet:
 .leftCol:
 	move.w	d7,d1
 	lsr.w	#1,d1
-	mulu.w	#11,d1
-	add.w	#48,d1
+	mulu.w	#10,d1
+	add.w	#52,d1
 	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	addq.w	#1,d7
@@ -3743,6 +4048,22 @@ RollHero:
 	move.w	d0,(a2)+
 	dbf	d5,.stats
 
+	move.w	CreRace,d0		; ce que la race y ajoute ou retire
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	lea	rc_Mods(a0,d0.w),a0
+	lea	CreStr,a2
+	moveq	#5,d5
+.race:
+	move.w	(a0)+,d0
+	add.w	d0,(a2)
+	cmp.w	#3,(a2)			; jamais sous trois
+	bge.s	.raceOk
+	move.w	#3,(a2)
+.raceOk:
+	addq.l	#2,a2
+	dbf	d5,.race
+
 	move.w	CreClass,d0
 	mulu.w	#cl_SIZEOF,d0
 	lea	ClassTable,a0
@@ -3800,6 +4121,22 @@ CommitHero:
 	clr.b	(a1)
 
 	move.w	CreClass,hr_Class(a6)
+	move.w	CreRace,hr_Race(a6)
+	lea	SkillClass,a0		; les competences : le metier, et ce
+	move.w	CreClass,d0		; que la race y ajoute
+	mulu.w	#NSKILLS,d0
+	add.l	d0,a0
+	lea	SkillRace,a1
+	move.w	CreRace,d0
+	mulu.w	#NSKILLS,d0
+	add.l	d0,a1
+	lea	hr_Skills(a6),a2
+	moveq	#NSKILLS-1,d1
+.skills:
+	move.b	(a0)+,d0
+	add.b	(a1)+,d0
+	move.b	d0,(a2)+
+	dbf	d1,.skills
 	move.w	#1,hr_Level(a6)
 	clr.w	hr_Xp(a6)
 	move.w	CreHp,hr_Hp(a6)
@@ -3860,44 +4197,44 @@ CreateKey:
 	bra	.done
 .notEsc:
 	move.w	CreStep,d7
-	bne	.notClass
-	cmp.w	#KEY_UP,d0		; le curseur parcourt les classes
-	bne.s	.notClsUp
+	bne	.notRace
+	moveq	#NRACES,d3		; --- la race : six entrees
+	bsr	CreListKey
+	tst.w	d2
+	bmi	.redraw
+	move.w	d2,CreRace
+	clr.w	CreCursor		; la premiere classe que la race donne
+.firstClass:
 	move.w	CreCursor,d2
-	subq.w	#1,d2
-	bpl.s	.setCursor
-	moveq	#0,d2
-	bra.s	.setCursor
-.notClsUp:
-	cmp.w	#KEY_DOWN,d0
-	bne.s	.notClsDown
-	move.w	CreCursor,d2
-	addq.w	#1,d2
-	cmp.w	#NCLASSES,d2
-	blt.s	.setCursor
-	move.w	#NCLASSES-1,d2
-.setCursor:
-	move.w	d2,CreCursor
-	bra	.redraw
-.notClsDown:
-	cmp.w	#KEY_RETURN,d0		; ENTREE prend celle qui est visee
-	bne.s	.classDigit
-	move.w	CreCursor,d2
-	bra.s	.takeClass
-.classDigit:
-	move.w	d0,d2
-	sub.w	#KEY_1,d2
-	bmi	.done
-	cmp.w	#NCLASSES,d2
-	bge	.done
-	move.w	d2,CreCursor
-.takeClass:
-	move.w	d2,CreClass
-	bsr	RollHero
+	bsr	ClassBanned
+	tst.w	d0
+	beq.s	.toClass
+	addq.w	#1,CreCursor
+	bra.s	.firstClass
+.toClass:
 	move.w	#1,CreStep
 	bra	.redraw
-.notClass:
+.notRace:
 	cmp.w	#1,d7
+	bne	.notClass
+	moveq	#NCLASSES,d3		; --- la classe : onze entrees
+	bsr	CreListKey
+	tst.w	d2
+	bmi	.redraw
+	move.w	d2,d4
+	bsr	ClassBanned		; la race ne la donne pas : on le dit
+	tst.w	d0
+	beq.s	.takeClass
+	lea	TxtBanned,a0
+	bsr	LogAdd
+	bra	.redraw
+.takeClass:
+	move.w	d4,CreClass
+	bsr	RollHero
+	move.w	#2,CreStep
+	bra	.redraw
+.notClass:
+	cmp.w	#2,d7
 	bne	.nameStep
 	cmp.w	#KEY_R,d0
 	bne.s	.notReroll
@@ -3909,7 +4246,7 @@ CreateKey:
 	move.w	CreIndex,d2
 	move.w	d2,CreNameIdx
 	bsr	PickName
-	move.w	#2,CreStep
+	move.w	#3,CreStep
 	bra	.redraw
 .nameStep:
 	cmp.w	#KEY_RETURN,d0
@@ -3977,6 +4314,70 @@ CreateKey:
 	movem.l	(sp)+,d1-d7/a0-a6
 	rts
 
+;----------------------------------------------------------------------
+; CreListKey : une liste a curseur (races, classes). d0 = touche,
+; d3 = nombre d'entrees. -> d2 = entree choisie (ENTREE ou chiffre),
+; -1 si la touche n'a fait que deplacer le curseur, ou rien.
+;----------------------------------------------------------------------
+CreListKey:
+	cmp.w	#KEY_UP,d0
+	bne.s	.notUp
+	move.w	CreCursor,d2
+	subq.w	#1,d2
+	bpl.s	.move
+	moveq	#0,d2
+	bra.s	.move
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notDown
+	move.w	CreCursor,d2
+	addq.w	#1,d2
+	cmp.w	d3,d2
+	blt.s	.move
+	move.w	d3,d2
+	subq.w	#1,d2
+.move:
+	move.w	d2,CreCursor
+	moveq	#-1,d2
+	rts
+.notDown:
+	cmp.w	#KEY_RETURN,d0		; ENTREE prend celle qui est visee
+	bne.s	.digit
+	move.w	CreCursor,d2
+	rts
+.digit:
+	move.w	d0,d2			; 1 a 9, puis 0 pour la dixieme
+	cmp.w	#KEY_1+9,d2
+	bne.s	.notZero
+	moveq	#9,d2
+	bra.s	.check
+.notZero:
+	sub.w	#KEY_1,d2
+	bmi.s	.none
+.check:
+	cmp.w	d3,d2
+	bge.s	.none
+	move.w	d2,CreCursor
+	rts
+.none:
+	moveq	#-1,d2
+	rts
+
+; ClassBanned : d2 = classe -> d0 = 1 si la race choisie ne la donne pas
+ClassBanned:
+	movem.l	d1/a0,-(sp)
+	move.w	CreRace,d0
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	move.w	rc_Ban(a0,d0.w),d1
+	moveq	#0,d0
+	btst	d2,d1
+	beq.s	.ok
+	moveq	#1,d0
+.ok:
+	movem.l	(sp)+,d1/a0
+	rts
+
 DrawCreate:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	#16,d0			; strictement la zone que le fond repeint
@@ -4002,17 +4403,12 @@ DrawCreate:
 	bsr	DrawText
 
 	move.w	CreStep,d7
-	bne	.chosen
+	bne	.notRaceList
 
-	lea	ClassTable,a6		; la liste des classes
-	moveq	#0,d6
-.classLoop:
+	lea	RaceTable,a6		; --- les six races, et ce qu'elles
+	moveq	#0,d6			; changent aux caracteristiques
+.raceLoop:
 	lea	TmpStr,a1
-	move.w	d6,d0
-	addq.w	#1,d0
-	bsr	StrNum
-	lea	TxtDash,a0
-	bsr	StrCopy
 	move.l	a6,a0
 	bsr	StrCopy
 	clr.b	(a1)
@@ -4022,15 +4418,87 @@ DrawCreate:
 	mulu.w	#11,d1
 	add.w	#34,d1
 	move.w	#C_TEXTDIM,d2
+	cmp.w	CreCursor,d6
+	bne.s	.dimRace
+	move.w	#C_TEXT,d2
+.dimRace:
+	bsr	DrawText
+	lea	rc_SIZEOF(a6),a6
+	addq.w	#1,d6
+	cmp.w	#NRACES,d6
+	blt	.raceLoop
+
+	move.w	CreCursor,d0		; sa description, en bas du cadre
+	lsl.w	#2,d0
+	lea	RaceDesc,a5
+	move.l	(a5,d0.w),a0
+	moveq	#3,d0
+	move.w	#126,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtPickRace,a0
+	moveq	#3,d0
+	move.w	#138,d1
+	move.w	#C_HEALTH,d2
+	bsr	DrawText
+	bra	.done
+
+.notRaceList:
+	cmp.w	#1,d7
+	bne	.chosen
+	lea	ClassTable,a6		; --- les onze classes, sur deux
+	moveq	#0,d6			; colonnes ; celles que la race ne
+.classLoop:				; donne pas s'eteignent
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	d6,d1
+	cmp.w	#6,d1
+	blt.s	.leftCls
+	moveq	#14,d0			; la deuxieme colonne
+	subq.w	#6,d1
+.leftCls:
+	mulu.w	#11,d1
+	add.w	#34,d1
+	move.w	#C_TEXTDIM,d2
+	move.l	d0,-(sp)
+	move.w	d6,d2
+	bsr	ClassBanned
+	move.w	d0,d3
+	move.l	(sp)+,d0
+	move.w	#C_TEXTDIM,d2
+	tst.w	d3
+	beq.s	.allowed
+	move.w	#C_TEXTLOW,d2
+.allowed:
 	cmp.w	CreCursor,d6		; la classe visee ressort
 	bne.s	.dimClass
 	move.w	#C_TEXT,d2
+	tst.w	d3
+	beq.s	.dimClass
+	move.w	#C_ALERT,d2		; visee mais interdite
 .dimClass:
 	bsr	DrawText
 	lea	cl_SIZEOF(a6),a6
 	addq.w	#1,d6
 	cmp.w	#NCLASSES,d6
 	blt	.classLoop
+
+	lea	TmpStr,a1		; la race retenue, en rappel
+	move.w	CreRace,d0
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	add.l	d0,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#104,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
 
 	move.w	CreCursor,d0		; sa description, en bas du cadre
 	lsl.w	#2,d0
@@ -4048,10 +4516,20 @@ DrawCreate:
 	bra	.done
 
 .chosen:
-	move.w	CreClass,d0		; classe retenue
+	lea	TmpStr,a1		; race et classe retenues
+	move.w	CreRace,d0
+	mulu.w	#rc_SIZEOF,d0
+	lea	RaceTable,a0
+	add.l	d0,a0
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	move.w	CreClass,d0
 	mulu.w	#cl_SIZEOF,d0
 	lea	ClassTable,a0
 	add.l	d0,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
 	moveq	#3,d0
 	moveq	#38,d1
 	move.w	#C_TEXT,d2
@@ -4108,7 +4586,7 @@ DrawCreate:
 	move.w	#C_HEALTH,d2
 	bsr	DrawText
 
-	cmp.w	#1,d7
+	cmp.w	#2,d7
 	bne.s	.nameUi
 	lea	TxtRoll,a0
 	moveq	#3,d0
@@ -4163,6 +4641,9 @@ NewGame:
 	clr.w	InvTop
 	clr.w	KeyCount
 	clr.w	Acquitted
+	clr.w	InTown
+	clr.w	Bank
+	clr.w	StreetHeat
 	lea	LevelKnown,a1		; aucun etage n'a encore ete vu
 	moveq	#LEVELS-1,d0
 .clrLevel:
@@ -4199,7 +4680,7 @@ NewGame:
 
 LoadLevel:
 	movem.l	d0-d3/a0-a1,-(sp)
-	lea	DgnMap,a0
+	move.l	DgnMapPtr,a0		; les cartes du paquet du donjon
 	move.w	Level,d0
 	mulu.w	#LEVELSIZE,d0
 	add.l	d0,a0
@@ -4335,6 +4816,8 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	beq	.shop
 	cmp.w	#T_LEDGER,d0
 	beq	.ledger
+	cmp.w	#T_ARCHIVE,d0
+	beq	.archive
 	cmp.w	#T_TRAP,d0
 	beq	.trap
 
@@ -4388,6 +4871,10 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bra	.redraw
 .ledger:
 	lea	TxtLedgerSeen,a0
+	bsr	LogAdd
+	bra	.redraw
+.archive:
+	lea	TxtArchiveSeen,a0
 	bsr	LogAdd
 	bra	.redraw
 
@@ -4483,6 +4970,7 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	move.w	d0,MonKind
 	move.w	d4,MonX			; c'est la case ou il tient
 	move.w	d5,MonY
+	clr.w	MeetAmbush		; c'est nous qui venons a lui
 	bsr	StartCombat
 	bra.s	.redraw
 .stairs:
@@ -4531,6 +5019,8 @@ DoAction:
 	beq	.shopOpen
 	cmp.w	#T_LEDGER,d0
 	beq	.ledgerOpen
+	cmp.w	#T_ARCHIVE,d0
+	beq	.archiveOpen
 	cmp.w	#T_TRAP,d0
 	beq	.trapDisarm
 	lea	TxtNothing,a0
@@ -4552,6 +5042,11 @@ DoAction:
 	bsr	SfxPlay
 	lea	TxtLedgerOpen,a0
 	bsr	LogAdd
+	bra	.done
+.archiveOpen:
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	OpenArchive
 	bra	.done
 .trapDisarm:
 	move.w	d4,d0
@@ -4733,7 +5228,7 @@ MapColour:
 	cmp.w	#T_LOCKED,d2
 	bne.s	.notLocked
 	move.w	#C_BLOOD+3,d0		; porte verrouillee
-	bra.s	.done
+	bra	.done
 .notLocked:
 	cmp.w	#T_RUNE,d2
 	bne.s	.notRune
@@ -4760,6 +5255,11 @@ MapColour:
 	move.w	#C_PARCH,d0		; le greffe : on y revient
 	bra.s	.done
 .notLedgerMap:
+	cmp.w	#T_ARCHIVE,d2
+	bne.s	.notShelfMap
+	move.w	#C_PARCHD,d0		; ses rayonnages, un ton en dessous
+	bra.s	.done
+.notShelfMap:
 	cmp.w	#T_STAIRSUP,d2
 	bne.s	.notUpMap
 	move.w	#C_BONE+N_BONE-2,d0	; l'escalier qui remonte
@@ -5038,18 +5538,35 @@ ShopItem:				; d0 = ligne -> d0 = objet, Z si vide
 	tst.w	d0
 	rts
 
+; Le prix se marchande : celui du groupe qui s'y entend le mieux parle,
+; et sa competence MARCHANDAGE retranche jusqu'au quart du prix a
+; l'achat, ajoute jusqu'au quart a la vente.
 ShopPrice:				; d0 = objet -> d0 = prix du cote ouvert
-	movem.l	a0,-(sp)
+	movem.l	d1-d2/a0/a6,-(sp)
 	bsr	ItemPtr
-	move.w	it_Value(a0),d0
+	move.w	it_Value(a0),d1
+	bsr	BestTrader
+	lsr.w	#2,d0			; 0 a 24 pour cent
+	moveq	#100,d2
 	tst.w	ShopMode
-	beq.s	.done
-	lsr.w	#1,d0			; il rachete a moitie
+	bne.s	.selling
+	sub.w	d0,d2			; a l'achat, on paie moins
+	mulu.w	d2,d1
+	divu.w	#100,d1
+	bra.s	.priced
+.selling:
+	lsr.w	#1,d1			; il rachete a moitie
+	add.w	d0,d2			; un peu plus, pour qui sait vendre
+	mulu.w	d2,d1
+	divu.w	#100,d1
+.priced:
+	moveq	#0,d0
+	move.w	d1,d0
 	tst.w	d0
 	bne.s	.done
 	moveq	#1,d0			; jamais pour rien
 .done:
-	movem.l	(sp)+,a0
+	movem.l	(sp)+,d1-d2/a0/a6
 	rts
 
 ShopFillStock:				; l'etal de l'etage courant
@@ -5182,6 +5699,7 @@ DrawShop:
 ; ShopDeal : conclut la ligne visee, dans un sens ou dans l'autre
 ShopDeal:
 	movem.l	d0-d7/a0-a6,-(sp)
+	moveq	#0,d5			; une affaire conclue ?
 	move.w	ShopCursor,d0
 	bsr	ShopItem
 	bne.s	.have
@@ -5211,6 +5729,7 @@ ShopDeal:
 	lea	TxtShopFull,a0		; AddItem l'a deja dit, mais le
 	bra	.say			; panneau reste ouvert
 .taken:
+	moveq	#1,d5
 	sub.w	d6,Gold
 	move.w	d7,d0
 	bsr	CheckKey
@@ -5232,6 +5751,7 @@ ShopDeal:
 	move.w	ShopCursor,InvCursor	; InvClear travaille sur le curseur
 	bsr	InvClear		; du sac : on les fait coincider
 	add.w	d6,Gold
+	moveq	#1,d5
 	lea	TxtShopSold,a0
 
 .receipt:
@@ -5252,6 +5772,12 @@ ShopDeal:
 	lea	TmpStr,a0
 .say:
 	bsr	LogAdd
+	tst.w	d5
+	beq.s	.noDeal
+	bsr	BestTrader		; celui qui a parle y gagne peut-etre
+	moveq	#SK_TRADE,d0
+	bsr	SkillUse
+.noDeal:
 	bsr	ShopClamp
 	move.w	#1,NeedRedraw
 	movem.l	(sp)+,d0-d7/a0-a6
@@ -5347,26 +5873,30 @@ TrapDC:					; -> d0 = difficulte, selon l'etage
 	add.w	#14,d0
 	rts
 
-; TrapSkill : a6 = heros -> d0 = ce qu'il ajoute a son d20. Le roublard
-; est du metier ; les autres n'ont que leur sagesse et l'habitude.
-TrapSkill:
-	movem.l	d1-d2/a0,-(sp)
-	moveq	#0,d2
-	cmp.w	#2,hr_Class(a6)		; ROUBLARD
-	bne.s	.plain
-	move.w	hr_Level(a6),d2
-	addq.w	#4,d2
-	bra.s	.wis
-.plain:
-	move.w	hr_Level(a6),d2
-	and.l	#$0000ffff,d2
-	divu.w	#3,d2
-	and.l	#$0000ffff,d2
-.wis:
+; TrapSkill, DisarmSkill : a6 = heros -> d0 = ce qu'il ajoute a son
+; d20. Le roublard avait un bonus a part ; ce sont maintenant les
+; competences VIGILANCE et DESAMORCAGE, ou il part avec de l'avance, et
+; que tout le monde fait progresser en s'en servant.
+TrapSkill:				; reperer : l'oeil, et le bon sens
+	movem.l	d1,-(sp)
+	moveq	#SK_VIGIL,d0
+	bsr	SkillFifth
+	move.w	d0,d1
 	move.w	hr_Wis(a6),d0
 	bsr	StatMod
-	add.w	d2,d0
-	movem.l	(sp)+,d1-d2/a0
+	add.w	d1,d0
+	movem.l	(sp)+,d1
+	rts
+
+DisarmSkill:				; desamorcer : le metier, et la main
+	movem.l	d1,-(sp)
+	moveq	#SK_DISARM,d0
+	bsr	SkillFifth
+	move.w	d0,d1
+	move.w	hr_Dex(a6),d0
+	bsr	StatMod
+	add.w	d1,d0
+	movem.l	(sp)+,d1
 	rts
 
 MarkTrapSeen:				; d0 = x, d1 = y
@@ -5400,7 +5930,10 @@ SpotTrap:
 	add.w	d2,d0
 	cmp.w	d5,d0
 	blt.s	.next
+	tst.w	d3
+	bne.s	.next
 	moveq	#1,d3
+	move.l	a6,a5			; le premier qui l'a vu
 .next:
 	lea	hr_SIZEOF(a6),a6
 	dbf	d4,.loop
@@ -5423,6 +5956,9 @@ SpotTrap:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	move.l	a5,a6			; son oeil s'aiguise
+	moveq	#SK_VIGIL,d0
+	bsr	SkillUse
 	moveq	#1,d0
 	bra.s	.done
 .missed:
@@ -5528,7 +6064,7 @@ DisarmTrap:
 	beq	.down
 	bsr	TrapDC
 	move.w	d0,d5
-	bsr	TrapSkill
+	bsr	DisarmSkill
 	move.w	d0,d4
 	bsr	D20
 	add.w	d4,d0
@@ -5552,6 +6088,8 @@ DisarmTrap:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	moveq	#SK_DISARM,d0		; la main s'affermit
+	bsr	SkillUse
 	lea	Heroes,a6		; le tour de main profite a tous
 	moveq	#NHEROES-1,d3
 .xp:
@@ -5595,7 +6133,7 @@ DisarmTrap:
 ; Personne n'est revenu depuis un siecle, et la maison recouvre sur les
 ; heritiers -- c'est pour cela que le groupe est descendu.
 ;
-; Le registre montre les quatre noms du groupe, qui sont les quatre
+; Le registre montre les six noms du groupe, qui sont les six
 ; colonnes de signature d'une quittance. Rayer la ligne ouvre la porte
 ; des quittances, tout en bas : sans cela, l'escalier du dernier etage
 ; ne mene nulle part (voir Descend).
@@ -5635,7 +6173,7 @@ DrawLedger:
 	move.w	#C_TEXT,d2
 	bsr	DrawText
 
-	lea	Heroes,a6		; les quatre colonnes de signature
+	lea	Heroes,a6		; les six colonnes de signature
 	moveq	#0,d7
 .nameLoop:
 	lea	TmpStr,a1
@@ -5654,10 +6192,10 @@ DrawLedger:
 	bsr	StrCopy
 	clr.b	(a1)
 	lea	TmpStr,a0
-	moveq	#5,d0
+	moveq	#5,d0			; six colonnes, six lignes
 	move.w	d7,d1
-	mulu.w	#10,d1
-	add.w	#70,d1
+	mulu.w	#9,d1
+	add.w	#68,d1
 	move.w	#C_TEXT,d2
 	tst.w	Acquitted
 	beq.s	.notPaid
@@ -5673,24 +6211,24 @@ DrawLedger:
 	bne.s	.struck
 	lea	TxtLedgerQuill,a0
 	moveq	#3,d0
-	move.w	#118,d1
+	move.w	#124,d1
 	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	lea	TxtLedgerAsk,a0
 	moveq	#3,d0
-	move.w	#132,d1
+	move.w	#138,d1
 	move.w	#C_HILITE,d2
 	bsr	DrawText
 	bra.s	.done
 .struck:
 	lea	TxtLedgerDone,a0
 	moveq	#3,d0
-	move.w	#118,d1
+	move.w	#124,d1
 	move.w	#C_HILITE,d2
 	bsr	DrawText
 	lea	TxtLedgerFree,a0
 	moveq	#3,d0
-	move.w	#132,d1
+	move.w	#138,d1
 	move.w	#C_TEXT,d2
 	bsr	DrawText
 .done:
@@ -5723,6 +6261,115 @@ LedgerKey:
 	dbf	d6,.xpLoop
 .done:
 	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Les rayonnages du greffe
+;
+; Le greffe n'est pas qu'un pupitre : c'est la salle ou la maison range
+; ce qu'elle sait. Trois de ses rayonnages portent un livre qu'on peut
+; ouvrir -- les dalles, les portes a question, le guichet -- et disent
+; ce que le groupe n'a fait jusque-la que subir. Les autres sont muets :
+; des comptes, des noms, rien qui le regarde.
+;
+; La premiere lecture de chaque livre vaut de l'experience a tous ; le
+; bit ARCH_READ de la case le retient, et part avec l'etage dans la
+; sauvegarde.
+;----------------------------------------------------------------------
+ARCH_XP		= 25			; ce que vaut une premiere lecture
+ARCHROWS	= 10			; lignes d'un livre, sous sa cote
+
+OpenArchive:				; d0 = x, d1 = y du rayonnage
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	d0,d4
+	move.w	d1,d5
+	bsr	MapGetParam
+	move.w	d0,d3
+	and.w	#ARCH_MUTE,d0
+	cmp.w	#NARCHIVES,d0
+	blo.s	.book
+	lea	TxtArchiveMute,a0	; un rayonnage muet
+	bsr	LogAdd
+	bra	.done
+.book:
+	move.w	d0,ArchiveBook
+	move.w	#UI_ARCHIVE,UiMode
+	moveq	#SFX_CHEST,d0
+	bsr	SfxPlay
+	lea	TxtArchiveOpen,a0
+	bsr	LogAdd
+	btst	#ARCH_READ,d3		; deja lu : la page, sans plus
+	bne.s	.done
+	move.w	d3,d2
+	bset	#ARCH_READ,d2
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapSetParam
+	lea	TxtArchiveLearn,a0
+	bsr	LogAdd
+	lea	Heroes,a6		; lire, c'est comprendre ou l'on est
+	moveq	#NHEROES-1,d6
+.xpLoop:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpNext
+	add.w	#ARCH_XP,hr_Xp(a6)
+	bsr	CheckLevel
+.xpNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.xpLoop
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; DrawArchive : le livre ouvert. Un titre, la cote du livre, puis ses
+; lignes ; une ligne marquee d'une etoile passe a l'or, comme au
+; prologue.
+DrawArchive:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+
+	move.w	ArchiveBook,d0
+	lsl.w	#2,d0
+	lea	ArchiveBooks,a0
+	move.l	(a0,d0.w),a3		; titre, cote, puis les lignes
+	move.l	(a3)+,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	move.l	(a3)+,a0
+	moveq	#3,d0
+	moveq	#32,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	moveq	#0,d7
+.lineLoop:
+	cmp.w	#ARCHROWS,d7		; le panneau s'arrete la
+	bge.s	.done
+	move.l	(a3)+,d0
+	beq.s	.done
+	move.l	d0,a0
+	move.w	#C_TEXT,d2
+	cmp.b	#$2a,(a0)		; l'etoile : la ligne qui reste
+	bne.s	.plain
+	addq.l	#1,a0
+	move.w	#C_HILITE,d2
+.plain:
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#10,d1
+	add.w	#46,d1
+	bsr	DrawText
+	addq.w	#1,d7
+	bra.s	.lineLoop
+.done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -5895,8 +6542,7 @@ Ascend:
 	bsr	LogFloor
 	bra.s	.done
 .jour:
-	lea	TxtNoWayUp,a0		; au-dessus du premier, c'est le jour
-	bsr	LogAdd
+	bsr	EnterTown		; au-dessus du premier, c'est le bourg
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -5940,11 +6586,21 @@ MonWalk:
 	movem.l	d0-d7/a0-a6,-(sp)
 	cmp.w	#PHASE_PLAY,Phase
 	bne	.done
+	tst.w	InTown			; au bourg, la crypte attend
+	bne	.done
 	tst.w	InCombat
 	bne	.done
 	tst.w	GameOver
 	bne	.done
-	addq.w	#1,MonClock
+	move.w	VBI_Count,d0		; le pas se compte en trames, pas en
+	move.w	d0,d1			; tours de boucle : un redessin qui en
+	sub.w	MonLastVbi,d0		; prend deux ne doit pas ralentir ceux
+	move.w	d1,MonLastVbi		; qui viennent vers le groupe
+	cmp.w	#MONSTEP,d0		; (et au retour d'un combat, pas plus
+	bls.s	.elapsed		; d'un pas d'un coup)
+	moveq	#MONSTEP,d0
+.elapsed:
+	add.w	d0,MonClock
 	move.w	MonClock,d0
 	cmp.w	#MONSTEP,d0
 	blt	.done
@@ -6082,7 +6738,8 @@ MonTry:
 	move.w	d0,MonKind
 	move.w	d6,MonX			; c'est lui qui tient la case
 	move.w	d7,MonY
-	bsr	StartCombat
+	move.w	#1,MeetAmbush		; c'est lui qui vient : il peut
+	bsr	StartCombat		; nous surprendre
 	bra	.yes
 .notParty:
 	move.w	MonToX,d0		; du dallage nu, et rien dessus
@@ -6212,22 +6869,45 @@ StartCombat:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.w	#1,InCombat
 	clr.w	AnimFrame
+	clr.w	StrikeTime
 	clr.w	MonStun
 	move.w	MonKind,d0
 	mulu.w	#mt_SIZEOF,d0
 	lea	MonTypes,a2
 	add.l	d0,a2
 	move.l	a2,MonPtr
-	move.w	mt_Hd(a2),d0		; les PV se tirent aux des de vie
-	move.w	mt_HdF(a2),d1
-	bsr	RollDice
-	add.w	mt_HpB(a2),d0
-	cmp.w	#1,d0
-	bge.s	.hpOk
-	moveq	#1,d0
-.hpOk:
+	bsr	RollMonHp		; celui de devant
 	move.w	d0,MonHp
 	move.w	mt_Art(a2),MonArt
+
+	; Le groupe : de un a quatre de la meme espece, d'autant moins que
+	; l'espece est lourde, d'autant plus qu'on est bas. Chacun a ses
+	; points de vie ; ceux de derriere attendent dans GroupHp.
+	move.w	mt_Hd(a2),d0		; quatre au plus, un de moins tous
+	subq.w	#1,d0			; les deux des de vie
+	lsr.w	#1,d0
+	moveq	#GROUPMAX,d1
+	sub.w	d0,d1
+	bgt.s	.maxOk
+	moveq	#1,d1
+.maxOk:
+	move.w	Level,d0		; et pas plus que l'etage n'en autorise
+	addq.w	#2,d0
+	cmp.w	d0,d1
+	ble.s	.capped
+	move.w	d0,d1
+.capped:
+	bsr	RndMod
+	addq.w	#1,d0
+	move.w	d0,GroupN
+	move.w	#1,GroupNext
+	lea	GroupHp,a0
+	move.w	MonHp,(a0)+
+	moveq	#GROUPMAX-2,d2
+.rollGroup:
+	bsr	RollMonHp
+	move.w	d0,(a0)+
+	dbf	d2,.rollGroup
 	clr.w	PartyBless
 	moveq	#SFX_GROWL,d0
 	bsr	SfxPlay
@@ -6241,7 +6921,36 @@ StartCombat:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	cmp.w	#1,GroupN		; il n'est pas seul
+	beq.s	.alone
+	lea	TmpStr,a1
+	lea	TxtNotAlone,a0
+	bsr	StrCopy
+	move.w	GroupN,d0
+	bsr	StrNum
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+.alone:
+	bsr	FirstOrder		; le premier debout donne son ordre
+	clr.w	RoundNo
+	bsr	BeginMeet		; mais d'abord, la rencontre
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; RollMonHp : a2 = espece -> d0 = points de vie, tires aux des de vie
+RollMonHp:
+	movem.l	d1,-(sp)
+	move.w	mt_Hd(a2),d0
+	move.w	mt_HdF(a2),d1
+	bsr	RollDice
+	add.w	mt_HpB(a2),d0
+	cmp.w	#1,d0
+	bge.s	.ok
+	moveq	#1,d0
+.ok:
+	movem.l	(sp)+,d1
 	rts
 
 ; HeroAttack : a6 = heros, a2 = monstre -> d0 = degats (0 si rate)
@@ -6280,6 +6989,9 @@ HeroAttack:
 	move.w	d3,AtkMax
 	add.w	d0,d6
 	add.w	PartyBless,d6
+	moveq	#SK_COMBAT,d0		; le metier des armes
+	bsr	SkillTen
+	add.w	d0,d6
 	move.w	d6,d4			; bonus d'attaque total
 	moveq	#0,d7
 	moveq	#0,d2			; numero d'attaque
@@ -6334,41 +7046,243 @@ HeroAttack:
 	movem.l	(sp)+,d1-d7/a0/a3
 	rts
 
-CombatRound:
-	movem.l	d0-d7/a0-a6,-(sp)
-	move.l	MonPtr,a2
-	moveq	#0,d7			; degats du groupe
-	moveq	#0,d4			; bruitage de la premiere arme
-	moveq	#0,d3			; un heros a-t-il frappe
-	lea	Heroes,a6
-	moveq	#NHEROES-1,d6
-.heroLoop:
-	tst.w	hr_Hp(a6)
-	beq.s	.heroNext
-	tst.w	d3
-	bne.s	.haveSfx
-	moveq	#1,d3
-	move.w	hr_Weapon(a6),d0
-	beq.s	.bareSfx
-	bsr	ItemPtr
-	move.w	it_Sfx(a0),d4
-	bra.s	.haveSfx
-.bareSfx:
-	moveq	#SFX_SWORD,d4
-.haveSfx:
-	bsr	HeroAttack
-	add.w	d0,d7
-.heroNext:
-	lea	hr_SIZEOF(a6),a6
-	dbf	d6,.heroLoop
+;----------------------------------------------------------------------
+; Le combat par rounds, a la maniere des jeux de role a groupe
+;
+; Un round commence par les ordres : chaque aventurier debout recoit le
+; sien, a tour de role -- A frapper, D parer, S un sort --, et ENTREE
+; reprend ceux du round d'avant pour tous ceux qui restent. Les ordres
+; sont retenus d'un round et d'un combat a l'autre : le groupe se bat
+; comme on l'a regle, et il suffit d'ENTREE pour enchainer.
+;
+; Puis le round se joue : les aventuriers dans l'ordre du groupe, puis
+; chaque creature debout. Celui de l'arriere ne frappe qu'a l'arc -- sans
+; quoi il pare ; celui de l'avant qui lance un sort peut perdre sa
+; concentration, l'ennemi sous le nez. Le resultat s'affiche en detail,
+; ou se resume au journal, selon le reglage (P).
+;
+; Orders : 0 frapper, 1 parer, 2 + n le sort n.
+;----------------------------------------------------------------------
+ORD_ATTACK	= 0
+ORD_GUARD	= 1
+ORD_SPELL	= 2
 
-	move.w	d4,d0
+; resultats d'un aventurier dans le round, pour le panneau
+RES_NONE	= 0			; a terre, ou rien a faire
+RES_HIT		= 1			; ResVal : les degats
+RES_MISS	= 2
+RES_GUARD	= 3
+RES_FAR		= 4			; trop loin pour frapper : il pare
+RES_SPELL	= 5			; ResVal : ce que le sort a pris
+RES_CONC	= 6			; concentration perdue
+GUARDAC		= 4			; ce que parer ajoute a la CA
+
+; FirstOrder : l'ordre revient au premier aventurier debout
+FirstOrder:
+	movem.l	d0/a6,-(sp)
+	moveq	#-1,d0
+	bsr	NextAlive
+	move.w	d0,OrderHero
+	bmi.s	.none
+	move.w	d0,SelHero
+.none:
+	movem.l	(sp)+,d0/a6
+	rts
+
+; NextAlive : d0 = heros -> d0 = le suivant debout, -1 s'il n'y en a pas
+NextAlive:
+	movem.l	d1/a6,-(sp)
+	move.w	d0,d1
+.loop:
+	addq.w	#1,d1
+	cmp.w	#NHEROES,d1
+	bge.s	.none
+	move.w	d1,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq.s	.loop
+	move.w	d1,d0
+	bra.s	.done
+.none:
+	moveq	#-1,d0
+.done:
+	movem.l	(sp)+,d1/a6
+	rts
+
+; SetOrder : d0 = ordre pour l'aventurier dont c'est le tour. On passe
+; au suivant ; apres le dernier, le round se joue.
+SetOrder:
+	movem.l	d0-d1/a0,-(sp)
+	move.w	OrderHero,d1
+	bmi.s	.play
+	lea	Orders,a0
+	move.b	d0,(a0,d1.w)
+	move.w	d1,d0
+	bsr	NextAlive
+	move.w	d0,OrderHero
+	bmi.s	.play
+	move.w	d0,SelHero
+	move.w	#1,NeedRedraw
+	bra.s	.done
+.play:
+	bsr	ResolveRound
+.done:
+	movem.l	(sp)+,d0-d1/a0
+	rts
+
+; ResolveRound : le round se joue, avec les ordres tels qu'ils sont.
+ResolveRound:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#1,InResolve
+	addq.w	#1,RoundNo
+	lea	HitFlags,a0		; qui aura touche, qui pare
+	lea	Guarding,a1
+	lea	ResCode,a3
+	moveq	#NHEROES-1,d0
+.clear:
+	clr.b	(a0)+
+	clr.b	(a1)+
+	clr.b	(a3)+
+	dbf	d0,.clear
+	clr.w	MonHits
+	clr.w	MonDmg
+	clr.w	RoundSfx		; l'arme du premier qui frappe
+	moveq	#0,d7			; degats du groupe ce round
+	moveq	#0,d6			; numero du heros
+.heroLoop:
+	tst.w	InCombat
+	beq	.heroesDone
+	move.w	d6,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq	.heroNext
+	lea	Orders,a0
+	moveq	#0,d5
+	move.b	(a0,d6.w),d5		; son ordre
+	cmp.w	#ORD_GUARD,d5
+	bne.s	.notGuard
+.guard:
+	lea	Guarding,a0
+	st	(a0,d6.w)
+	moveq	#RES_GUARD,d0
+	bsr	SetRes
+	bra	.heroNext
+.notGuard:
+	cmp.w	#ORD_SPELL,d5
+	bhs	.spell
+
+	cmp.w	#FRONTRANK,d6		; --- frapper
+	blo.s	.canReach
+	bsr	HasBow			; de l'arriere, a l'arc seulement
+	tst.w	d0
+	bne.s	.canReach
+	lea	Guarding,a0		; trop loin : il pare
+	st	(a0,d6.w)
+	moveq	#RES_FAR,d0
+	bsr	SetRes
+	bra	.heroNext
+.canReach:
+	tst.w	RoundSfx		; le bruit de son arme, s'il est le
+	bne.s	.sfxKnown		; premier a frapper
+	moveq	#SFX_SWORD,d0
+	move.w	hr_Weapon(a6),d1
+	beq.s	.sfxSet
+	move.w	d1,d0
+	bsr	ItemPtr
+	move.w	it_Sfx(a0),d0
+.sfxSet:
+	addq.w	#1,d0			; plus un : l'epee est le bruitage zero
+	move.w	d0,RoundSfx
+.sfxKnown:
+	move.l	MonPtr,a2
+	bsr	HeroAttack
+	tst.w	d0
+	bne.s	.hit
+	moveq	#RES_MISS,d0
+	bsr	SetRes
+	bra	.heroNext
+.hit:
+	move.w	d0,d1
+	add.w	d1,d7
+	sub.w	d1,MonHp
+	lea	HitFlags,a0
+	st	(a0,d6.w)
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	d1,(a0,d0.w)
+	moveq	#RES_HIT,d0
+	bsr	SetRes
+	bra	.checkDead
+
+.spell:					; --- un sort
+	move.w	d6,SelHero
+	cmp.w	#FRONTRANK,d6		; a l'avant, l'ennemi sous le nez
+	bhs.s	.focused
+	move.l	MonPtr,a2
+	bsr	IsCaster
+	tst.w	d0
+	beq.s	.focused
+	moveq	#SK_CONCENT,d0		; 40 % de perdre le fil, moins la
+	bsr	SkillValue		; moitie de sa concentration
+	lsr.w	#1,d0
+	moveq	#40,d2
+	sub.w	d0,d2
+	ble.s	.focused
+	moveq	#100,d1
+	bsr	RndMod
+	cmp.w	d2,d0
+	bhs.s	.focused
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtLostFocus,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	moveq	#RES_CONC,d0
+	bsr	SetRes
+	bra.s	.heroNext
+.focused:
+	move.w	MonHp,d4
+	move.w	d5,d0
+	sub.w	#ORD_SPELL,d0
+	bsr	CastSpell
+	sub.w	MonHp,d4		; ce que le sort a pris
+	bpl.s	.took
+	moveq	#0,d4
+.took:
+	add.w	d4,d7
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	d4,(a0,d0.w)
+	moveq	#RES_SPELL,d0
+	bsr	SetRes
+.checkDead:
+	tst.w	MonHp
+	bgt.s	.heroNext
+	bsr	MonsterDies		; la suivante s'avance, ou c'est fini
+.heroNext:
+	addq.w	#1,d6
+	cmp.w	#NHEROES,d6
+	blt	.heroLoop
+.heroesDone:
+	move.w	d7,RoundDmg
+	move.w	RoundSfx,d0		; l'arme, puis l'impact ou l'esquive
+	beq.s	.silent
+	subq.w	#1,d0
 	bsr	SfxPlay
+	moveq	#SFX_MISS,d0
 	tst.w	d7
-	beq.s	.allMissed
+	beq.s	.impact
 	moveq	#SFX_HIT,d0
+.impact:
 	bsr	SfxPlay
-	sub.w	d7,MonHp
+.silent:
+	tst.w	d7			; le recit du groupe, en une ligne
+	beq.s	.noDamage
 	lea	TmpStr,a1
 	lea	TxtYouHit,a0
 	bsr	StrCopy
@@ -6379,21 +7293,309 @@ CombatRound:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
-	bra.s	.check
-.allMissed:
-	moveq	#SFX_MISS,d0
-	bsr	SfxPlay
-	lea	TxtAllMiss,a0
-	bsr	LogAdd
-.check:
-	tst.w	MonHp
-	bgt.s	.monsterTurn
-	bsr	MonsterDies
-	bra.s	.done
-.monsterTurn:
-	bsr	MonsterTurn
+.noDamage:
+	bsr	CombatProgress		; ceux qui ont touche y gagnent peut-etre
+	tst.w	InCombat
+	beq.s	.over
+	tst.w	GameOver
+	bne.s	.over
+	bsr	MonsterTurn		; puis chaque creature debout
+.over:
+	clr.w	InResolve
+	tst.w	InCombat
+	beq.s	.done
+	tst.w	GameOver
+	bne.s	.done
+	bsr	FirstOrder		; le round suivant commence par l'ordre
+	tst.w	OptQuick		; du premier -- apres le resultat, si on
+	bne.s	.done			; le veut en detail
+	move.w	#UI_ROUND,UiMode
 .done:
 	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; SetRes : d0 = resultat de l'aventurier d6
+SetRes:
+	move.l	a0,-(sp)
+	lea	ResCode,a0
+	move.b	d0,(a0,d6.w)
+	move.l	(sp)+,a0
+	rts
+
+; HasBow : a6 = heros -> d0 = 1 s'il tient une arme de jet
+HasBow:
+	movem.l	a0,-(sp)
+	move.w	hr_Weapon(a6),d0
+	beq.s	.no
+	bsr	ItemPtr
+	cmp.w	#SFX_BOW,it_Sfx(a0)
+	bne.s	.no
+	moveq	#1,d0
+	bra.s	.done
+.no:
+	moveq	#0,d0
+.done:
+	movem.l	(sp)+,a0
+	rts
+
+; IsCaster : a6 = heros -> d0 = 1 si sa classe lance des sorts
+IsCaster:
+	movem.l	a0,-(sp)
+	bsr	ClassPtr
+	move.w	cl_Cast(a0),d0
+	beq.s	.done
+	moveq	#1,d0
+.done:
+	movem.l	(sp)+,a0
+	rts
+
+; HeroIndex : a6 = heros -> d0 = son rang dans le groupe
+HeroIndex:
+	move.l	a6,d0
+	sub.l	#Heroes,d0
+	divu.w	#hr_SIZEOF,d0
+	and.l	#$0000ffff,d0
+	rts
+
+; CombatKey : d0 = touche, pendant les ordres
+CombatKey:
+	cmp.w	#KEY_A_QW,d0
+	beq.s	.attack
+	cmp.w	#KEY_A_AZ,d0
+	beq.s	.attack
+	cmp.w	#KEY_SPACE,d0
+	beq.s	.attack
+	cmp.w	#KEY_D,d0
+	beq.s	.guard
+	cmp.w	#KEY_RETURN,d0
+	beq.s	.repeat
+	cmp.w	#KEY_F,d0
+	beq.s	.flee
+	cmp.w	#KEY_S,d0
+	bne.s	.done
+	movem.l	d0/a0-a1/a6,-(sp)	; qui ne connait aucun sort n'a pas
+	move.w	OrderHero,d0		; de menu a ouvrir
+	bmi.s	.noSpell
+	bsr	HeroPtr
+	tst.w	hr_Spells(a6)
+	bne.s	.menu
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtNoSpells,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	move.w	#1,NeedRedraw
+	bra.s	.noSpell
+.menu:
+	move.w	#UI_SPELL,UiMode	; le sort se choisit dans le menu,
+	move.w	#1,NeedRedraw		; qui revient ici avec son numero
+.noSpell:
+	movem.l	(sp)+,d0/a0-a1/a6
+	rts
+.attack:
+	moveq	#ORD_ATTACK,d0
+	bra	SetOrder
+.guard:
+	moveq	#ORD_GUARD,d0
+	bra	SetOrder
+.repeat:
+	bra	ResolveRound		; les ordres retenus, pour tous
+.flee:
+	bsr	CombatFlee
+	tst.w	InCombat
+	beq.s	.done
+	bsr	FirstOrder
+.done:
+	rts
+
+; DrawRound : le resultat du round, en detail (UI_ROUND)
+DrawRound:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	lea	TmpStr,a1
+	lea	TxtRoundTitle,a0
+	bsr	StrCopy
+	move.w	RoundNo,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+
+	moveq	#0,d6
+.row:
+	move.w	d6,d0
+	bsr	HeroPtr
+	tst.w	hr_HpMax(a6)
+	beq	.next
+	move.l	a6,a0			; le nom
+	moveq	#3,d0
+	move.w	d6,d1
+	mulu.w	#11,d1
+	add.w	#36,d1
+	move.w	#C_TEXT,d2
+	tst.w	hr_Hp(a6)
+	bne.s	.up
+	move.w	#C_TEXTLOW,d2
+.up:
+	bsr	DrawText
+	lea	ResCode,a0		; ce qu'il a fait
+	moveq	#0,d0
+	move.b	(a0,d6.w),d0
+	move.w	d0,d5
+	lsl.w	#2,d0
+	lea	ResTexts,a0
+	move.l	(a0,d0.w),a0
+	lea	TmpStr,a1
+	bsr	StrCopy
+	cmp.w	#RES_HIT,d5		; avec des degats a dire
+	beq.s	.value
+	cmp.w	#RES_SPELL,d5
+	bne.s	.noValue
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	tst.w	(a0,d0.w)
+	beq.s	.noValue
+.value:
+	move.b	#' ',(a1)+
+	lea	ResVal,a0
+	move.w	d6,d0
+	add.w	d0,d0
+	move.w	(a0,d0.w),d0
+	bsr	StrNum
+.noValue:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#13,d0
+	move.w	d6,d1
+	mulu.w	#11,d1
+	add.w	#36,d1
+	move.w	#C_PARCHD,d2
+	cmp.w	#RES_HIT,d5
+	bne.s	.color
+	move.w	#C_HEALTH,d2
+.color:
+	bsr	DrawText
+.next:
+	addq.w	#1,d6
+	cmp.w	#NHEROES,d6
+	blt	.row
+
+	lea	TmpStr,a1		; et ce que les creatures ont fait
+	lea	TxtRoundFoes,a0
+	bsr	StrCopy
+	move.w	MonHits,d0
+	bsr	StrNum
+	lea	TxtRoundBlows,a0
+	bsr	StrCopy
+	move.w	MonDmg,d0
+	bsr	StrNum
+	lea	TxtRoundHp,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#110,d1
+	move.w	#C_ALERT,d2
+	bsr	DrawText
+	lea	TxtRoundGo,a0
+	moveq	#3,d0
+	move.w	#134,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; DrawOrderTag : pendant les ordres, sur la creature -- a qui c'est le
+; tour et ce qu'il a fait au round d'avant ; en bas, combien ils sont.
+DrawOrderTag:
+	movem.l	d0-d7/a0-a6,-(sp)
+	tst.w	MeetPhase		; la rencontre : la question, pas l'ordre
+	beq.s	.orders
+	lea	TxtMeetAsk,a0
+	cmp.w	#MEET_TOLL,MeetPhase
+	bne.s	.ask
+	lea	TxtTollTag,a0
+.ask:
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	bra	.foes
+.orders:
+	move.w	OrderHero,d0
+	bmi	.foes
+	bsr	HeroPtr
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtOrderSep,a0
+	bsr	StrCopy
+	lea	Orders,a0
+	move.w	OrderHero,d0
+	moveq	#0,d1
+	move.b	(a0,d0.w),d1
+	moveq	#ORD_SPELL,d2		; un sort : "SORT", et son nom dessous
+	cmp.w	d2,d1
+	bhs.s	.spellTag
+	lsl.w	#2,d1
+	lea	OrderNames,a0
+	move.l	(a0,d1.w),a0
+	bra.s	.named
+.spellTag:
+	lea	TxtResSpell,a0
+.named:
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	move.b	#'?',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	Orders,a0
+	move.w	OrderHero,d0
+	moveq	#0,d1
+	move.b	(a0,d0.w),d1
+	cmp.w	#ORD_SPELL,d1
+	blo.s	.foes
+	sub.w	#ORD_SPELL,d1
+	move.w	d1,d0
+	bsr	SpellPtr
+	moveq	#3,d0
+	moveq	#40,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
+.foes:
+	lea	TmpStr,a1
+	move.l	MonPtr,a0
+	bsr	StrCopy
+	cmp.w	#1,GroupN
+	beq.s	.one
+	lea	TxtTimes,a0
+	bsr	StrCopy
+	move.w	GroupN,d0
+	bsr	StrNum
+.one:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0			; sous l'ordre, contre la voute
+	moveq	#30,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -6404,15 +7606,1624 @@ MonsterTurn:
 	lea	TxtMonStunned,a0
 	bsr	LogAdd
 	rts
-.attack:
+.attack:				; chacun du groupe frappe
+	move.l	d7,-(sp)
+	move.w	GroupN,d7
+	subq.w	#1,d7
+.each:
+	tst.w	GameOver
+	bne.s	.over
 	bsr	MonsterAttack
+	dbf	d7,.each
+.over:
+	move.l	(sp)+,d7
 	rts
+
+;----------------------------------------------------------------------
+; Les competences, qui progressent a l'usage
+;
+; Comme dans Legend of Faerghail, un aventurier ne progresse pas qu'en
+; niveaux : chaque fois qu'il reussit ce qu'une competence mesure --
+; toucher, parer, lancer un sort, reperer ou desamorcer un piege,
+; marchander --, il a une chance d'y gagner un point. Une chance
+; d'autant plus mince que la competence est deja haute : (100 - valeur)
+; sur trois cents. De 0 a 99, un octet par competence dans le heros.
+;----------------------------------------------------------------------
+
+; SkillValue : a6 = heros, d0 = competence -> d0 = valeur (0 a 99)
+SkillValue:
+	move.l	d1,-(sp)
+	moveq	#0,d1
+	move.b	hr_Skills(a6,d0.w),d1
+	move.l	d1,d0
+	move.l	(sp)+,d1
+	rts
+
+; SkillTen : -> d0 = valeur / 10, ce que la competence ajoute a un d20
+; de combat (0 a +9)
+SkillTen:
+	bsr.s	SkillValue
+	divu.w	#10,d0
+	and.l	#$0000ffff,d0
+	rts
+
+; SkillFifth : -> d0 = valeur / 5, pour les pieges (0 a +19) : le
+; metier y compte plus que l'epee au combat
+SkillFifth:
+	bsr.s	SkillValue
+	divu.w	#5,d0
+	and.l	#$0000ffff,d0
+	rts
+
+; SkillUse : a6 = heros, d0 = competence. Il vient de la reussir : il a
+; une chance d'y gagner un point, et le journal le dit.
+SkillUse:
+	movem.l	d0-d3/a0-a1,-(sp)
+	move.w	d0,d3
+	bsr.s	SkillValue
+	cmp.w	#99,d0
+	bhs.s	.done
+	move.w	d0,d2
+	move.w	#300,d1
+	bsr	RndMod
+	moveq	#100,d1
+	sub.w	d2,d1
+	cmp.w	d1,d0
+	bhs.s	.done
+	addq.b	#1,hr_Skills(a6,d3.w)
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtProgress,a0
+	bsr	StrCopy
+	move.w	d3,d0
+	lsl.w	#2,d0
+	lea	SkillNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+.done:
+	movem.l	(sp)+,d0-d3/a0-a1
+	rts
+
+; BestTrader : -> a6 = l'aventurier debout qui marchande le mieux, d0 =
+; sa valeur. Au comptoir, c'est lui qui parle pour tout le groupe.
+BestTrader:
+	movem.l	d1-d3/a0,-(sp)
+	lea	Heroes,a0
+	move.l	a0,a6
+	moveq	#-1,d2
+	moveq	#NHEROES-1,d3
+.loop:
+	tst.w	hr_Hp(a0)
+	beq.s	.next
+	moveq	#0,d1
+	move.b	hr_Skills+SK_TRADE(a0),d1
+	cmp.w	d2,d1
+	ble.s	.next
+	move.w	d1,d2
+	move.l	a0,a6
+.next:
+	lea	hr_SIZEOF(a0),a0
+	dbf	d3,.loop
+	moveq	#0,d0
+	tst.w	d2
+	bmi.s	.done
+	move.w	d2,d0
+.done:
+	movem.l	(sp)+,d1-d3/a0
+	rts
+
+; CombatProgress : ceux qui ont touche pendant le round (HitFlags)
+; tentent leur chance en COMBAT -- apres le recit du round, pour que le
+; journal se lise dans l'ordre.
+CombatProgress:
+	movem.l	d0-d1/a0/a6,-(sp)
+	lea	HitFlags,a0
+	moveq	#0,d1
+.loop:
+	tst.b	(a0,d1.w)
+	beq.s	.next
+	move.w	d1,d0
+	bsr	HeroPtr
+	moveq	#SK_COMBAT,d0
+	bsr	SkillUse
+.next:
+	addq.w	#1,d1
+	cmp.w	#NHEROES,d1
+	blt.s	.loop
+	movem.l	(sp)+,d0-d1/a0/a6
+	rts
+
+; DrawSkills : la deuxieme page de la fiche, TAB depuis la premiere.
+DrawSkills:
+	movem.l	d0-d7/a0-a6,-(sp)
+	lea	TmpStr,a1
+	lea	TxtSkillsOf,a0
+	bsr	StrCopy
+	move.l	a6,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	moveq	#0,d7
+.loop:
+	move.w	d7,d0
+	lsl.w	#2,d0
+	lea	SkillNames,a0
+	move.l	(a0,d0.w),a0
+	moveq	#3,d0
+	move.w	d7,d1
+	mulu.w	#13,d1
+	add.w	#40,d1
+	move.w	#C_TEXT,d2
+	bsr	DrawText
+	lea	TmpStr,a1		; la valeur, calee a droite
+	move.w	d7,d0
+	bsr	SkillValue
+	move.w	d0,d6
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#22,d0
+	cmp.w	#10,d6
+	bhs.s	.two
+	moveq	#23,d0
+.two:
+	move.w	d7,d1
+	mulu.w	#13,d1
+	add.w	#40,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
+	move.w	#24,d0			; et sa jauge, sous le nom
+	move.w	d7,d1
+	mulu.w	#13,d1
+	add.w	#49,d1
+	move.w	#176,d2
+	move.w	d6,d3
+	moveq	#99,d4
+	move.w	#C_GOLD+N_GOLD-3,d5
+	bsr	DrawGauge
+	addq.w	#1,d7
+	cmp.w	#NSKILLS,d7
+	blt	.loop
+	bsr	DrawTongues		; et les langues qu'il parle
+	lea	TxtSkillsHelp,a0
+	moveq	#3,d0
+	move.w	#138,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Ambelune : ce qu'il y a au-dessus de la crypte
+;
+; Le village d'ou le groupe est descendu (docs/histoire.md). Dans le
+; code, c'est "le bourg" : InTown, TownPlace, et le reste.
+;
+; Comme dans Legend of Faerghail, la ville ne se parcourt pas : c'est
+; une place et des portes, chacune un menu. On y monte par l'escalier
+; du premier etage. Le comptoir vend et rachete ; l'auberge rend les
+; forces ; le temple soigne et releve les morts, quand les dieux le
+; veulent bien ; la guilde forme ceux qui ont assez appris sous terre
+; -- l'experience seule ne fait plus passer de niveau, il faut payer
+; le maitre -- et enseigne les langues ; la banque garde l'or qu'on ne
+; veut pas porter, et la rue offre ses bourses aux doigts agiles.
+;
+; Le bourg a ses risques : un coupe-bourse a l'arrivee, que la
+; vigilance du groupe arrete, et, rarement, la banque pillee.
+;
+; La vue du bourg, c'est UiMode 0 avec InTown : tous les panneaux
+; (fiche, sac, grimoire, reglages, comptoir) se referment donc sur la
+; place, sans rien savoir de la ville. TownPlace dit quelle porte est
+; ouverte, TownCursor la ligne visee.
+;----------------------------------------------------------------------
+TOWN_SQUARE	= 0
+TOWN_INN	= 1
+TOWN_TEMPLE	= 2
+TOWN_GUILD	= 3
+TOWN_BANK	= 4
+TOWN_STREET	= 5
+TOWN_LEAVE	= 6			; la derniere ligne de la place
+SQUAREROWS	= 7
+TRAIN_COST	= 25			; par niveau atteint
+RAISE_COST	= 30			; par niveau du mort
+TONGUE_COST	= 100
+DORM_COST	= 2			; par aventurier debout
+ROOM_COST	= 5
+BANK_STEP	= 50
+STREET_DC	= 12			; et le guet s'eveille a chaque essai
+STREET_FINE	= 50
+
+; EnterTown : du premier etage, on remonte au jour
+EnterTown:
+	movem.l	d0-d7/a0-a6,-(sp)
+	bsr	LevelStash		; l'etage reste tel qu'on le quitte
+	move.w	#1,InTown
+	clr.w	UiMode
+	clr.w	TownPlace
+	clr.w	TownCursor
+	clr.w	GuildPage
+	clr.w	StreetHeat
+	clr.w	ShopInSight
+	bsr	ShopFillTown
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtTownHello,a0
+	bsr	LogAdd
+	bsr	TownRisks
+	bsr	SaveGame
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; LeaveTown : on redescend sur l'escalier du premier etage
+LeaveTown:
+	movem.l	d0/a0,-(sp)
+	clr.w	InTown
+	clr.w	TownPlace
+	clr.w	TownCursor
+	bsr	LevelRestore		; l'etal du guichet revient
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtTownLeave,a0
+	bsr	LogAdd
+	bsr	LogFloor
+	bsr	SaveGame
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0/a0
+	rts
+
+ShopFillTown:				; l'etal du bourg, derriere ceux des
+	movem.l	d1/a0-a1,-(sp)		; etages dans ShopTable
+	lea	ShopTable+LEVELS*NSHOP,a0
+	lea	ShopStock,a1
+	moveq	#NSHOP-1,d1
+.copy:
+	move.b	(a0)+,(a1)+
+	dbf	d1,.copy
+	movem.l	(sp)+,d1/a0-a1
+	rts
+
+; TownRisks : la banque, une fois sur vingt, a ete pillee d'un quart ;
+; une fois sur trois, un coupe-bourse tente sa chance sur le groupe.
+TownRisks:
+	movem.l	d0-d3/a0-a2/a6,-(sp)
+	tst.w	Bank
+	beq.s	.purse
+	moveq	#20,d1
+	bsr	RndMod
+	tst.w	d0
+	bne.s	.purse
+	move.w	Bank,d2
+	lsr.w	#2,d2
+	bne.s	.robbed
+	moveq	#1,d2
+.robbed:
+	sub.w	d2,Bank
+	lea	TxtBankRobbed,a0
+	move.w	d2,d0
+	lea	TxtCoins,a2
+	bsr	LogNum
+.purse:
+	cmp.w	#10,Gold
+	blo.s	.done
+	moveq	#3,d1
+	bsr	RndMod
+	tst.w	d0
+	bne.s	.done
+	bsr	BestVigil		; a6 = le plus vigilant
+	divu.w	#5,d0
+	and.l	#$0000ffff,d0
+	move.w	d0,d2
+	bsr	D20
+	add.w	d2,d0
+	cmp.w	#14,d0
+	blt.s	.lifted
+	lea	TxtCutSeen,a0
+	bsr	LogAdd
+	moveq	#SK_VIGIL,d0
+	bsr	SkillUse
+	bra.s	.done
+.lifted:
+	move.w	Gold,d2
+	divu.w	#10,d2
+	sub.w	d2,Gold
+	lea	TxtCutLifted,a0
+	move.w	d2,d0
+	lea	TxtCoins,a2
+	bsr	LogNum
+.done:
+	movem.l	(sp)+,d0-d3/a0-a2/a6
+	rts
+
+; LogNum : a0 + nombre d0 + a2, une ligne de journal
+LogNum:
+	movem.l	d0/a0-a1,-(sp)
+	lea	TmpStr,a1
+	bsr	StrCopy
+	bsr	StrNum
+	move.l	a2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	movem.l	(sp)+,d0/a0-a1
+	rts
+
+; LogHero : a6 = heros, a0 = la suite de la phrase
+LogHero:
+	movem.l	a0-a1,-(sp)
+	lea	TmpStr,a1
+	move.l	a0,-(sp)
+	move.l	a6,a0
+	bsr	StrCopy
+	move.l	(sp)+,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	movem.l	(sp)+,a0-a1
+	rts
+
+; TownPay : d0 = prix -> d0 = 1 si c'est paye, 0 si la bourse est trop
+; legere (et le journal le dit)
+TownPay:
+	cmp.w	Gold,d0
+	bls.s	.rich
+	move.l	a0,-(sp)
+	lea	TxtShopPoor,a0
+	bsr	LogAdd
+	move.l	(sp)+,a0
+	moveq	#0,d0
+	rts
+.rich:
+	sub.w	d0,Gold
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	moveq	#1,d0
+	rts
+
+; LivingCount : -> d0 = aventuriers debout
+LivingCount:
+	movem.l	d1/a6,-(sp)
+	moveq	#0,d0
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d1
+.loop:
+	tst.w	hr_Hp(a6)
+	beq.s	.next
+	addq.w	#1,d0
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d1,.loop
+	movem.l	(sp)+,d1/a6
+	rts
+
+; TownRows : -> d0 = lignes de la porte ouverte
+TownRows:
+	move.w	TownPlace,d0
+	beq.s	.square
+	cmp.w	#TOWN_INN,d0
+	beq.s	.two
+	cmp.w	#TOWN_TEMPLE,d0
+	beq.s	.heroes
+	cmp.w	#TOWN_GUILD,d0
+	beq.s	.guild
+	cmp.w	#TOWN_BANK,d0
+	beq.s	.four
+	moveq	#1,d0			; la rue : une seule chose a y faire
+	rts
+.square:
+	moveq	#SQUAREROWS,d0
+	rts
+.two:
+	moveq	#2,d0
+	rts
+.four:
+	moveq	#4,d0
+	rts
+.guild:
+	tst.w	GuildPage
+	beq.s	.heroes
+	moveq	#NTONGUES-1,d0
+	rts
+.heroes:
+	moveq	#NHEROES,d0
+	rts
+
+; TownKey : d0 = touche, sur la place ou derriere une porte
+TownKey:
+	movem.l	d0-d7/a0-a6,-(sp)
+	cmp.w	#KEY_UP,d0
+	bne.s	.notUp
+	subq.w	#1,TownCursor
+	bra.s	.clamp
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notDown
+	addq.w	#1,TownCursor
+	bra.s	.clamp
+.notDown:
+	cmp.w	#KEY_TAB,d0		; la guilde : les niveaux, les langues
+	bne.s	.notTab
+	cmp.w	#TOWN_GUILD,TownPlace
+	bne	.done
+	eor.w	#1,GuildPage
+	clr.w	TownCursor
+	bra.s	.clamp
+.notTab:
+	cmp.w	#KEY_RETURN,d0
+	beq.s	.act
+	cmp.w	#KEY_SPACE,d0
+	bne.s	.done
+.act:
+	bsr	TownAct
+.clamp:
+	bsr	TownRows
+	move.w	TownCursor,d1
+	bpl.s	.notNeg
+	moveq	#0,d1
+.notNeg:
+	cmp.w	d0,d1
+	blt.s	.inside
+	move.w	d0,d1
+	subq.w	#1,d1
+.inside:
+	move.w	d1,TownCursor
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; TownAct : la ligne visee, derriere la porte ouverte
+TownAct:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	TownCursor,d7
+	move.w	TownPlace,d0
+	bne.s	.notSquare
+	tst.w	d7			; --- la place
+	bne.s	.notShop
+	move.w	#UI_SHOP,UiMode		; le comptoir est un vrai comptoir
+	clr.w	ShopMode
+	clr.w	ShopCursor
+	clr.w	ShopTop
+	lea	TxtTownShop,a0
+	bsr	LogAdd
+	bra	.done
+.notShop:
+	cmp.w	#TOWN_LEAVE,d7
+	bne.s	.enter
+	bsr	LeaveTown
+	bra	.done
+.enter:
+	move.w	d7,TownPlace		; les portes, dans l'ordre des lignes
+	clr.w	TownCursor
+	clr.w	GuildPage
+	move.w	d7,d0
+	lsl.w	#2,d0
+	lea	TownHellos,a0
+	move.l	(a0,d0.w),a0
+	bsr	LogAdd
+	bra	.done
+.notSquare:
+	cmp.w	#TOWN_INN,d0
+	bne.s	.notInn
+	bsr	InnRest
+	bra	.done
+.notInn:
+	cmp.w	#TOWN_TEMPLE,d0
+	bne.s	.notTemple
+	bsr	TempleServe
+	bra	.done
+.notTemple:
+	cmp.w	#TOWN_GUILD,d0
+	bne.s	.notGuild
+	tst.w	GuildPage
+	bne.s	.tongue
+	bsr	GuildTrain
+	bra	.done
+.tongue:
+	bsr	GuildTongue
+	bra	.done
+.notGuild:
+	cmp.w	#TOWN_BANK,d0
+	bne.s	.notBank
+	bsr	BankDeal
+	bra	.done
+.notBank:
+	bsr	StreetTry
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;--- l'auberge ----------------------------------------------------------
+; InnPrice : d0 = ligne -> d0 = prix, pour tout le groupe debout
+InnPrice:
+	move.w	d1,-(sp)
+	move.w	d0,d1
+	bsr	LivingCount
+	tst.w	d1
+	bne.s	.room
+	mulu.w	#DORM_COST,d0
+	bra.s	.done
+.room:
+	mulu.w	#ROOM_COST,d0
+.done:
+	move.w	(sp)+,d1
+	rts
+
+; InnRest : d7 = 0 le dortoir (la moitie des forces), 1 une chambre
+InnRest:
+	move.w	d7,d0
+	bsr	InnPrice
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d6
+.loop:
+	tst.w	hr_Hp(a6)		; les morts ne dorment pas
+	beq.s	.next
+	move.w	hr_HpMax(a6),d0
+	tst.w	d7
+	bne.s	.heal
+	lsr.w	#1,d0
+.heal:
+	add.w	d0,hr_Hp(a6)
+	move.w	hr_HpMax(a6),d0
+	cmp.w	hr_Hp(a6),d0
+	bge.s	.capped
+	move.w	d0,hr_Hp(a6)
+.capped:
+	bsr	FillSlots
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.loop
+	lea	TxtInnSlept,a0
+	tst.w	d7
+	beq.s	.say
+	lea	TxtInnRoomed,a0
+.say:
+	bsr	LogAdd
+.done:
+	rts
+
+;--- le temple ----------------------------------------------------------
+; TempleNeed : a6 = heros -> d1 = 0 rien, 1 soigner, 2 relever ;
+; d0 = le prix
+TempleNeed:
+	moveq	#0,d0
+	moveq	#0,d1
+	tst.w	hr_HpMax(a6)
+	beq.s	.done
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	moveq	#2,d1
+	move.w	hr_Level(a6),d0
+	mulu.w	#RAISE_COST,d0
+	rts
+.alive:
+	move.w	hr_HpMax(a6),d0
+	sub.w	hr_Hp(a6),d0
+	beq.s	.done
+	moveq	#1,d1
+	addq.w	#1,d0			; une piece les deux points de vie
+	lsr.w	#1,d0
+.done:
+	rts
+
+; TempleServe : d7 = le heros. Relever un mort echoue une fois sur
+; quatre, moins pour les robustes ; l'offrande reste au temple.
+TempleServe:
+	move.w	d7,d0
+	bsr	HeroPtr
+	bsr	TempleNeed
+	tst.w	d1
+	bne.s	.need
+	lea	TxtTempleNone,a0
+	bra	LogHero
+.need:
+	move.w	d1,d2
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	cmp.w	#2,d2
+	beq.s	.raise
+	move.w	hr_HpMax(a6),hr_Hp(a6)
+	lea	TxtTempleHealed,a0
+	bra	LogHero
+.raise:
+	move.w	hr_Con(a6),d0
+	bsr	StatMod
+	muls.w	#5,d0			; cinq points de chance par modificateur
+	move.w	d0,d2
+	add.w	#75,d2
+	moveq	#100,d1
+	bsr	RndMod
+	cmp.w	d2,d0
+	blt.s	.raised
+	lea	TxtTempleFail,a0
+	bra	LogAdd
+.raised:
+	move.w	hr_HpMax(a6),hr_Hp(a6)
+	bsr	FillSlots
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtTempleRaised,a0
+	bra	LogHero
+.done:
+	rts
+
+;--- la guilde ----------------------------------------------------------
+; XpNeed : a6 = heros -> d0 = PX du prochain palier, 0 au plafond.
+; Palier = 150 x n x (n+1) / 2.
+XpNeed:
+	move.w	d1,-(sp)
+	move.w	hr_Level(a6),d0
+	cmp.w	#MAXCLEVEL,d0
+	blt.s	.calc
+	moveq	#0,d0
+	bra.s	.done
+.calc:
+	move.w	d0,d1
+	addq.w	#1,d1
+	mulu.w	d1,d0
+	lsr.l	#1,d0
+	mulu.w	#150,d0
+.done:
+	move.w	(sp)+,d1
+	rts
+
+; HeroReady : a6 = heros -> d0 = 1 s'il a assez appris pour la guilde
+HeroReady:
+	bsr.s	XpNeed
+	tst.w	d0
+	beq.s	.no
+	cmp.w	hr_Xp(a6),d0
+	bhi.s	.no
+	moveq	#1,d0
+	rts
+.no:
+	moveq	#0,d0
+	rts
+
+; GuildTrain : d7 = le heros. Assez d'experience, et de quoi payer.
+GuildTrain:
+	move.w	d7,d0
+	bsr	HeroPtr
+	tst.w	hr_HpMax(a6)
+	beq.s	.done
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	lea	TxtGuildDead,a0
+	bra	LogHero
+.alive:
+	bsr	XpNeed
+	tst.w	d0
+	bne.s	.notTop
+	lea	TxtGuildTop,a0
+	bra	LogHero
+.notTop:
+	cmp.w	hr_Xp(a6),d0
+	bls.s	.ready
+	sub.w	hr_Xp(a6),d0		; ce qui lui manque
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtGuildLack,a0
+	bsr	StrCopy
+	bsr	StrNum
+	lea	TxtGuildLack2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bra	LogAdd
+.ready:
+	move.w	hr_Level(a6),d0
+	mulu.w	#TRAIN_COST,d0
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	bsr	TrainHero
+.done:
+	rts
+
+; GuildTongue : d7 = la langue moins un, pour le heros choisi (1 a 6)
+GuildTongue:
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	lea	TxtGuildDead,a0
+	bra	LogHero
+.alive:
+	move.w	d7,d2
+	addq.w	#1,d2
+	bsr	HeroTongues
+	btst	d2,d1
+	beq.s	.learn
+	lea	TxtGuildKnows,a0
+	bra	LogHero
+.learn:
+	move.w	#TONGUE_COST,d0
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	move.w	hr_Tongues(a6),d1
+	bset	d2,d1
+	move.w	d1,hr_Tongues(a6)
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtGuildLearns,a0
+	bsr	StrCopy
+	move.w	d2,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bra	LogAdd
+.done:
+	rts
+
+;--- la banque ----------------------------------------------------------
+; BankDeal : d7 = 0 deposer 50, 1 tout, 2 retirer 50, 3 tout
+BankDeal:
+	cmp.w	#2,d7
+	bge.s	.withdraw
+	move.w	Gold,d0
+	cmp.w	#1,d7
+	beq.s	.putAll
+	cmp.w	#BANK_STEP,d0
+	bls.s	.putAll
+	move.w	#BANK_STEP,d0
+.putAll:
+	tst.w	d0
+	beq.s	.nothing
+	move.w	d0,d1
+	add.w	Bank,d1			; le coffre ne deborde pas
+	bcc.s	.fits
+	move.w	#$ffff,d1
+	move.w	d1,d0
+	sub.w	Bank,d0
+.fits:
+	sub.w	d0,Gold
+	move.w	d1,Bank
+	bra.s	.said
+.withdraw:
+	move.w	Bank,d0
+	cmp.w	#3,d7
+	beq.s	.takeAll
+	cmp.w	#BANK_STEP,d0
+	bls.s	.takeAll
+	move.w	#BANK_STEP,d0
+.takeAll:
+	tst.w	d0
+	beq.s	.nothing
+	move.w	d0,d1
+	add.w	Gold,d1
+	bcc.s	.carry
+	move.w	#$ffff,d1
+	move.w	d1,d0
+	sub.w	Gold,d0
+.carry:
+	sub.w	d0,Bank
+	move.w	d1,Gold
+.said:
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	lea	TxtBankHeld,a0
+	move.w	Bank,d0
+	lea	TxtCoins,a2
+	bra	LogNum
+.nothing:
+	lea	TxtBankNothing,a0
+	bra	LogAdd
+
+;--- la rue -------------------------------------------------------------
+; StreetTry : le heros choisi tente une bourse. La main (DEX) et le
+; metier (DESAMORCAGE : les memes doigts) contre le guet, qui s'eveille
+; un peu plus a chaque essai. Pris, on paie l'amende -- ou, sans le
+; sou, on passe la nuit au cachot et l'on en sort roue de coups.
+StreetTry:
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	lea	TxtGuildDead,a0
+	bra	LogHero
+.alive:
+	move.w	hr_Dex(a6),d0
+	bsr	StatMod
+	move.w	d0,d2
+	moveq	#SK_DISARM,d0
+	bsr	SkillTen
+	add.w	d0,d2
+	bsr	D20
+	add.w	d0,d2
+	move.w	StreetHeat,d3
+	add.w	#STREET_DC,d3
+	addq.w	#3,StreetHeat
+	cmp.w	d3,d2
+	blt.s	.missed
+	bsr	D20			; une bourse de bourgeois
+	add.w	#10,d0
+	add.w	d0,Gold
+	bcc.s	.kept
+	move.w	#$ffff,Gold
+.kept:
+	move.w	d0,d2
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	moveq	#SK_DISARM,d0
+	bsr	SkillUse
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtStreetGot,a0
+	bsr	StrCopy
+	move.w	d2,d0
+	bsr	StrNum
+	lea	TxtCoins,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bra	LogAdd
+.missed:
+	moveq	#2,d1			; rate : vu, ou pas
+	bsr	RndMod
+	tst.w	d0
+	bne.s	.caught
+	lea	TxtStreetMiss,a0
+	bra	LogAdd
+.caught:
+	move.w	#STREET_FINE,d0
+	cmp.w	Gold,d0
+	bhi.s	.jail
+	sub.w	d0,Gold
+	lea	TxtStreetFine,a0
+	lea	TxtCoins,a2
+	bra	LogNum
+.jail:
+	clr.w	Gold
+	move.w	#1,hr_Hp(a6)
+	lea	TxtStreetJail,a0
+	bra	LogHero
+
+;--- le dessin ----------------------------------------------------------
+; TownLine : d6 = ligne -> TmpStr = son libelle, d4 = le prix (-1 sans),
+; d5 = la couleur du libelle
+TownLine:
+	movem.l	d0-d3/d7/a0-a1/a6,-(sp)
+	moveq	#-1,d4
+	move.w	#C_TEXT,d5
+	lea	TmpStr,a1
+	move.w	TownPlace,d0
+	bne.s	.notSquare
+	move.w	d6,d0			; --- la place
+	lsl.w	#2,d0
+	lea	TownPlaces,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	bra	.done
+.notSquare:
+	cmp.w	#TOWN_INN,d0
+	bne.s	.notInn
+	lea	TxtInnDorm,a0
+	tst.w	d6
+	beq.s	.inn
+	lea	TxtInnRoom,a0
+.inn:
+	bsr	StrCopy
+	move.w	d6,d0
+	bsr	InnPrice
+	move.w	d0,d4
+	bra	.done
+.notInn:
+	cmp.w	#TOWN_TEMPLE,d0
+	bne.s	.notTemple
+	move.w	d6,d0
+	bsr	HeroPtr
+	move.l	a6,a0
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	bsr	TempleNeed
+	move.w	d1,d2
+	lsl.w	#2,d2
+	lea	TempleWords,a0
+	move.l	(a0,d2.w),a0
+	bsr	StrCopy
+	tst.w	d1
+	bne.s	.priced
+	move.w	#C_TEXTLOW,d5
+	bra	.done
+.priced:
+	move.w	d0,d4
+	bra	.done
+.notTemple:
+	cmp.w	#TOWN_GUILD,d0
+	bne	.notGuild
+	tst.w	GuildPage
+	bne.s	.tongue
+	move.w	d6,d0			; --- les niveaux
+	bsr	HeroPtr
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtGuildLvl,a0
+	bsr	StrCopy
+	move.w	hr_Level(a6),d0
+	bsr	StrNum
+	move.w	#C_TEXTLOW,d5
+	tst.w	hr_Hp(a6)
+	beq	.done
+	bsr	HeroReady
+	tst.w	d0
+	beq	.done
+	move.w	#C_TEXT,d5
+	move.w	hr_Level(a6),d4
+	mulu.w	#TRAIN_COST,d4
+	bra	.done
+.tongue:
+	move.w	d6,d2			; --- les langues, pour le choisi
+	addq.w	#1,d2
+	move.w	d2,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	bsr	HeroTongues
+	btst	d2,d1
+	bne.s	.known
+	move.w	#TONGUE_COST,d4
+	bra	.done
+.known:
+	lea	TxtGuildKnown,a0
+	bsr	StrCopy
+	move.w	#C_TEXTLOW,d5
+	bra	.done
+.notGuild:
+	cmp.w	#TOWN_BANK,d0
+	bne.s	.street
+	move.w	d6,d0
+	lsl.w	#2,d0
+	lea	BankWords,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	bra.s	.done
+.street:
+	lea	TxtStreetTry,a0
+	bsr	StrCopy
+.done:
+	clr.b	(a1)
+	movem.l	(sp)+,d0-d3/d7/a0-a1/a6
+	rts
+
+DrawTown:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	move.w	TownPlace,d0		; le nom de la porte, et l'or
+	lsl.w	#2,d0
+	lea	TownTitles,a0
+	move.l	(a0,d0.w),a0
+	cmp.w	#TOWN_GUILD,TownPlace
+	bne.s	.title
+	tst.w	GuildPage
+	beq.s	.title
+	lea	TxtGuildTongues,a0
+.title:
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	TmpStr,a1
+	lea	TxtShopGold,a0
+	bsr	StrCopy
+	move.w	Gold,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#18,d0
+	moveq	#20,d1
+	move.w	#C_GOLD+2,d2
+	bsr	DrawText
+
+	bsr	TownRows
+	move.w	d0,d3
+	moveq	#0,d6
+.row:
+	bsr	TownLine
+	lea	TmpStr,a0		; le curseur, devant le libelle
+	lea	TownBuf,a1
+	move.b	#' ',(a1)+
+	cmp.w	TownCursor,d6
+	bne.s	.noCur
+	move.b	#'>',-1(a1)
+	move.w	#C_HILITE,d5		; la ligne visee s'allume
+.noCur:
+	move.b	#' ',(a1)+
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TownBuf,a0
+	moveq	#3,d0
+	move.w	d6,d1
+	mulu.w	#11,d1
+	add.w	#34,d1
+	move.w	d5,d2
+	bsr	DrawText
+	tst.w	d4			; le prix, cale a droite comme au
+	bmi.s	.next			; comptoir
+	lea	TmpStr,a1
+	move.w	d4,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a2
+	moveq	#25,d0
+.count:
+	tst.b	(a2)+
+	beq.s	.counted
+	subq.w	#1,d0
+	bra.s	.count
+.counted:
+	move.w	#C_GOLD+2,d2
+	cmp.w	Gold,d4
+	bls.s	.afford
+	move.w	#C_TEXTLOW,d2
+.afford:
+	lea	TmpStr,a0
+	bsr	DrawText
+.next:
+	addq.w	#1,d6
+	cmp.w	d3,d6
+	blt	.row
+
+	lea	TmpStr,a1		; sous la liste : ce qui compte ici
+	move.w	TownPlace,d0
+	cmp.w	#TOWN_BANK,d0
+	bne.s	.notBank
+	lea	TxtBankHeld,a0
+	bsr	StrCopy
+	move.w	Bank,d0
+	bsr	StrNum
+	bra.s	.info
+.notBank:
+	cmp.w	#TOWN_STREET,d0
+	beq.s	.who
+	cmp.w	#TOWN_GUILD,d0
+	bne.s	.plain
+	lea	TxtGuildTab,a0
+	tst.w	GuildPage
+	beq.s	.copyInfo
+.who:
+	lea	TxtTownWho,a0		; la main, ou l'eleve : touches 1 a 6
+	bsr	StrCopy
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtTownWho2,a0
+.copyInfo:
+	bsr	StrCopy
+	bra.s	.info
+.plain:
+	lea	TownInfos,a0
+	lsl.w	#2,d0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+.info:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#124,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtTownHelp,a0
+	tst.w	TownPlace
+	bne.s	.help
+	lea	TxtTownHelp0,a0
+.help:
+	moveq	#3,d0
+	move.w	#135,d1
+	move.w	#C_TEXTLOW,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; TrainHero : a6 = heros. Le maitre de la guilde lui fait passer le
+; niveau que l'experience lui a gagne : un de de vie, les sorts.
+TrainHero:
+	movem.l	d0-d3/a0-a1,-(sp)
+	addq.w	#1,hr_Level(a6)
+	bclr	#HF_READY,hr_Flags+1(a6)
+	move.w	hr_Class(a6),d0
+	mulu.w	#cl_SIZEOF,d0
+	lea	ClassTable,a0
+	add.l	d0,a0
+	moveq	#1,d0			; un de de vie de plus
+	move.w	cl_Hd(a0),d1
+	bsr	RollDice
+	move.w	d0,d3
+	move.w	hr_Con(a6),d0
+	bsr	StatMod
+	add.w	d0,d3
+	tst.w	d3
+	bgt.s	.hpOk
+	moveq	#1,d3
+.hpOk:
+	add.w	d3,hr_HpMax(a6)
+	move.w	hr_HpMax(a6),hr_Hp(a6)
+	bsr	FillSlots
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtLevelUp,a0
+	bsr	LogHero
+	bsr	CheckLevel		; assez pour le suivant ? on le dit
+	movem.l	(sp)+,d0-d3/a0-a1
+	rts
+
+; CheckLevel : a6 = heros, qui vient de gagner de l'experience. Assez
+; pour la guilde, on le dit une fois ; le niveau, c'est la guilde qui
+; le donne.
+CheckLevel:
+	movem.l	d0/a0,-(sp)
+	bsr	HeroReady
+	tst.w	d0
+	beq.s	.done
+	bset	#HF_READY,hr_Flags+1(a6)
+	bne.s	.done
+	lea	TxtReady,a0
+	bsr	LogHero
+.done:
+	movem.l	(sp)+,d0/a0
+	rts
+
+;----------------------------------------------------------------------
+; Les rencontres : avant le fer, la parole
+;
+; Comme dans Legend of Faerghail, une rencontre ne commence pas
+; forcement par un combat. Le groupe voit ce qui vient, et choisit :
+; S saluer, D discuter -- si quelqu'un parle la langue de ceux d'en
+; face --, F se retirer, A attaquer. Chaque espece a sa langue et son
+; temperament (MonTypes) : les morts et les betes ne repondent qu'au fer,
+; les mefiants se laissent parler, et un jet de reaction -- charisme,
+; marchandage, et ce qu'on a dit -- decide s'ils passent leur chemin,
+; demandent un peage, ou degainent.
+;
+; Quand c'est la creature qui vient a nous, elle peut nous surprendre :
+; elle frappe alors la premiere, et il n'y a plus rien a dire. La
+; vigilance du groupe l'evite, et progresse quand elle y parvient.
+;
+; MeetPhase : 0 le combat, 1 la rencontre, 2 le peage en question.
+;----------------------------------------------------------------------
+MEET_CHOICE	= 1
+MEET_TOLL	= 2
+; Les seuils du jet de reaction. Un orc mefiant, a qui le negociateur
+; du groupe parle sa langue, laisse passer deux fois sur trois, demande
+; un peage le plus souvent le reste du temps, et degaine rarement --
+; mesure par le banc sur quarante rencontres. Salue sans un mot de sa
+; langue, il a quatre points de moins, et les seuils sont les memes.
+GREET_PASS	= 20
+GREET_STARE	= 12
+TALK_PASS	= 20
+TALK_TOLL	= 12
+
+; BeginMeet : appele a la fin de StartCombat
+BeginMeet:
+	movem.l	d0-d3/a0-a2/a6,-(sp)
+	clr.w	MeetGreeted
+	move.w	#MEET_CHOICE,MeetPhase
+	tst.w	MeetAmbush		; c'est lui qui vient : surprise ?
+	beq.s	.done
+	bsr	BestVigil		; a6 = le plus vigilant, d0 = sa valeur
+	divu.w	#5,d0
+	and.l	#$0000ffff,d0
+	moveq	#30,d2			; trente pour cent, moins sa vigilance
+	sub.w	d0,d2
+	cmp.w	#5,d2
+	bge.s	.chance
+	moveq	#5,d2
+.chance:
+	moveq	#100,d1
+	bsr	RndMod
+	cmp.w	d2,d0
+	bhs.s	.seen
+	clr.w	MeetPhase		; surpris : pas un mot, ils frappent
+	lea	TxtSurprised,a0
+	bsr	LogAdd
+	bsr	MonsterTurn
+	bra.s	.done
+.seen:
+	lea	TxtSeenComing,a0	; on les a vus venir
+	bsr	LogAdd
+	moveq	#SK_VIGIL,d0
+	bsr	SkillUse
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d3/a0-a2/a6
+	rts
+
+; MeetKey : d0 = touche, pendant la rencontre
+MeetKey:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.l	MonPtr,a2
+	cmp.w	#MEET_TOLL,MeetPhase
+	bne.s	.choice
+	cmp.w	#KEY_O,d0		; --- le peage : O payer, N refuser
+	beq.s	.pay
+	cmp.w	#KEY_N,d0
+	bne	.done
+	lea	TxtTollRefused,a0
+	bsr	LogAdd
+	bra	.fight
+.pay:
+	move.w	MeetToll,d1
+	cmp.w	Gold,d1
+	bls.s	.canPay
+	lea	TxtTollPoor,a0
+	bsr	LogAdd
+	bra	.fight
+.canPay:
+	sub.w	d1,Gold
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	lea	TmpStr,a1
+	lea	TxtTollPaid,a0
+	bsr	StrCopy
+	move.w	d1,d0
+	bsr	StrNum
+	lea	TxtTollPaid2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra	.peace
+
+.choice:
+	cmp.w	#KEY_A_QW,d0		; --- A : attaquer
+	beq.s	.attack
+	cmp.w	#KEY_A_AZ,d0
+	beq.s	.attack
+	cmp.w	#KEY_F,d0		; --- F : se retirer
+	bne.s	.notFlee
+	clr.w	MeetPhase		; manquee, la retraite tourne au combat
+	bsr	CombatFlee
+	tst.w	InCombat
+	beq	.done
+	bsr	FirstOrder
+	bra	.done
+.notFlee:
+	cmp.w	#KEY_S,d0
+	beq.s	.greet
+	cmp.w	#KEY_D,d0
+	beq	.talk
+	bra	.done
+.attack:
+	lea	TxtToArms,a0
+	bsr	LogAdd
+	bra	.fight
+
+.greet:					; --- S : saluer
+	tst.w	mt_Temper(a2)
+	beq	.deaf
+	tst.w	MeetGreeted		; on ne salue pas deux fois
+	bne	.impatient
+	move.w	#1,MeetGreeted
+	moveq	#0,d3
+	bsr	React
+	cmp.w	#GREET_PASS,d0
+	bge.s	.greetBack
+	cmp.w	#GREET_STARE,d0
+	bge.s	.stare
+	lea	TxtMenacing,a0
+	bsr	LogAdd
+	bra	.fight
+.greetBack:
+	lea	TxtGreetBack,a0
+	bsr	LogAdd
+	bra	.peace
+.stare:
+	lea	TxtStare,a0
+	bsr	LogAdd
+	bra	.done
+.impatient:
+	lea	TxtImpatient,a0
+	bsr	LogAdd
+	bra	.fight
+
+.talk:					; --- D : discuter
+	move.w	mt_Tongue(a2),d2
+	bne.s	.speaks
+	lea	TxtNoTongue,a0		; ils ne parlent pas : rien de fait
+	bsr	LogAdd
+	bra	.done
+.speaks:
+	bsr	PartyTongues
+	btst	d2,d0
+	bne.s	.understood
+	lea	TmpStr,a1		; personne ne parle leur langue
+	lea	TxtNobodySpeaks,a0
+	bsr	StrCopy
+	move.w	d2,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra	.done
+.understood:
+	bsr	BestTrader		; a6 = celui qui parle
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtParleys,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	tst.w	mt_Temper(a2)
+	beq	.deaf
+	moveq	#4,d3			; parler leur langue, ca compte
+	bsr	React
+	cmp.w	#TALK_PASS,d0
+	bge.s	.letPass
+	cmp.w	#TALK_TOLL,d0
+	bge.s	.toll
+	lea	TxtTalkFails,a0
+	bsr	LogAdd
+	bra	.fight
+.letPass:
+	moveq	#SK_TRADE,d0
+	bsr	SkillUse
+	lea	TxtLetPass,a0
+	bsr	LogAdd
+	bra	.peace
+.toll:
+	move.w	mt_Gold(a2),d0		; ce qu'ils portent, fois leur nombre,
+	mulu.w	GroupN,d0		; et un peu plus a mesure qu'on descend
+	move.w	Level,d1
+	addq.w	#1,d1
+	mulu.w	#5,d1
+	add.w	d1,d0
+	move.w	d0,MeetToll
+	move.w	#MEET_TOLL,MeetPhase
+	lea	TmpStr,a1
+	lea	TxtTollAsk,a0
+	bsr	StrCopy
+	move.w	MeetToll,d0
+	bsr	StrNum
+	lea	TxtTollAsk2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra.s	.done
+
+.deaf:
+	lea	TxtDeaf,a0		; ils ne repondent qu'au fer
+	bsr	LogAdd
+.fight:
+	clr.w	MeetPhase		; au combat : les ordres
+	bsr	FirstOrder
+	bra.s	.done
+.peace:
+	bsr	MeetPeace		; ils passent leur chemin
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; React : le jet de reaction. d3 = bonus de ce qu'on a dit -> d0.
+; d20, plus trois fois le temperament, plus le charisme du meilleur
+; negociateur et le dixieme de son marchandage.
+React:
+	movem.l	d1/a2/a6,-(sp)
+	move.l	MonPtr,a2
+	bsr	D20
+	move.w	d0,d1
+	move.w	mt_Temper(a2),d0
+	mulu.w	#3,d0
+	add.w	d0,d1
+	add.w	d3,d1
+	bsr	BestTrader
+	moveq	#SK_TRADE,d0
+	bsr	SkillTen
+	add.w	d0,d1
+	move.w	hr_Cha(a6),d0
+	bsr	StatMod
+	add.w	d1,d0
+	movem.l	(sp)+,d1/a2/a6
+	rts
+
+; MeetPeace : ils passent leur chemin. Leur case se vide, sans or ni
+; experience -- on n'a rien gagne qu'un peu de temps.
+MeetPeace:
+	movem.l	d0-d2,-(sp)
+	clr.w	MeetPhase
+	clr.w	InCombat
+	move.w	MonX,d0
+	move.w	MonY,d1
+	bsr	MapCell
+	move.w	d0,d2
+	and.w	#$000f,d2
+	move.w	MonX,d0
+	move.w	MonY,d1
+	bsr	MapSet
+	movem.l	(sp)+,d0-d2
+	rts
+
+; PartyTongues : -> d0 = les langues que parle le groupe debout
+PartyTongues:
+	movem.l	d1-d2/a0/a6,-(sp)
+	moveq	#0,d0
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d2
+.loop:
+	tst.w	hr_Hp(a6)
+	beq.s	.next
+	bsr	HeroTongues
+	or.w	d1,d0
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d2,.loop
+	movem.l	(sp)+,d1-d2/a0/a6
+	rts
+
+; HeroTongues : a6 = heros -> d1 = ses langues, par sa race et sa classe
+HeroTongues:
+	movem.l	d0/a0,-(sp)
+	move.w	hr_Race(a6),d0
+	add.w	d0,d0
+	lea	RaceTongues,a0
+	move.w	(a0,d0.w),d1
+	move.w	hr_Class(a6),d0
+	add.w	d0,d0
+	lea	ClassTongues,a0
+	or.w	(a0,d0.w),d1
+	or.w	hr_Tongues(a6),d1	; et celles de la guilde
+	movem.l	(sp)+,d0/a0
+	rts
+
+; BestVigil : -> a6 = l'aventurier debout le plus vigilant, d0 = sa valeur
+BestVigil:
+	movem.l	d1-d3/a0,-(sp)
+	lea	Heroes,a0
+	move.l	a0,a6
+	moveq	#-1,d2
+	moveq	#NHEROES-1,d3
+.loop:
+	tst.w	hr_Hp(a0)
+	beq.s	.next
+	moveq	#0,d1
+	move.b	hr_Skills+SK_VIGIL(a0),d1
+	cmp.w	d2,d1
+	ble.s	.next
+	move.w	d1,d2
+	move.l	a0,a6
+.next:
+	lea	hr_SIZEOF(a0),a0
+	dbf	d3,.loop
+	moveq	#0,d0
+	tst.w	d2
+	bmi.s	.done
+	move.w	d2,d0
+.done:
+	movem.l	(sp)+,d1-d3/a0
+	rts
+
+; DrawTongues : a6 = heros. Ses langues, sur la page des competences.
+DrawTongues:
+	movem.l	d0-d7/a0-a1,-(sp)
+	lea	TxtTonguesLbl,a0
+	moveq	#3,d0
+	moveq	#118,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	bsr	HeroTongues
+	move.w	d1,d6
+	lea	TmpStr,a1
+	moveq	#1,d7			; la langue zero, c'est "ne parle pas"
+.loop:
+	btst	d7,d6
+	beq.s	.next
+	cmp.l	#TmpStr,a1
+	beq.s	.first
+	move.b	#' ',(a1)+
+.first:
+	move.w	d7,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+.next:
+	addq.w	#1,d7
+	cmp.w	#NTONGUES,d7
+	blt.s	.loop
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#127,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a1
+	rts
+
+;----------------------------------------------------------------------
+; DrawCorridorMon : les monstres marchent, et on les voit venir.
+;
+; Ils ne se montraient qu'une fois le combat engage : un couloir ou
+; quelque chose avancait vers le groupe avait l'air vide jusqu'au
+; dernier pas. On regarde les trois cases devant, jusqu'au premier mur
+; (d7, 0 s'il n'y en a pas), et l'on pose ce qui s'y tient, du plus loin
+; au plus pres : a un pas, la creature du combat ; au-dela, la meme
+; reduite vers le point de fuite.
+;----------------------------------------------------------------------
+DrawCorridorMon:
+	movem.l	d0-d7/a0-a6,-(sp)
+	moveq	#3,d6
+.loop:
+	tst.w	d7
+	beq.s	.inSight
+	cmp.w	d7,d6			; derriere le mur : rien a voir
+	bge.s	.next
+.inSight:
+	move.w	d6,d2
+	bsr	CellAhead
+	move.w	d0,d4
+	move.w	d1,d5
+	bsr	MapCell
+	and.w	#C_MASK,d0
+	cmp.w	#C_MONSTER,d0
+	bne.s	.next
+	move.w	d4,d0
+	move.w	d5,d1
+	bsr	MapGetParam		; l'espece, dans MonTypes
+	mulu.w	#mt_SIZEOF,d0
+	lea	MonTypes,a0
+	move.w	mt_Art(a0,d0.l),d0
+	cmp.w	#1,d6
+	bne.s	.far
+	mulu.w	#NMONPOSES,d0		; a un pas : la pose de repos
+	add.w	#ART_MONSTER,d0
+	bra.s	.blit
+.far:
+	add.w	d0,d0			; deux vues lointaines par famille
+	add.w	d6,d0
+	add.w	#ART_MONFAR-2,d0
+.blit:
+	moveq	#0,d1
+	bsr	BlitPiece
+.next:
+	subq.w	#1,d6
+	bne.s	.loop
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+STRIKEFRAMES	= 18			; la pose d'attaque, en trames
 
 MonsterAttack:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
-	moveq	#NHEROES,d1
-	bsr	RndMod
+	bsr	PickTarget		; l'avant d'abord, trois fois sur quatre
 	move.w	d0,d5
 	moveq	#NHEROES-1,d6
 .find:
@@ -6420,8 +9231,11 @@ MonsterAttack:
 	bsr	HeroPtr
 	tst.w	hr_Hp(a6)
 	bne.s	.found
-	addq.w	#1,d5
-	and.w	#3,d5
+	addq.w	#1,d5		; le suivant, en bouclant sur les six
+	cmp.w	#NHEROES,d5
+	blo.s	.wrapOk
+	moveq	#0,d5
+.wrapOk:
 	dbf	d6,.find
 	bsr	PartyWiped
 	bra	.done
@@ -6445,8 +9259,11 @@ MonsterAttack:
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
+	moveq	#SK_DEFENSE,d0		; il a pare : il y gagne peut-etre
+	bsr	SkillUse
 	bra	.done
 .hit:
+	move.w	#STRIKEFRAMES,StrikeTime	; le monstre frappe : sa pose
 	move.w	mt_Dice(a2),d0
 	move.w	mt_Faces(a2),d1
 	bsr	RollDice
@@ -6456,6 +9273,8 @@ MonsterAttack:
 	moveq	#1,d0
 .dmgOk:
 	move.w	d0,d4
+	addq.w	#1,MonHits		; pour le resultat du round
+	add.w	d0,MonDmg
 	moveq	#SFX_HIT,d0
 	bsr	SfxPlay
 	sub.w	d4,hr_Hp(a6)
@@ -6524,7 +9343,6 @@ PartyWiped:
 MonsterDies:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	MonPtr,a2
-	clr.w	InCombat
 	moveq	#SFX_DEATH,d0
 	bsr	SfxPlay
 	move.w	mt_Gold(a2),d0
@@ -6546,6 +9364,39 @@ MonsterDies:
 	lea	TmpStr,a0
 	bsr	LogAdd
 
+	lea	Heroes,a6		; chaque creature tombee paie son du
+	moveq	#NHEROES-1,d6
+.xpEach:
+	tst.w	hr_Hp(a6)
+	beq.s	.xpEachNext
+	move.w	mt_Xp(a2),d0
+	add.w	d0,hr_Xp(a6)
+	bsr	CheckLevel
+.xpEachNext:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.xpEach
+
+	subq.w	#1,GroupN		; la suivante s'avance
+	beq.s	.last
+	move.w	GroupNext,d0
+	add.w	d0,d0
+	lea	GroupHp,a0
+	move.w	(a0,d0.w),MonHp
+	addq.w	#1,GroupNext
+	clr.w	MonStun
+	lea	TmpStr,a1
+	lea	TxtNextOne,a0
+	bsr	StrCopy
+	move.w	GroupN,d0
+	bsr	StrNum
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra	.stillFighting
+.last:
+	clr.w	InCombat
+
 	move.w	MonX,d0			; sa case est nettoyee -- la sienne, et
 	move.w	MonY,d1			; pas celle du groupe : depuis que les
 	bsr	MapCell			; monstres marchent, c'est parfois lui
@@ -6555,66 +9406,100 @@ MonsterDies:
 	move.w	MonY,d1
 	bsr	MapSet
 
-	lea	Heroes,a6		; experience et bonus de fin de combat
+	lea	Heroes,a6		; les effets du combat retombent
 	moveq	#NHEROES-1,d6
-.xpLoop:
-	tst.w	hr_Hp(a6)
-	beq.s	.xpNext
+.acLoop:
 	clr.w	hr_AcTemp(a6)
-	move.w	mt_Xp(a2),d0
-	add.w	d0,hr_Xp(a6)
-	bsr	CheckLevel
-.xpNext:
 	lea	hr_SIZEOF(a6),a6
-	dbf	d6,.xpLoop
+	dbf	d6,.acLoop
+.stillFighting:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
-CheckLevel:				; a6 = heros
-	movem.l	d0-d3/a0-a1,-(sp)
-.again:
-	move.w	hr_Level(a6),d0		; palier = 150 x n x (n+1) / 2
-	cmp.w	#MAXCLEVEL,d0
-	bge	.done
-	move.w	d0,d1
-	addq.w	#1,d1
-	mulu.w	d1,d0
-	lsr.l	#1,d0
-	mulu.w	#150,d0
-	cmp.w	hr_Xp(a6),d0
-	bgt	.done
-	addq.w	#1,hr_Level(a6)
-	move.w	hr_Class(a6),d0
-	mulu.w	#cl_SIZEOF,d0
-	lea	ClassTable,a0
-	add.l	d0,a0
-	moveq	#1,d0			; un de de vie de plus
-	move.w	cl_Hd(a0),d1
-	bsr	RollDice
-	move.w	d0,d3
-	move.w	hr_Con(a6),d0
-	bsr	StatMod
-	add.w	d0,d3
-	tst.w	d3
-	bgt.s	.hpOk
-	moveq	#1,d3
-.hpOk:
-	add.w	d3,hr_HpMax(a6)
-	move.w	hr_HpMax(a6),hr_Hp(a6)
-	bsr	FillSlots
-	moveq	#SFX_LEVEL,d0
-	bsr	SfxPlay
-	lea	TmpStr,a1
+;----------------------------------------------------------------------
+; SwapRank : le heros choisi passe de l'avant a l'arriere, ou l'inverse,
+; en changeant de place avec celui qui se tient au meme rang de l'autre
+; ligne (le premier avec le quatrieme, et ainsi de suite). Il emporte
+; tout, jusqu'a ses ordres de combat.
+;----------------------------------------------------------------------
+SwapRank:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	SelHero,d4
+	move.w	d4,d5
+	add.w	#FRONTRANK,d5
+	cmp.w	#NHEROES,d5
+	blt.s	.mirror
+	sub.w	#NHEROES,d5
+.mirror:
+	move.w	d4,d0
+	bsr	HeroPtr
+	move.l	a6,a0
+	move.w	d5,d0
+	bsr	HeroPtr
+	move.l	a6,a1
+	moveq	#hr_SIZEOF-1,d2
+.swap:
+	move.b	(a0),d3
+	move.b	(a1),(a0)+
+	move.b	d3,(a1)+
+	dbf	d2,.swap
+	lea	Orders,a0		; ses ordres le suivent
+	move.b	(a0,d4.w),d3
+	move.b	(a0,d5.w),(a0,d4.w)
+	move.b	d3,(a0,d5.w)
+	move.w	d5,SelHero
+
+	lea	TmpStr,a1		; le dire
 	move.l	a6,a0
 	bsr	StrCopy
-	lea	TxtLevelUp,a0
+	lea	TxtToBack,a0
+	cmp.w	#FRONTRANK,d5
+	bge.s	.said
+	lea	TxtToFront,a0
+.said:
 	bsr	StrCopy
 	clr.b	(a1)
 	lea	TmpStr,a0
 	bsr	LogAdd
-	bra	.again
-.done:
-	movem.l	(sp)+,d0-d3/a0-a1
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; PickTarget : qui la creature vise. -> d0 = numero de heros.
+;
+; Le groupe se tient sur deux rangs : les trois premiers devant, les
+; trois autres derriere. Trois coups sur quatre vont a l'avant, tant
+; qu'il y reste quelqu'un debout ; les autres cherchent derriere.
+; MonsterAttack passe au suivant si le vise est a terre.
+;----------------------------------------------------------------------
+PickTarget:
+	movem.l	d1-d3/a6,-(sp)
+	moveq	#0,d3			; quelqu'un debout devant ?
+	moveq	#0,d2
+.front:
+	move.w	d2,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq.s	.frontNext
+	moveq	#1,d3
+.frontNext:
+	addq.w	#1,d2
+	cmp.w	#FRONTRANK,d2
+	blt.s	.front
+	moveq	#FRONTRANK,d2		; la base : l'avant ou l'arriere
+	tst.w	d3
+	beq.s	.pick			; personne devant : l'arriere
+	moveq	#4,d1
+	bsr	RndMod
+	tst.w	d0
+	beq.s	.pick			; un coup sur quatre : derriere
+	moveq	#0,d2
+.pick:
+	moveq	#FRONTRANK,d1
+	bsr	RndMod
+	add.w	d2,d0
+	movem.l	(sp)+,d1-d3/a6
 	rts
 
 CombatFlee:
@@ -6840,6 +9725,12 @@ CastSpell:				; d0 = sort
 	lea	TxtFear,a0
 	bsr	LogAdd
 .after:
+	move.w	SelHero,d0		; le lanceur, qui a reussi sa formule
+	bsr	HeroPtr
+	moveq	#SK_CONCENT,d0
+	bsr	SkillUse
+	tst.w	InResolve		; dans un round : c'est le round qui
+	bne.s	.done			; fait riposter, et tomber
 	tst.w	InCombat		; hors combat, personne ne riposte
 	beq.s	.done
 	tst.w	MonHp
@@ -6877,6 +9768,10 @@ SpellDC:
 	bsr	CastMod
 	add.w	sp_Level(a2),d0
 	add.w	#10,d0
+	move.w	d0,d1
+	moveq	#SK_CONCENT,d0		; la formule, dite sans trembler
+	bsr	SkillTen
+	add.w	d1,d0
 	movem.l	(sp)+,d1-d2
 	rts
 
@@ -7150,6 +10045,14 @@ HandleKey:
 	clr.w	UiMode
 	bra	.redraw
 .quit:
+	tst.w	InTown			; au bourg, ESC ramene sur la place
+	beq.s	.quitArm
+	tst.w	TownPlace
+	beq.s	.quitArm
+	clr.w	TownPlace
+	clr.w	TownCursor
+	bra	.redraw
+.quitArm:
 	tst.w	QuitArm			; une seule touche ne doit pas effacer
 	bne.s	.reallyQuit		; une partie entiere
 	move.w	#1,QuitArm
@@ -7165,6 +10068,11 @@ HandleKey:
 	tst.w	GameOver
 	bne	.done
 
+	cmp.w	#UI_ROUND,UiMode	; --- le resultat du round : une
+	bne.s	.notRoundUi		; touche, et l'on repasse aux ordres
+	clr.w	UiMode
+	bra	.redraw
+.notRoundUi:
 	move.w	UiMode,d1		; --- reponse a une enigme
 	cmp.w	#UI_RIDDLE,d1
 	bne.s	.notRiddleUi
@@ -7195,15 +10103,29 @@ HandleKey:
 	add.w	d2,d2
 	lea	SpellList,a0
 	move.w	(a0,d2.w),d0
+	tst.w	InCombat		; en combat, c'est un ordre : il se
+	beq.s	.castNow		; jouera avec le round
+	clr.w	UiMode
+	add.w	#ORD_SPELL,d0
+	bsr	SetOrder
+	bra	.redraw
+.castNow:
 	bsr	CastSpell
 	bra	.done
 .notSpellUi:
-	move.w	d0,d2			; 1 a 4 : heros courant
+	move.w	d0,d2			; 1 a 6 : heros courant
 	sub.w	#KEY_1,d2
 	bmi.s	.notHero
 	cmp.w	#NHEROES,d2
 	bge.s	.notHero
 	move.w	d2,SelHero
+	tst.w	InCombat		; en combat : c'est a lui de recevoir
+	beq	.redraw			; son ordre, s'il est debout
+	move.w	d2,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	beq	.redraw
+	move.w	d2,OrderHero
 	bra	.redraw
 .notHero:
 	cmp.w	#KEY_C,d0		; fiche d'aventure
@@ -7215,6 +10137,7 @@ HandleKey:
 	bra	.redraw
 .openSheet:
 	move.w	#UI_SHEET,UiMode
+	clr.w	SheetPage		; on ouvre toujours sur le heros
 	bra	.redraw
 .notSheet:
 	cmp.w	#KEY_I,d0		; sac a dos
@@ -7250,6 +10173,13 @@ HandleKey:
 	move.w	#UI_OPTS,UiMode
 	bra	.redraw
 .notOptsKey:
+	cmp.w	#KEY_TAB,d0		; la fiche : TAB passe du heros a ses
+	bne.s	.notSheetTab		; competences, et retour
+	cmp.w	#UI_SHEET,UiMode
+	bne.s	.notSheetTab
+	eor.w	#1,SheetPage
+	bra	.redraw
+.notSheetTab:
 	move.w	UiMode,d1		; ces ecrans ont leurs propres fleches
 	cmp.w	#UI_SHOP,d1
 	bne.s	.notInShop
@@ -7266,6 +10196,13 @@ HandleKey:
 	bsr	OptKey
 	bra	.done
 .notInOpts:
+	tst.w	InTown			; au bourg, pas de pas ni de carte :
+	beq.s	.notInTown		; la place et ses portes
+	tst.w	d1
+	bne	.done
+	bsr	TownKey
+	bra	.done
+.notInTown:
 	cmp.w	#KEY_M_QW,d0		; carte du niveau
 	beq.s	.mapKey
 	cmp.w	#KEY_M_AZ,d0
@@ -7317,6 +10254,11 @@ HandleKey:
 	move.w	d1,Dir
 	bra	.redraw
 .notRight:
+	cmp.w	#KEY_O,d0		; l'ordre de marche : l'avant, l'arriere
+	bne.s	.notRank
+	bsr	SwapRank
+	bra	.done
+.notRank:
 	cmp.w	#KEY_S,d0		; sorts hors combat : soins, protections
 	bne.s	.notCast
 	move.w	#UI_SPELL,UiMode
@@ -7327,24 +10269,13 @@ HandleKey:
 	bsr	DoAction
 	bra	.done
 
-.fight:					; --- combat
-	cmp.w	#KEY_A_QW,d0
-	beq.s	.attack
-	cmp.w	#KEY_A_AZ,d0
-	beq.s	.attack
-	cmp.w	#KEY_SPACE,d0
-	beq.s	.attack
-	cmp.w	#KEY_F,d0
-	beq.s	.flee
-	cmp.w	#KEY_S,d0
-	bne	.done
-	move.w	#UI_SPELL,UiMode
-	bra	.redraw
-.attack:
-	bsr	CombatRound
+.fight:					; --- la rencontre, puis les ordres
+	tst.w	MeetPhase
+	beq.s	.orders
+	bsr	MeetKey
 	bra	.done
-.flee:
-	bsr	CombatFlee
+.orders:
+	bsr	CombatKey
 	bra	.done
 
 .invKeys:				; --- sac a dos
@@ -7438,6 +10369,10 @@ DirTable:
 	dc.w	-1,0
 
 SaveName:	dc.b	"PROGDIR:AGACrawl.sav",0
+DungeonName:	dc.b	"PROGDIR:Donjons/Crypte.dgn",0
+TxtNoDungeon:	dc.b	"AGACrawl : Donjons/Crypte.dgn introuvable ou abime.",10
+TXTNODUNGEON_LEN = *-TxtNoDungeon
+	even
 DosName:	dc.b	"dos.library",0
 	even
 
@@ -7459,6 +10394,7 @@ ShopTable:
 	dc.b	17,17,13,16,2,20,25,8	; potions, cuir, bouclier, cle
 	dc.b	17,18,14,3,6,22,21,26	; mailles, epee longue, parchemins
 	dc.b	18,18,15,9,10,11,24,23	; harnois et lames enchantees
+	dc.b	17,17,18,7,4,13,14,16	; le comptoir du bourg
 	even
 
 
@@ -7500,13 +10436,15 @@ SaveList:
 	dc.l	Inventory,INVSIZE
 	dc.l	LevelStore,LVSTORE	; les trois etages, chacun dans son etat
 	dc.l	LevelKnown,LEVELS*2	; et ceux que le groupe a deja vus
-	dc.l	OptMusic,6		; musique, bruitages, disposition
+	dc.l	OptMusic,8		; musique, bruitages, disposition, combat
+	dc.l	InTown,6		; au bourg ? la banque, le guet
 	dc.l	0,0
 
 	include	"surfgrad.i"
 
 OptNames:
-	dc.l	TxtOptMusic,TxtOptSfx,TxtOptKb,TxtOptSave,TxtOptTitleBack
+	dc.l	TxtOptMusic,TxtOptSfx,TxtOptKb,TxtOptCombat,TxtOptSave
+	dc.l	TxtOptTitleBack
 
 SchoolNames:				; 1 profane, 2 divin, 3 les deux
 	dc.l	TxtSchoolArc,TxtSchoolDiv,TxtSchoolBoth
@@ -7540,6 +10478,10 @@ LegendTab:
 ClassDesc:
 	dc.l	TxtCls0,TxtCls1,TxtCls2,TxtCls3
 	dc.l	TxtCls4,TxtCls5,TxtCls6,TxtCls7
+	dc.l	TxtCls8,TxtCls9,TxtCls10
+
+RaceDesc:
+	dc.l	TxtRace0,TxtRace1,TxtRace2,TxtRace3,TxtRace4,TxtRace5
 
 ; Le prologue, page par page : chaque page est une liste de lignes
 ; terminee par un long nul. Une ligne marquee d'une etoile passe a
@@ -7663,11 +10605,65 @@ TxtPr3L07:	dc.b	"CRAIE SUR LES PORTES DE GRANGES.",0
 TxtPr3L08:	dc.b	"LES GENS DONT ON LISAIT LE NOM SE",0
 TxtPr3L09:	dc.b	"SONT MIS A MANQUER.",0
 TxtPr3L10:	dc.b	"",0
-TxtPr3L11:	dc.b	"QUATRE PERSONNES DESCENDENT : LE",0
-TxtPr3L12:	dc.b	"REGISTRE A QUATRE COLONNES DE",0
+TxtPr3L11:	dc.b	"SIX PERSONNES DESCENDENT : LE",0
+TxtPr3L12:	dc.b	"REGISTRE A SIX COLONNES DE",0
 TxtPr3L13:	dc.b	"SIGNATURE AU BAS D'UNE QUITTANCE.",0
 TxtPr3L14:	dc.b	"",0
 TxtPr3L15:	dc.b	"*ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
+	even
+
+; Les trois livres du greffe : titre, cote, lignes, long nul.
+ArchiveBooks:
+	dc.l	ArchBook0,ArchBook1,ArchBook2
+ArchBook0:
+	dc.l	TxtAr0T,TxtAr0C
+	dc.l	TxtAr0L0,TxtAr0L1,TxtAr0L2,TxtAr0L3,TxtAr0L4
+	dc.l	TxtAr0L5,TxtAr0L6,TxtAr0L7,TxtAr0L8,TxtAr0L9,0
+ArchBook1:
+	dc.l	TxtAr1T,TxtAr1C
+	dc.l	TxtAr1L0,TxtAr1L1,TxtAr1L2,TxtAr1L3,TxtAr1L4
+	dc.l	TxtAr1L5,TxtAr1L6,TxtAr1L7,TxtAr1L8,TxtAr1L9,0
+ArchBook2:
+	dc.l	TxtAr2T,TxtAr2C
+	dc.l	TxtAr2L0,TxtAr2L1,TxtAr2L2,TxtAr2L3,TxtAr2L4
+	dc.l	TxtAr2L5,TxtAr2L6,TxtAr2L7,TxtAr2L8,TxtAr2L9,0
+
+TxtAr0T:	dc.b	"LES RECOUVREMENTS",0
+TxtAr0C:	dc.b	"LIVRE DES DALLES",0
+TxtAr0L0:	dc.b	"À CHAQUE LIGNE OUVERTE",0
+TxtAr0L1:	dc.b	"SA DALLE, ET SOUS LA",0
+TxtAr0L2:	dc.b	"DALLE UN RESSORT TENDU",0
+TxtAr0L3:	dc.b	"COMME UN PIÈGE À LOUP.",0
+TxtAr0L4:	dc.b	"",0
+TxtAr0L5:	dc.b	"UN RESSORT NE SERT",0
+TxtAr0L6:	dc.b	"QU'UNE FOIS : LA DETTE",0
+TxtAr0L7:	dc.b	"EST SOLDÉE, LA PIERRE",0
+TxtAr0L8:	dc.b	"REDEVIENT PIERRE.",0
+TxtAr0L9:	dc.b	"*LA CROIX : À EXAMINER.",0
+TxtAr1T:	dc.b	"LES PASSAGES",0
+TxtAr1C:	dc.b	"LIVRE DES QUESTIONS",0
+TxtAr1L0:	dc.b	"UNE CLÉ SE VOLE. UNE",0
+TxtAr1L1:	dc.b	"RÉPONSE, ON NE LA SAIT",0
+TxtAr1L2:	dc.b	"QUE SI ON VOUS L'A",0
+TxtAr1L3:	dc.b	"DONNÉE EN VOUS",0
+TxtAr1L4:	dc.b	"INSCRIVANT.",0
+TxtAr1L5:	dc.b	"",0
+TxtAr1L6:	dc.b	"TROIS RÉPONSES, PAS",0
+TxtAr1L7:	dc.b	"UNE DE PLUS : LE LIVRE",0
+TxtAr1L8:	dc.b	"A TROIS COLONNES.",0
+TxtAr1L9:	dc.b	"*LA RUNE VOUS INSCRIT.",0
+TxtAr2T:	dc.b	"LE GUICHET",0
+TxtAr2C:	dc.b	"EMMUREMENT DE GARDE",0
+TxtAr2L0:	dc.b	"OSSIAN VAUGRIS,",0
+TxtAr2L1:	dc.b	"DERNIER GREFFIER, SANS",0
+TxtAr2L2:	dc.b	"HÉRITIER, DEMANDE",0
+TxtAr2L3:	dc.b	"L'EMMUREMENT. SIGNÉ",0
+TxtAr2L4:	dc.b	"DE SA MAIN.",0
+TxtAr2L5:	dc.b	"",0
+TxtAr2L6:	dc.b	"IL RENDRA CONTRE OR CE",0
+TxtAr2L7:	dc.b	"QUE LA MAISON DÉTIENT,",0
+TxtAr2L8:	dc.b	"ET RACHÈTE À MOITIÉ :",0
+TxtAr2L9:	dc.b	"*LE TAUX D'UN DÉPÔT.",0
 	even
 
 FloorLore:				; l'inscription de chaque etage
@@ -7693,6 +10689,17 @@ TxtCls4:	dc.b	"LA LAME ET LA FOI",0
 TxtCls5:	dc.b	"SOINS ET SORTS DIVINS",0
 TxtCls6:	dc.b	"FRAGILE, MAGIE VASTE",0
 TxtCls7:	dc.b	"MAGIE INNÉE ET CHARME",0
+TxtCls8:	dc.b	"SAGESSE DES BOIS, SOINS",0
+TxtCls9:	dc.b	"SANS ARMURE, RÉSISTE",0
+TxtCls10:	dc.b	"ROBUSTE, RÉPARE LE FER",0
+TxtRace0:	dc.b	"AUCUN BONUS NI MALUS",0
+TxtRace1:	dc.b	"CON +2  CHA -2",0
+TxtRace2:	dc.b	"DEX +2  CON -2",0
+TxtRace3:	dc.b	"DEX +2  FOR -2",0
+TxtRace4:	dc.b	"UN PEU DES DEUX PEUPLES",0
+TxtRace5:	dc.b	"FOR +2  INT -2  CHA -2",0
+TxtPickRace:	dc.b	"FLÈCHES PUIS ENTRÉE",0
+TxtBanned:	dc.b	"CETTE RACE NE DONNE PAS CETTE CLASSE.",0
 TxtFor:		dc.b	"FOR ",0
 TxtDex:		dc.b	"DEX ",0
 TxtCon:		dc.b	"CON ",0
@@ -7704,16 +10711,16 @@ TxtIntro:	dc.b	"ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
 TxtFloor0:	dc.b	"LE GREFFE. LES GAGES SONT RÉCENTS.",0
 TxtFloor1:	dc.b	"PLUS BAS : LES VIEILLES ÉCHÉANCES.",0
 TxtFloor2:	dc.b	"LE FOND. PLUS PERSONNE N'A PAYÉ.",0
-TxtCreate1:	dc.b	"CRÉEZ VOS QUATRE AVENTURIERS.",0
+TxtCreate1:	dc.b	"CRÉEZ VOS SIX AVENTURIERS.",0
 TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
 TxtCreateTitle:	dc.b	"CRÉATION DU GROUPE",0
 TxtEmptySlot:	dc.b	"-----",0
 TxtHero:	dc.b	"HÉROS ",0
-TxtOn4:		dc.b	" SUR 4",0
+TxtOn4:		dc.b	" SUR 6",0
 TxtDash:	dc.b	" - ",0
 TxtHyphen:	dc.b	"-",0
 TxtNivShort:	dc.b	"N",0
-TxtPickClass:	dc.b	"FLÈCHES, ENTRÉE OU 1-8",0
+TxtPickClass:	dc.b	"FLÈCHES PUIS ENTRÉE",0
 TxtRoll:	dc.b	"R RELANCER  ENTRÉE OK",0
 TxtName:	dc.b	"NOM : ",0
 TxtNameHelp:	dc.b	"TAPEZ OU FLÈCHES",0
@@ -7735,10 +10742,64 @@ TxtDrops:	dc.b	"VOUS JETEZ ",0
 TxtBagFull:	dc.b	"LE SAC EST PLEIN.",0
 TxtDescend:	dc.b	"UN ESCALIER. VOUS DESCENDEZ.",0
 TxtAscend:	dc.b	"UN ESCALIER. VOUS REMONTEZ.",0
-TxtNoWayUp:	dc.b	"AU-DESSUS, C'EST LE JOUR.",0
 TxtWin:		dc.b	"ACQUITTÉS. VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
+TxtNoSpells:	dc.b	" NE CONNAÎT AUCUN SORT.",0
+TxtLostFocus:	dc.b	" PERD SA CONCENTRATION.",0
+TxtRoundTitle:	dc.b	"RÉSULTAT DU ROUND ",0
+TxtRoundFoes:	dc.b	"EUX : ",0
+TxtRoundBlows:	dc.b	" COUPS, ",0
+TxtRoundHp:	dc.b	" PV",0
+TxtRoundGo:	dc.b	"UNE TOUCHE : LA SUITE",0
+TxtOrderSep:	dc.b	" : ",0
+TxtTimes:	dc.b	" X",0
+TxtResNone:	dc.b	"-",0
+TxtResHit:	dc.b	"FRAPPE",0
+TxtResMiss:	dc.b	"MANQUE",0
+TxtResGuard:	dc.b	"PARE",0
+TxtResFar:	dc.b	"LOIN : PARE",0
+TxtResSpell:	dc.b	"SORT",0
+TxtResConc:	dc.b	"DÉCONCENTRÉ",0
+TxtOrdAttack:	dc.b	"FRAPPER",0
+TxtOrdGuard:	dc.b	"PARER",0
+TxtOptCombat:	dc.b	"COMBAT        ",0
+TxtOptDetail:	dc.b	"DÉTAILLÉ",0
+TxtOptQuick:	dc.b	"RAPIDE",0
+	even
+ResTexts:
+	dc.l	TxtResNone,TxtResHit,TxtResMiss,TxtResGuard,TxtResFar
+	dc.l	TxtResSpell,TxtResConc
+OrderNames:
+	dc.l	TxtOrdAttack,TxtOrdGuard
+TxtSurprised:	dc.b	"VOUS ÊTES SURPRIS !",0
+TxtSeenComing:	dc.b	"VOUS LES VOYEZ VENIR.",0
+TxtToArms:	dc.b	"AUX ARMES !",0
+TxtDeaf:	dc.b	"ILS NE RÉPONDENT QU'AU FER.",0
+TxtMenacing:	dc.b	"ILS AVANCENT, MENAÇANTS.",0
+TxtGreetBack:	dc.b	"ILS RENDENT LE SALUT ET PASSENT.",0
+TxtStare:	dc.b	"ILS VOUS FIXENT, SANS BOUGER.",0
+TxtImpatient:	dc.b	"ILS PERDENT PATIENCE.",0
+TxtNoTongue:	dc.b	"ILS NE PARLENT PAS.",0
+TxtNobodySpeaks: dc.b	"PERSONNE NE PARLE ",0
+TxtParleys:	dc.b	" PARLEMENTE.",0
+TxtTalkFails:	dc.b	"ILS NE VEULENT RIEN ENTENDRE.",0
+TxtLetPass:	dc.b	"ILS VOUS LAISSENT PASSER.",0
+TxtTollAsk:	dc.b	"ILS DEMANDENT ",0
+TxtTollAsk2:	dc.b	" PIÈCES. O OU N ?",0
+TxtTollPaid:	dc.b	"VOUS PAYEZ ",0
+TxtTollPaid2:	dc.b	" PIÈCES. ILS PASSENT.",0
+TxtTollRefused:	dc.b	"ILS DÉGAINENT.",0
+TxtTollPoor:	dc.b	"VOUS N'AVEZ PAS DE QUOI.",0
+TxtTonguesLbl:	dc.b	"LANGUES",0
+TxtMeetAsk:	dc.b	"QUE FAITES-VOUS ?",0
+TxtTollTag:	dc.b	"PAYER LE PÉAGE ?",0
+TxtHelpMeet:	dc.b	"S SALUE D PARLE F FUIT A ATTAQUE",0
+TxtHelpToll:	dc.b	"O PAYER   N REFUSER",0
+TxtToBack:	dc.b	" PASSE À L'ARRIÈRE.",0
+TxtToFront:	dc.b	" PASSE À L'AVANT.",0
+TxtNotAlone:	dc.b	"IL N'EST PAS SEUL : ILS SONT ",0
+TxtNextOne:	dc.b	"UN AUTRE S'AVANCE. RESTENT : ",0
 TxtYouHit:	dc.b	"LE GROUPE INFLIGE ",0
 TxtDamage:	dc.b	" DÉGÂTS.",0
 TxtAllMiss:	dc.b	"TOUS LES COUPS SE PERDENT.",0
@@ -7748,6 +10809,76 @@ TxtMissed:	dc.b	" MANQUE ",0
 TxtFalls:	dc.b	" S'EFFONDRE !",0
 TxtDies:	dc.b	" TOMBE ! +",0
 TxtXpGold:	dc.b	" PX, ",0
+TxtTownStatus:	dc.b	"AMBELUNE",0
+TxtHelpTown:	dc.b	"HAUT BAS ENTRÉE C I L P",0
+TxtTownHello:	dc.b	"VOUS REMONTEZ AU JOUR : AMBELUNE.",0
+TxtTownLeave:	dc.b	"VOUS REDESCENDEZ DANS LA CRYPTE.",0
+TxtTownShop:	dc.b	"LE COMPTOIR D'AMBELUNE VOUS ATTEND.",0
+TxtCoins:	dc.b	" PIÈCES.",0
+TxtBankRobbed:	dc.b	"BANQUE PILLÉE : ",0
+TxtCutSeen:	dc.b	"UN COUPE-BOURSE, VU À TEMPS.",0
+TxtCutLifted:	dc.b	"UN COUPE-BOURSE PREND ",0
+TxtInnSlept:	dc.b	"UNE NUIT AU DORTOIR. ON SE REMET.",0
+TxtInnRoomed:	dc.b	"UNE VRAIE NUIT. TOUT EST RENDU.",0
+TxtTempleNone:	dc.b	" N'A BESOIN DE RIEN.",0
+TxtTempleHealed: dc.b	" EST SOIGNÉ.",0
+TxtTempleFail:	dc.b	"LES DIEUX SE DÉTOURNENT.",0
+TxtTempleRaised: dc.b	" REVIENT À LA VIE !",0
+TxtGuildDead:	dc.b	" EST À TERRE.",0
+TxtGuildTop:	dc.b	" A TOUT APPRIS.",0
+TxtGuildLack:	dc.b	" : ENCORE ",0
+TxtGuildLack2:	dc.b	" PX.",0
+TxtGuildKnows:	dc.b	" LA PARLE DÉJÀ.",0
+TxtGuildLearns:	dc.b	" APPREND : ",0
+TxtGuildLvl:	dc.b	" NIV ",0
+TxtGuildKnown:	dc.b	" : SUE",0
+TxtGuildTongues: dc.b	"LES LANGUES",0
+TxtGuildTab:	dc.b	"TAB : LES LANGUES",0
+TxtReady:	dc.b	" EST PRÊT POUR LA GUILDE.",0
+TxtBankHeld:	dc.b	"EN DÉPÔT : ",0
+TxtBankNothing:	dc.b	"RIEN À DÉPLACER.",0
+TxtStreetTry:	dc.b	"TENTER UNE BOURSE",0
+TxtStreetGot:	dc.b	" SUBTILISE ",0
+TxtStreetMiss:	dc.b	"RATÉ. PERSONNE N'A RIEN VU.",0
+TxtStreetFine:	dc.b	"LE GUET ! AMENDE : ",0
+TxtStreetJail:	dc.b	" PASSE LA NUIT AU CACHOT.",0
+TxtTownWho:	dc.b	"POUR ",0
+TxtTownWho2:	dc.b	" (1 À 6)",0
+TxtTownHelp0:	dc.b	"ENTRÉE ENTRE",0
+TxtTownHelp:	dc.b	"ENTRÉE AGIT ESC SORT",0
+TxtPlShop:	dc.b	"LE COMPTOIR",0
+TxtPlInn:	dc.b	"L'AUBERGE",0
+TxtPlTemple:	dc.b	"LE TEMPLE",0
+TxtPlGuild:	dc.b	"LA GUILDE",0
+TxtPlBank:	dc.b	"LA BANQUE",0
+TxtPlStreet:	dc.b	"LA RUE",0
+TxtPlLeave:	dc.b	"DESCENDRE À LA CRYPTE",0
+TxtHiInn:	dc.b	"L'AUBERGISTE ESSUIE UN VERRE.",0
+TxtHiTemple:	dc.b	"L'ENCENS, ET LE SILENCE.",0
+TxtHiGuild:	dc.b	"LE MAÎTRE VOUS TOISE.",0
+TxtHiBank:	dc.b	"LE CHANGEUR COMPTE SES PIÈCES.",0
+TxtHiStreet:	dc.b	"LA FOULE, LES BOURSES, LE GUET.",0
+TxtInnDorm:	dc.b	"LE DORTOIR",0
+TxtInnRoom:	dc.b	"UNE CHAMBRE",0
+TxtTplNone:	dc.b	"INDEMNE",0
+TxtTplHeal:	dc.b	"SOIGNER",0
+TxtTplRaise:	dc.b	"RELEVER",0
+TxtBkPut:	dc.b	"DÉPOSER 50",0
+TxtBkPutAll:	dc.b	"TOUT DÉPOSER",0
+TxtBkTake:	dc.b	"RETIRER 50",0
+TxtBkTakeAll:	dc.b	"TOUT RETIRER",0
+TxtInfoSquare:	dc.b	"OÙ ALLEZ-VOUS ?",0
+TxtInfoInn:	dc.b	"POUR TOUT LE GROUPE",0
+TxtInfoTemple:	dc.b	"L'OFFRANDE D'ABORD",0
+	even
+TownPlaces:	dc.l	TxtPlShop,TxtPlInn,TxtPlTemple,TxtPlGuild,TxtPlBank
+		dc.l	TxtPlStreet,TxtPlLeave
+TownTitles:	dc.l	TxtTownStatus,TxtPlInn,TxtPlTemple,TxtPlGuild,TxtPlBank
+		dc.l	TxtPlStreet
+TownHellos:	dc.l	0,TxtHiInn,TxtHiTemple,TxtHiGuild,TxtHiBank,TxtHiStreet
+TownInfos:	dc.l	TxtInfoSquare,TxtInfoInn,TxtInfoTemple
+TempleWords:	dc.l	TxtTplNone,TxtTplHeal,TxtTplRaise
+BankWords:	dc.l	TxtBkPut,TxtBkPutAll,TxtBkTake,TxtBkTakeAll
 TxtLevelUp:	dc.b	" PASSE UN NIVEAU !",0
 TxtFlee:	dc.b	"VOUS PRENEZ LA FUITE.",0
 TxtFleeFail:	dc.b	"LA FUITE ÉCHOUE !",0
@@ -7774,6 +10905,14 @@ TxtLedgerOut:	dc.b	"LA MAISON NE VOUS DOIT PLUS RIEN.",0
 TxtDoorHeld:	dc.b	"L'ESCALIER DESCEND SUR UNE PORTE.",0
 TxtDoorHeld2:	dc.b	"ELLE NE CÈDE PAS : RIEN N'EST RAYÉ.",0
 TxtHelpLedger:	dc.b	"ENTRÉE RAYE LA LIGNE   ESC REFERME",0
+TxtProgress:	dc.b	" PROGRESSE : ",0
+TxtSkillsOf:	dc.b	"COMPÉTENCES : ",0
+TxtSkillsHelp:	dc.b	"TAB : LA FICHE",0
+TxtHelpArchive:	dc.b	"ESC REFERME LE LIVRE",0
+TxtArchiveSeen:	dc.b	"DES REGISTRES, DU SOL À LA VOÛTE.",0
+TxtArchiveOpen:	dc.b	"VOUS OUVREZ UN LIVRE DU GREFFE.",0
+TxtArchiveLearn: dc.b	"LE GROUPE COMPREND MIEUX LA MAISON.",0
+TxtArchiveMute:	dc.b	"DES COMPTES. RIEN QUI VOUS REGARDE.",0
 TxtShopSeen:	dc.b	"UNE ÉCHOPPE ! ESPACE POUR ENTRER.",0
 TxtShopHello:	dc.b	"UNE VOIX DERRIÈRE LE MUR : BIENVENUE",0
 TxtShopTitle:	dc.b	"ÉCHOPPE",0
@@ -7838,7 +10977,7 @@ TxtLeverSeen:	dc.b	"UN LEVIER SCELLÉ DANS LE MUR.",0
 TxtGateShut:	dc.b	"UNE HERSE DE FER BARRE LE PASSAGE.",0
 TxtLeverDown:	dc.b	"LE LEVIER CÈDE. UNE HERSE SE LÈVE.",0
 TxtLeverUp:	dc.b	"LE LEVIER REMONTE. LA HERSE RETOMBE.",0
-TxtRuneTitle:	dc.b	"LA PORTE VÉRIFIE VOTRE DROIT",0
+TxtRuneTitle:	dc.b	"LA PORTE VOUS INTERROGE",0	; 23 : la vue
 TxtRuneAsk:	dc.b	"RÉPONDEZ : 1, 2 OU 3",0
 TxtRuneOk:	dc.b	"LES RUNES S'EFFACENT. PASSAGE !",0
 TxtRuneBad:	dc.b	"LA RUNE ROUGEOIT DE COLÈRE.",0
@@ -7862,7 +11001,7 @@ TxtR2A1:	dc.b	"LE BORGNE",0
 TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
 TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR RÉPONDRE  ESC",0
-TxtHelpCreate:	dc.b	"1-8 CLASSE  R DES  ENTRÉE OK  ESC",0
+TxtHelpCreate:	dc.b	"1-9 CHOISIR  R DÉS  ENTRÉE OK  ESC",0
 TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P RÉGLAGES",0
 TxtRaised:	dc.b	" SE RELÈVE.",0
 TxtRested:	dc.b	"LE GROUPE FAIT HALTE ET RÉCUPÈRE.",0
@@ -7909,7 +11048,7 @@ TxtKindBless:	dc.b	"BÉNÉDICTION +",0
 TxtSaveFort:	dc.b	"VIGUEUR",0
 TxtSaveRef:	dc.b	"RÉFLEXES",0
 TxtSaveWill:	dc.b	"VOLONTÉ",0
-TxtHelpBook:	dc.b	"FLÈCHES  1-4 HÉROS  L OU ESC FERMER",0
+TxtHelpBook:	dc.b	"FLÈCHES  1-6 HÉROS  L OU ESC FERMER",0
 TxtMapTitle:	dc.b	"CARTE NIVEAU ",0
 TxtDash2:	dc.b	" - ",0
 TxtNord:	dc.b	"NORD",0
@@ -7926,10 +11065,10 @@ TxtLegLedger:	dc.b	"GREFFE",0
 TxtHelpMap:	dc.b	"M OU ESC POUR REFERMER LA CARTE",0
 TxtConfirmQuit:	dc.b	"ESC A NOUVEAU POUR ABANDONNER.",0
 TxtNoSpellKnown:	dc.b	"AUCUN SORT CONNU.",0
-TxtHelpFight:	dc.b	"A ATTAQUER  S SORT  F FUIR  I SAC",0
-TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-4",0
+TxtHelpFight:	dc.b	"A FRAPPE D PARE S SORT F FUIT ENTRÉE",0
+TxtHelpInv:	dc.b	"E ÉQUIPER U UTILISER D JETER 1-6",0
 TxtHelpSpell:	dc.b	"CHIFFRE POUR LANCER   ESC ANNULE",0
-TxtHelpSheet:	dc.b	"1-4 HÉROS  I SAC  L LIVRE  P RÉGLAGES",0
+TxtHelpSheet:	dc.b	"TAB COMPÉTENCES  1-6 HÉROS  I SAC",0
 TxtHelpShop:	dc.b	"FLÈCHES  TAB COTE  ENTRÉE  ESC SORT",0
 	even
 
@@ -7945,9 +11084,6 @@ NullSprite:				; les sept autres, eteints
 DgnArt:
 	incbin	"data/dgnart.bin"
 	even
-DgnMap:
-	incbin	"data/dgnmap.bin"
-	even
 SfxData:
 	incbin	"data/sfx.bin"
 	even
@@ -7960,6 +11096,8 @@ SfxSilence:
 
 GfxBase:	ds.l	1
 DosBase:	ds.l	1
+DgnMapPtr:	ds.l	1		; les cartes, dans le paquet du donjon
+DgnBank:	ds.l	1		; son bestiaire, idem
 OldView:	ds.l	1
 OldCopper:	ds.l	1
 ShowBuf:	ds.l	1
@@ -7984,6 +11122,7 @@ Level:		ds.w	1
 Gold:		ds.w	1
 KeyCount:	ds.w	1
 Acquitted:	ds.w	1		; la ligne du registre est rayee
+ArchiveBook:	ds.w	1		; le livre du greffe ouvert
 InCombat:	ds.w	1
 MonKind:	ds.w	1
 MonArt:		ds.w	1
@@ -7999,6 +11138,7 @@ OptCursor:	ds.w	1
 OptMusic:	ds.w	1		; les trois reglages se suivent : ils
 OptSfx:	ds.w	1		; partent ensemble dans la sauvegarde
 KbLayout:	ds.w	1
+OptQuick:	ds.w	1		; combat : 0 detaille, 1 rapide
 CurMusic:	ds.w	1
 CopSurf:	ds.l	1
 SurfPhase:	ds.w	1
@@ -8014,6 +11154,32 @@ ShopTop:	ds.w	1
 SpellCount:	ds.w	1
 SpellList:	ds.w	SPELLMENU
 AnimFrame:	ds.w	1
+MonLastVbi:	ds.w	1		; VBI_Count au dernier passage de MonWalk
+HitFlags:	ds.b	NHEROES		; ceux qui ont touche pendant le round
+	even
+SheetPage:	ds.w	1		; fiche : 0 le heros, 1 ses competences
+MeetPhase:	ds.w	1		; 0 combat, 1 rencontre, 2 peage
+MeetAmbush:	ds.w	1		; la creature est venue a nous
+MeetGreeted:	ds.w	1		; on a deja salue
+MeetToll:	ds.w	1		; le peage demande
+Guarding:	ds.b	NHEROES		; ceux qui parent ce round
+ResCode:	ds.b	NHEROES		; ce que chacun a fait, pour le panneau
+ResVal:		ds.w	NHEROES		; et ses degats
+OrderHero:	ds.w	1		; a qui c'est de donner son ordre
+InResolve:	ds.w	1		; un round est en train de se jouer
+RoundNo:	ds.w	1		; numero du round dans le combat
+RoundDmg:	ds.w	1
+RoundSfx:	ds.w	1		; le bruitage d'arme du round, plus un		; ce que le groupe a inflige au dernier
+MonHits:	ds.w	1		; coups portes par les creatures, et
+MonDmg:		ds.w	1		; leurs degats, au dernier round
+Orders:		ds.b	NHEROES		; l'ordre de combat de chacun, retenu
+	even				; d'un round et d'un combat a l'autre
+GroupN:		ds.w	1		; creatures encore debout, celle de devant
+GroupNext:	ds.w	1		; comprise, et la prochaine a s'avancer
+GroupHp:	ds.w	GROUPMAX	; leurs points de vie, tires d'avance
+StrikeTime:	ds.w	1		; trames de pose d'attaque restantes
+FlameFrame:	ds.w	1		; la flamme de la lanterne du guichet
+ShopInSight:	ds.w	1		; le guichet est dans la vue, a un pas
 AnimCount:	ds.w	1
 GameOver:	ds.w	1
 Quit:		ds.w	1
@@ -8028,6 +11194,13 @@ MonX:		ds.w	1		; la case du monstre que l'on combat
 MonY:		ds.w	1
 Phase:		ds.w	1
 UiMode:		ds.w	1
+InTown:		ds.w	1		; le groupe est au bourg (voir EnterTown)
+Bank:		ds.w	1		; l'or en depot
+StreetHeat:	ds.w	1		; le guet, eveille par les essais
+TownPlace:	ds.w	1
+TownCursor:	ds.w	1
+GuildPage:	ds.w	1
+TownBuf:	ds.b	40
 SelHero:	ds.w	1
 InvCursor:	ds.w	1
 InvTop:		ds.w	1
@@ -8038,6 +11211,7 @@ CreIndex:	ds.w	1
 CreStep:	ds.w	1
 CreCursor:	ds.w	1
 CreClass:	ds.w	1
+CreRace:	ds.w	1		; la race choisie, dans RaceTable
 CreHp:		ds.w	1
 CreMp:		ds.w	1
 CreNameLen:	ds.w	1
@@ -8071,6 +11245,7 @@ NumBuf:		ds.b	14
 	SECTION	crawlbuf,BSS_C
 ;======================================================================
 
+DgnPack:	ds.b	DGNPACKMAX	; le paquet du donjon, lu au demarrage
 ScreenA:	ds.b	SCRSIZE
 ScreenB:	ds.b	SCRSIZE
 CopList:	ds.b	COPSIZE

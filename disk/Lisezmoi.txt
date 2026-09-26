@@ -37,8 +37,8 @@ L'HISTOIRE
   ont commence a apparaitre a la craie sur les portes de granges, et
   les gens dont on lisait le nom se sont mis a manquer.
 
-  Quatre personnes descendent. Il faut etre quatre : le registre a
-  quatre colonnes de signature au bas de chaque quittance.
+  Six personnes descendent. Il faut etre six : le registre a six
+  colonnes de signature au bas de chaque quittance.
 
   On ne sort de Faerghail qu'acquitte.
 
@@ -59,7 +59,14 @@ L'ACCUEIL
   reste sur l'accueil.
 
 CREATION DU GROUPE
-  Quatre aventuriers, chacun d'une des huit classes :
+  Six aventuriers. Chacun choisit d'abord sa race :
+    HUMAIN      rien a ajouter, rien a retirer
+    NAIN        CON +2  CHA -2  (ni magicien ni ensorceleur)
+    ELFE        DEX +2  CON -2  (ni paladin ni barbare)
+    HALFELIN    DEX +2  FOR -2  (ni barbare ni forgeron)
+    DEMI-ELFE   un peu des deux peuples
+    DEMI-ORC    FOR +2  INT -2  CHA -2  (ni druide ni magicien)
+  puis l'une des onze classes :
     GUERRIER    de de vie 10, attaque a chaque niveau, epee et cotte
     BARBARE     de de vie 12, tres resistant, hache
     ROUBLARD    agile, la fuite lui reussit bien mieux
@@ -68,32 +75,82 @@ CREATION DU GROUPE
     CLERC       soins et sorts divins, potions plus efficaces
     MAGICIEN    fragile, mais l'eventail de sorts le plus large
     ENSORCELEUR magie innee
+    DRUIDE      sagesse des bois, soins et terreur
+    MOINE       sans armure, les trois sauvegardes fortes
+    FORGERON    robuste, masse et cotte
   Les fleches deplacent le curseur, ENTREE ou le chiffre choisit. Les
   six caracteristiques sont tirees a 4d6 en gardant les trois meilleurs
   des ; R relance le jet, ENTREE valide. Le nom se tape au clavier (TAB
   bascule AZERTY / QWERTY) ou se choisit aux fleches.
 
+LES COMPETENCES
+  Six competences, de 0 a 99 : combat, defense, concentration,
+  vigilance, desamorcage, marchandage. La classe fixe le depart, la
+  race l'ajuste, et elles progressent a l'usage : chaque coup porte,
+  chaque coup pare, chaque sort lance, chaque dalle reperee ou
+  desamorcee, chaque affaire conclue a une chance de faire gagner un
+  point -- de plus en plus rarement. Sur la fiche (C), TAB les montre.
+
 COMMANDES
   Fleches haut/bas      avancer, reculer
   Fleches gauche/droite tourner
   ESPACE                ouvrir une porte, fouiller une niche,
-                        entrer a l'echoppe, desamorcer un piege
+                        entrer a l'echoppe, desamorcer un piege,
+                        lire le registre ou un livre du greffe
   C                     fiche d'aventure du heros courant
   I                     sac a dos
   M                     carte du niveau, telle que vous l'avez parcouru
   L                     grimoire du heros choisi
   P                     reglages du jeu
   S                     lancer un sort (soins, protections) hors combat
-  1 a 4                 choisir le heros courant
+  1 a 6                 choisir le heros courant
   ESC                   fermer un ecran ; deux fois de suite, quitter
 
-  En combat :  A attaquer   S lancer un sort   F fuir   I sac
+  O                     l'ordre de marche : l'avant, l'arriere
+
+  En combat, un ordre par heros, a tour de role :
+    A frapper   D parer   S un sort   1 a 6 changer de heros
+    ENTREE rejoue les ordres retenus pour tous   F fuir   I sac
+
+LES RENCONTRES
+  Avant le fer, la parole : S saluer, D discuter, F se retirer,
+  A attaquer. On ne discute qu'avec qui l'on comprend -- les langues
+  viennent de la race et de la classe, et sont sur la page des
+  competences. Selon leur humeur, ils passent leur chemin, demandent
+  un peage (O payer, N refuser) ou degainent. Les morts et les betes
+  ne repondent qu'au fer. Quand c'est eux qui viennent, ils peuvent
+  vous surprendre : la vigilance du groupe l'evite.
+
+AMBELUNE
+  L'escalier qui remonte du premier etage ramene a Ambelune, le
+  village d'ou vous etes descendus : une place
+  et des portes, chacune un menu (HAUT/BAS et ENTREE, ESC revient sur
+  la place). Le comptoir vend et rachete. L'auberge rend les forces :
+  le dortoir la moitie, une chambre tout. Le temple soigne et releve
+  les morts -- pas toujours : les dieux se detournent parfois, et
+  gardent l'offrande. La guilde forme ceux qui sont prets : l'expe-
+  rience ne fait plus passer de niveau toute seule, il faut payer le
+  maitre (25 pieces par niveau). TAB y montre les langues, a 100
+  pieces, pour le heros choisi (1 a 6). La banque garde l'or -- sauf
+  les rares nuits ou on la pille. La rue offre ses bourses aux doigts
+  agiles, et son guet aux maladroits. A l'arrivee, gare aux coupe-
+  bourses : la vigilance du groupe les arrete.
+
+LE COMBAT
+  En face, un groupe de un a quatre creatures ; quand celle de devant
+  tombe, la suivante s'avance. Votre groupe se tient sur deux rangs :
+  les trois premiers devant, les trois autres derriere. Derriere, on
+  ne frappe qu'a l'arc, et on est moins vise ; devant, un lanceur de
+  sorts peut perdre sa concentration. Chaque round, chacun recoit son
+  ordre, puis le round se joue ; le resultat s'affiche en detail, ou
+  se resume au journal (reglage COMBAT, touche P). Les ordres sont
+  retenus : ENTREE suffit pour enchainer.
 
 LE PANNEAU DU GROUPE
-  Un bloc par aventurier : son nom en tete, sur toute la largeur, avec
-  son niveau cale a droite ; son portrait dessous ; a cote, ses points
-  de vie et la jauge qui va avec, puis ses emplacements de sorts et
-  leur jauge -- ou, pour qui ne lance pas de sorts, sa classe d'armure.
+  Un bloc par aventurier, six en tout : son nom en tete avec son
+  niveau cale a droite ; son visage dessous ; a cote, ses points de
+  vie, puis deux jauges -- la vie, et la magie pour qui en a. Le grand
+  portrait et la classe d'armure sont sur la fiche (C).
   Le nom du heros choisi passe a l'or. Sous la moitie de ses points de
   vie, le compte et la jauge virent au rouge.
 
@@ -121,7 +178,8 @@ LA SOURIS
 
 L'ECHOPPE
   Un marchand par etage, scelle dans un mur comme une niche, jamais
-  loin du depart. Mettez-vous face a son etal et pressez ESPACE. Huit
+  loin du depart : un guichet grille, une balance sur le comptoir, et
+  derriere, dans le noir, une voix. Mettez-vous face a son etal et pressez ESPACE. Huit
   articles choisis pour l'etage, au prix de l'objet ; TAB passe de
   l'autre cote du comptoir, ou il rachete votre butin a moitie prix.
   Les fleches choisissent la ligne, ENTREE conclut, ESC vous fait
@@ -226,25 +284,36 @@ LE DONJON
 LES MONSTRES
   Ils ne tiennent plus leur case a vous attendre : ils font un pas
   vers vous toutes les quatorze trames si vous etes a moins de six
-  cases. Un couloir vide n'est plus sur.
+  cases. Un couloir vide n'est plus sur -- mais on les voit venir,
+  jusqu'a trois cases devant. En combat, ils respirent, et quand l'un
+  d'eux vous frappe, vous le voyez frapper.
 
 ON REMONTE
   Chaque etage sous le premier a son escalier montant, sur la case ou
   l'on arrive. On retombe sur l'escalier descendant de l'etage du
   dessus, et l'etage quitte reste exactement comme on l'a laisse --
   coffres vides, monstres tombes, etal degarni. Au-dessus du premier,
-  c'est le jour.
+  c'est Ambelune.
 
 LE GRAND REGISTRE
   Au fond du dernier etage, scelle dans un mur : un pupitre, le livre
   ouvert dessus, la chaine qui le tient, l'encrier et la plume.
-  ESPACE ouvre la page. Elle porte les quatre noms du groupe -- une
-  quittance de la maison a quatre colonnes de signature, c'est pour
-  cela qu'on descend a quatre. ENTREE raye la ligne, une seule fois,
+  ESPACE ouvre la page. Elle porte les six noms du groupe -- une
+  quittance de la maison a six colonnes de signature, c'est pour
+  cela qu'on descend a six. ENTREE raye la ligne, une seule fois,
   et vaut de l'experience a tout le monde.
   Sans cela, l'escalier du dernier etage ne mene nulle part : la porte
   des quittances ne cede qu'a qui a raye sa ligne. Le greffe apparait
   sur la carte, en couleur de parchemin.
+
+LE GREFFE
+  Le pupitre est au fond d'une salle a une seule porte, tapissee de
+  rayonnages : les registres de quatre siecles, du sol a la voute.
+  Trois d'entre eux portent un livre qu'ESPACE ouvre -- les dalles,
+  les portes a question, le guichet -- et disent ce que le groupe n'a
+  fait jusque-la que subir. La premiere lecture de chacun vaut de
+  l'experience a tous. ESC referme le livre. Les autres rayonnages
+  sont muets.
   Chaque etage a sa porte a runes : elle pose une question et n'accepte
   que trois reponses -- une clef se vole, pas une reponse. Juste, elle
   s'efface ; faux, la rune inscrit un aventurier, au fer.
@@ -259,12 +328,13 @@ MUSIQUE ET BRUITAGES
   niveau, pas et rale -- puis rendue a la musique.
 
 Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
-palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 700 Ko de
+palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 800 Ko de
 Chip RAM libre.
 
-Le tiroir Src contient tout le source ecrit a la main : crawl.s et les
-trois fichiers dont il depend. Les tables generees -- decors, cartes,
-police, degrades -- n'y sont pas : elles pesent trop, et les
-generateurs Python les refont en une seconde. L'archive
-Faerghail.lha, elle, porte tout. Graphismes, cartes, musique et
-bruitages sont generes par programme : rien n'est emprunte.
+Le jeu tient sur deux disquettes. La premiere demarre et lance le
+jeu. La seconde, Faerghail2, porte le source dans son tiroir Src :
+crawl.s, les fichiers dont il depend, les tables generees, les
+bruitages, les musiques et les cartes. Seuls les decors n'y tiennent
+pas -- plus d'un demi-megaoctet a eux seuls. L'archive Faerghail.lha,
+elle, porte tout. Graphismes, cartes, musique et bruitages sont
+generes par programme : rien n'est emprunte.

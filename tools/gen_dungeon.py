@@ -2,7 +2,7 @@
 """Genere les donnees du dungeon crawler :
 
     data/dgnart.bin   decors en perspective, monstres, tous en 4 plans
-    data/dgnmap.bin   les trois niveaux du donjon
+    data/crypte.dgn   le paquet du donjon : ses trois niveaux, son bestiaire
     src/dgnpal.i      palette 16 couleurs, en 24 bits AGA
     src/font8.i       police 8x8 pour l'interface
 
@@ -28,7 +28,8 @@ F = 64.0                                 # demi-taille d'un mur a distance 1
 SCRBPL = 40                              # octets par ligne d'un plan d'ecran
 DEPTHS = 8                               # AGA : huit bitplanes
 NMONSTERART = 9                          # familles de silhouettes
-NCLASSPORTRAIT = 8                       # un visage par classe
+NMONPOSES = 3                            # repos, souffle, attaque
+NCLASSPORTRAIT = 11                      # un visage par classe
 
 # --- palette : 256 couleurs AGA, decrites dans tools/palette.py ------
 import palette as pal                     # noqa: E402
@@ -223,7 +224,7 @@ def gate_pixel(u, v, k):
     return None                                      # entre les barreaux
 
 
-def make_front(k, door=False, offset=0, gate=False):
+def make_front(k, door=False, offset=0, gate=False, shelf=False):
     """Face d'une case a la distance k, decalee lateralement de `offset`
     cases : offset 0 ferme le couloir, offset -1 ou +1 ferme le fond d'un
     passage lateral."""
@@ -247,6 +248,8 @@ def make_front(k, door=False, offset=0, gate=False):
                     p.set(x, y, c)
             elif door and -0.22 < u < 0.22 and v > -0.30:
                 p.set(x, y, door_pixel(u, v, k))
+            elif shelf and shelf_pixel(u - offset, v, k, False) is not None:
+                p.set(x, y, shelf_pixel(u - offset, v, k, False))
             else:
                 p.set(x, y, brick(u, v, k, False))
     return p
@@ -275,7 +278,7 @@ def door_pixel(u, v, k):
     return pal.lit("WOOD", max(0.0, min(1.0, t)))
 
 
-def make_side(i, lateral):
+def make_side(i, lateral, shelf=False):
     """Mur vertical a la position laterale `lateral` (en demi-cases :
     -0.5 = mur gauche du couloir, -1.5 = mur du fond d'un passage a
     gauche), vu entre les distances i et i+1.
@@ -300,7 +303,11 @@ def make_side(i, lateral):
         halfw = F / dist
         for y in range(max(0, int(CY - halfw)), min(VIEW_H, int(round(CY + halfw)))):
             v = (y - CY) * dist / (2 * F)
-            p.set(x, y, brick(dist, v, dist, True))
+            c = None
+            if shelf:                                # le long du mur : la
+                a = (dist - i) - 0.5                 # case vue de biais
+                c = shelf_pixel(a if lateral < 0 else -a, v, dist, True)
+            p.set(x, y, c if c is not None else brick(dist, v, dist, True))
             drawn = True
     return p if drawn else Piece(0, 0, 16, 1)
 
@@ -689,66 +696,193 @@ def make_niche():
     return p
 
 
+SHOP_LAMP = (CX + 34, CY - 16)                  # la lanterne du guichet
+
+
 def make_shop():
-    """L'echoppe : un auvent de toile, un comptoir de bois, et de quoi
-    marchander pose dessus. Elle occupe un mur, comme la niche, mais
-    prend toute sa largeur -- on ne la rate pas."""
+    """Le guichet d'Ossian : une baie taillee dans le mur, un linteau a
+    la marque de la maison, une grille de fer et, derriere, le noir d'ou
+    vient la voix -- et deux yeux qui y luisent a peine. Devant, un
+    comptoir de chene et ce qu'on y vend : des fioles de verre, un
+    parchemin roule, une epee couchee, une pile de pieces, et la balance
+    ou se pese le taux d'un depot refait.
+
+    Il occupe un mur entier, comme le pupitre du greffe : on ne passe
+    pas devant sans le voir. La flamme de la lanterne est a part (voir
+    make_flame) : le jeu l'anime."""
     x0, x1 = snap(CX - 46, CX + 46)
-    y0, y1 = CY - 40, CY + 34
+    y0, y1 = CY - 46, CY + 38
     p = Piece(x0, y0, x1 - x0, y1 - y0)
 
-    for y in range(CY - 30, CY + 26):                 # renfoncement du mur
-        for x in range(CX - 40, CX + 41):
-            e = max(abs(x - CX) / 40.0, abs(y - (CY - 2)) / 28.0)
+    def lit(mat, t):
+        return pal.lit(mat, max(0.0, min(1.0, t)))
+
+    # la baie : un encadrement de pierre taillee, en biseau
+    for y in range(CY - 38, CY + 34):
+        for x in range(CX - 44, CX + 45):
+            e = max(abs(x - CX) / 44.0, abs(y - (CY - 2)) / 36.0)
             if e > 1.0:
                 continue
-            if e > 0.93:
-                p.set(x, y, pal.lit("STONE", 0.34 + 0.22 * e))
+            if e > 0.90:
+                bev = (e - 0.90) / 0.10
+                side = -0.10 if (y < CY - 2 and abs(y - (CY - 2)) / 36.0 > abs(x - CX) / 44.0) \
+                    or (x < CX and abs(x - CX) / 44.0 >= abs(y - (CY - 2)) / 36.0) else 0.14
+                p.set(x, y, lit("STONE", 0.30 + side + 0.2 * bev
+                                + (noise(x, y, 3) - 0.5) * 0.06))
             else:
-                p.set(x, y, pal.lit("STONE", 0.88 + 0.09 * (1.0 - e)))
-
-    for i in range(9):                                # auvent raye
-        xa = CX - 38 + i * 9
-        for y in range(CY - 34, CY - 20):
-            sag = ((y - (CY - 34)) / 14.0) ** 2 * 3.0
-            for x in range(xa, xa + 9):
-                if not (CX - 40 <= x <= CX + 40):
-                    continue
-                if y - (CY - 34) > 11 - abs(x - CX) * 0.06 + sag * 0:
-                    continue
-                band = "CLOTHR" if i % 2 == 0 else "BONE"
-                t = 0.22 + 0.40 * ((y - (CY - 34)) / 14.0)
-                p.set(x, y, pal.lit(band, min(1.0, t)))
-    for x in range(CX - 40, CX + 41):                 # frange de l'auvent
-        p.set(x, CY - 20, pal.lit("WOOD", 0.30))
-
-    for y in range(CY + 4, CY + 26):                  # comptoir de chene
-        for x in range(CX - 36, CX + 37):
-            grain = 0.30 + 0.26 * ((x * 7 + y * 3) % 5) / 4.0
-            if y < CY + 8:                            # le plateau, eclaire
-                p.set(x, y, pal.lit("WOOD", 0.16 + 0.14 * ((x // 3) % 2)))
+                p.set(x, y, lit("STONE", 0.96))       # le noir derriere
+    # le linteau, a la marque de la maison : un sceau et deux traits
+    for y in range(CY - 38, CY - 28):
+        for x in range(CX - 40, CX + 41):
+            t = 0.22 + 0.10 * ((y - (CY - 38)) / 10.0) + (noise(x, y, 5) - 0.5) * 0.06
+            p.set(x, y, lit("STONE", t))
+    for x in range(CX - 40, CX + 41):
+        p.set(x, CY - 28, lit("STONE", 0.62))
+    for k in range(-1, 2, 2):
+        for x in range(CX + k * 30, CX + k * 12, -k):
+            p.set(x, CY - 34, lit("STONE", 0.55))
+    for y in range(CY - 37, CY - 29):
+        for x in range(CX - 5, CX + 6):
+            d = ((x - CX) / 5.0) ** 2 + ((y - (CY - 33)) / 4.0) ** 2
+            if d <= 1.0:
+                p.set(x, y, lit("GOLD", 0.20 + 0.45 * d))
+            elif d <= 1.4:
+                p.set(x, y, lit("STONE", 0.62))
+    # le fond : l'ombre, et deux yeux qui n'ont pas de visage
+    for s in (-1, 1):                                 # entre deux barreaux
+        ex, ey = CX + s * 13 + 1, CY - 24
+        for dx in (0, 1):
+            p.set(ex + dx, ey, lit("GOLD", 0.20))
+            p.set(ex + dx, ey + 1, lit("GOLD", 0.60))
+    # la grille : barreaux ronds, deux traverses, rivets
+    for y in range(CY - 27, CY + 2):
+        for x in range(CX - 38, CX + 39):
+            bar = (x - (CX - 38)) % 9
+            cross = y in (CY - 20, CY - 19, CY - 6, CY - 5)
+            if bar <= 1 or cross:
+                t = 0.22 if bar == 0 or (cross and y in (CY - 20, CY - 6)) else 0.48
+                p.set(x, y, lit("IRON", t))
+    for x in range(CX - 38, CX + 39, 9):
+        for y in (CY - 20, CY - 6):
+            p.set(x, y, lit("IRON", 0.02))
+    # le comptoir de chene
+    for y in range(CY + 2, CY + 30):
+        for x in range(CX - 41, CX + 42):
+            if y < CY + 6:                            # le plateau, eclaire
+                t = 0.08 + 0.12 * ((y - CY - 2) / 4.0)
             else:
-                p.set(x, y, pal.lit("WOOD", min(1.0, grain + 0.24)))
+                plank = (x - (CX - 41)) // 12
+                t = 0.46 + 0.10 * ((x * 3 + y * 7 + plank * 5) % 7) / 6.0
+                if (x - (CX - 41)) % 12 == 0:
+                    t = 0.85                          # le joint des planches
+            p.set(x, y, lit("WOOD", t + (noise(x // 2, y, 7) - 0.5) * 0.06))
+    for x in range(CX - 41, CX + 42):
+        p.set(x, CY + 6, lit("WOOD", 0.80))           # l'ombre du plateau
+    for x in (CX - 36, CX + 36):                      # les ferrures
+        for y in range(CY + 9, CY + 27):
+            p.set(x, y, lit("IRON", 0.35))
+            p.set(x + 1, y, lit("IRON", 0.12))
 
-    for i, (cx, r) in enumerate(((-24, 5), (-10, 4), (6, 6), (22, 4))):
-        mat = ("GOLD", "MAGIC", "IRON", "GOLD")[i]    # la marchandise
-        for y in range(CY + 4 - 2 * r, CY + 5):
-            for x in range(CX + cx - r, CX + cx + r + 1):
-                d = ((x - (CX + cx)) / float(r)) ** 2 + \
-                    ((y - (CY + 2 - r)) / float(r)) ** 2
-                if d <= 1.0:
-                    p.set(x, y, pal.lit(mat, 0.12 + 0.60 * d))
+    def bottle(bx, h, glass):
+        """Une fiole : ventre rond, col, bouchon, et le reflet du verre."""
+        for y in range(CY + 3 - h, CY + 3):
+            for x in range(bx - 5, bx + 6):
+                dy = y - (CY + 3 - h)
+                if dy < 3:                            # le bouchon
+                    if abs(x - bx) <= 1:
+                        p.set(x, y, lit("WOOD", 0.30))
+                    continue
+                if dy < h // 2:                       # le col
+                    if abs(x - bx) <= 1:
+                        p.set(x, y, lit(glass, 0.35 + 0.2 * (x - bx + 1)))
+                    continue
+                r = ((x - bx) / 5.0) ** 2 + ((y - (CY + 3 - h // 4)) / (h / 3.2)) ** 2
+                if r <= 1.0:
+                    p.set(x, y, lit(glass, 0.18 + 0.55 * r
+                                   + 0.15 * (x > bx)))
+        p.set(bx - 2, CY + 3 - h // 3, lit("STEEL", 0.0))
+        p.set(bx - 2, CY + 4 - h // 3, lit("STEEL", 0.2))
 
-    for y in range(CY - 18, CY - 4):                  # la lanterne du stand
-        for x in range(CX + 27, CX + 36):
-            d = ((x - (CX + 31)) / 4.0) ** 2 + ((y - (CY - 11)) / 6.0) ** 2
-            if d > 1.0:
-                continue
-            if d < 0.45:                              # la flamme dedans
-                p.set(x, y, pal.lit("FIRE", 0.10 + 0.55 * d))
-            else:                                     # sa monture de fer
-                p.set(x, y, pal.lit("IRON", 0.24 + 0.44 * d))
+    bottle(CX - 32, 14, "BLOOD")                      # soin
+    bottle(CX - 22, 17, "MAGIC")                      # potion majeure
+    for x in range(CX - 14, CX - 2):                  # le parchemin roule
+        for y in range(CY - 1, CY + 3):
+            p.set(x, y, lit("PARCH" if False else "BONE", 0.10 + 0.14 * abs(y - CY)))
+    for y in range(CY - 1, CY + 3):
+        p.set(CX - 14, y, lit("BONE", 0.45))
+        p.set(CX - 3, y, lit("BLOOD", 0.30))          # son ruban
+    for i in range(22):                               # l'epee couchee
+        x = CX + 8 + i
+        y = CY + 3 - (i // 8)
+        if i < 5:
+            p.set(x, y, lit("WOOD", 0.25))
+        elif i < 7:
+            for k in (-2, -1, 0, 1):
+                p.set(x, y + k, lit("GOLD", 0.20))
+        else:
+            p.set(x, y, lit("STEEL", 0.10))
+            p.set(x, y + 1, lit("STEEL", 0.45))
+    for k in range(4):                                # la pile de pieces
+        for x in range(CX + 29, CX + 36):
+            p.set(x, CY + 3 - k * 2, lit("GOLD", 0.12 + 0.07 * abs(x - CX - 32)))
+            p.set(x, CY + 4 - k * 2, lit("GOLD", 0.55))
+    # la balance, suspendue au milieu de la grille
+    bx = CX + 1
+    for y in range(CY - 24, CY + 3):
+        p.set(bx, y, lit("GOLD", 0.30))
+    for x in range(bx - 12, bx + 13):
+        p.set(x, CY - 16 + abs(x - bx) // 8, lit("GOLD", 0.15))
+    for s in (-1, 1):
+        cx = bx + s * 12
+        for y in range(CY - 15, CY - 7):
+            p.set(cx - (y - CY + 15) // 3, y, lit("GOLD", 0.45))
+            p.set(cx + (y - CY + 15) // 3, y, lit("GOLD", 0.45))
+        for x in range(cx - 4, cx + 5):
+            p.set(x, CY - 7, lit("GOLD", 0.10))
+            p.set(x, CY - 6, lit("GOLD", 0.50))
+    for x in range(bx - 3, bx + 4):
+        p.set(x, CY + 2, lit("GOLD", 0.40))
+    # la potence et la cage de la lanterne ; la flamme est a part
+    lx, ly = SHOP_LAMP
+    for y in range(ly - 12, ly - 7):
+        p.set(lx, y, lit("IRON", 0.30))
+    for x in range(lx, lx + 8):
+        p.set(x, ly - 12, lit("IRON", 0.30))
+    for y in range(ly - 7, ly + 8):
+        for x in range(lx - 5, lx + 6):
+            edge = abs(x - lx) == 5 or y in (ly - 7, ly + 7)
+            if edge:
+                p.set(x, y, lit("IRON", 0.24))
+            elif abs(x - lx) == 2 and ly - 5 < y < ly + 6:
+                p.set(x, y, lit("IRON", 0.50))
+            else:
+                p.set(x, y, lit("FIRE", 0.80))
     return p
+
+
+def make_flame(k, frame):
+    """La flamme de la lanterne du guichet, en trois temps : le jeu les
+    fait tourner, et la lueur bouge avec elle. A k pas, elle se
+    rapproche du point de fuite."""
+    lx, ly = SHOP_LAMP
+    p = Piece(0, 0, VIEW_W, VIEW_H)
+    lean = (-1, 0, 1)[frame]
+    tall = (5, 6, 4)[frame]
+    for y in range(ly - 6, ly + 7):
+        for x in range(lx - 4, lx + 5):
+            if abs(x - lx) == 2 and ly - 5 < y < ly + 6:
+                continue                              # la cage passe devant
+            dy = (ly + 4 - y) / float(tall + 2)
+            w = 2.6 * (1.0 - dy) ** 0.7 if 0 <= dy <= 1 else -1
+            dx = x - lx - lean * dy * 2
+            if w > 0 and abs(dx) <= w:
+                core = abs(dx) / max(w, 0.1) + dy * 0.6
+                p.set(x, y, pal.lit("FIRE", min(1.0, 0.05 + 0.55 * core)))
+            else:
+                glow = 0.62 + 0.08 * ((x + y + frame) % 3)
+                p.set(x, y, pal.lit("FIRE", glow))
+    q = trim(p)
+    return trim(shrink(q, k)) if k > 1 else q
 
 
 def make_ledger():
@@ -837,6 +971,136 @@ def make_ledger():
         for k in range(1, 4):
             p.set(x - k, y + k, pal.lit("BONE", 0.20 + 0.06 * k))
     return p
+
+
+# --- les rayonnages du greffe -------------------------------------------
+# Une texture en coordonnees monde, comme la pierre et les portes : le
+# meme meuble se dessine alors de face a un, deux ou trois pas, et de
+# biais sur les murs lateraux, sans qu'on ait a le redessiner pour chaque
+# vue. `a` court le long du mur, de -0.5 a 0.5 ; `v` descend de la voute
+# (-0.5) au dallage (0.5).
+SHELF_TOP, SHELF_BAY, SHELF_BAYS = -0.40, 0.21, 4
+LEATHERS = ("BLOOD", "WOOD", "CLOTHR", "HIDE", "CLOTHG", "EARTH",
+            "CLOTHB", "WOOD", "BLOOD", "HIDE", "CLOTHP")
+
+
+def shelf_bays():
+    """Les volumes de chaque planche : des dos debout d'epaisseur et de
+    hauteur inegales, un vide la ou un registre est sorti et n'est pas
+    revenu, et ca et la une pile couchee faute de place."""
+    rnd = random.Random(1717)
+    bays = []
+    for bay in range(SHELF_BAYS):
+        books, a = [], -0.41
+        while True:
+            if rnd.random() < 0.10:                  # un registre sorti
+                a += 0.035
+                continue
+            if rnd.random() < 0.09:                  # une pile couchee
+                w = 0.13
+                if a + w > 0.41:
+                    break
+                books.append(("pile", a, a + w, 0.09,
+                              [rnd.choice(LEATHERS) for _ in range(3)]))
+                a += w + 0.01
+                continue
+            w = rnd.uniform(0.026, 0.058)
+            if a + w > 0.41:
+                break
+            books.append(("dos", a, a + w, rnd.uniform(0.125, 0.172),
+                          (rnd.choice(LEATHERS), rnd.uniform(0.2, 0.5),
+                           rnd.random() < 0.45)))
+            a += w + (0.006 if rnd.random() < 0.3 else 0.0)
+        bays.append(books)
+    return bays
+
+
+SHELF_BOOKS = shelf_bays()
+
+
+def shelf_pixel(a, v, dist, side):
+    """Une teinte du rayonnage, ou None hors du meuble (la pierre)."""
+    base = wall_tone(dist, side)
+
+    def wood(t):
+        return pal.lit("WOOD", max(0.0, min(1.0, base + t)))
+
+    if abs(a) > 0.465 or v < -0.455 or v > 0.475:
+        return None
+    if abs(a) > 0.425:                               # les montants
+        return wood(0.02 + (0.14 if abs(a) > 0.452 else 0.0)
+                    + 0.06 * noise(int((v + 8) * 70), 3, 61))
+    if v < SHELF_TOP:                                # la corniche
+        return wood(-0.04 if v < -0.44 else 0.10)
+    bay = int((v - SHELF_TOP) / SHELF_BAY)
+    if bay >= SHELF_BAYS:                            # le socle
+        return wood(0.16)
+    vb = v - SHELF_TOP - bay * SHELF_BAY             # 0 en haut de la case
+    floor = SHELF_BAY - 0.024                        # le dessus de la planche
+    if vb >= floor:
+        return wood(-0.06 if vb < floor + 0.008 else 0.08)
+    back = wood(0.46 - 0.14 * (vb / floor))          # le fond, ombre de la
+    for kind, a0, a1, h, look in SHELF_BOOKS[bay]:   # planche du dessus
+        if not a0 <= a < a1:
+            continue
+        top = floor - h
+        if vb < top:
+            return back
+        e = (a - a0) / (a1 - a0)
+        if kind == "pile":                           # couches, tranche claire
+            layer = min(2, int((floor - vb) / (h / 3.0)))
+            if e < 0.05 or e > 0.95:
+                return pal.lit("PARCHD", max(0.0, min(1.0, base + 0.10)))
+            y = ((floor - vb) / (h / 3.0)) % 1.0
+            t = base + 0.02 + (0.20 if y < 0.18 else 0.0) + 0.10 * e
+            return pal.lit(look[layer], max(0.0, min(1.0, t)))
+        mat, lab, old = look
+        t = base + 0.02 + 0.40 * abs(e - 0.32)       # le dos est bombe
+        t += 0.10 * ((vb - top) / h)
+        rel = (vb - top) / h
+        if old and (abs(rel - 0.10) < 0.022 or abs(rel - 0.84) < 0.022):
+            return pal.lit("GOLD", max(0.0, min(1.0, base - 0.04 + 0.4 * e)))
+        if abs(rel - lab) < 0.07 and 0.14 < e < 0.86:   # l'etiquette de cote
+            return pal.lit("PARCHD", max(0.0, min(1.0, base - 0.06 + 0.3 * e)))
+        return pal.lit(mat, max(0.0, min(1.0, t)))
+    return back
+
+
+def trim(p):
+    """Rogne un morceau au plus petit cadre qui porte ses pixels, cale
+    sur seize en largeur : le masque et les huit plans d'un pixel
+    transparent coutent autant que ceux d'un pixel dessine. Le morceau
+    garde sa place a l'ecran -- il la porte avec lui."""
+    rows = [y for y in range(p.h) if any(c is not None for c in p.px[y])]
+    cols = [x for x in range(p.w)
+            if any(p.px[y][x] is not None for y in range(p.h))]
+    if not rows:
+        return Piece(0, 0, 16, 1)
+    xa, xb = snap(p.x0 + cols[0], p.x0 + cols[-1] + 1)
+    ya, yb = p.y0 + rows[0], p.y0 + rows[-1] + 1
+    q = Piece(xa, ya, xb - xa, yb - ya)
+    for y in range(ya, yb):
+        for x in range(max(xa, p.x0), min(xb, p.x0 + p.w)):
+            q.px[y - ya][x - xa] = p.px[y - p.y0][x - p.x0]
+    return q
+
+
+def shrink(p, k):
+    """Un detail dessine a un pas, vu a k pas : tout se rapproche du
+    point de fuite d'un facteur k. On prend le pixel au centre de chaque
+    bloc de k sur k plutot qu'une moyenne -- des index de palette ne se
+    moyennent pas."""
+    xa, xb = snap(CX + (p.x0 - CX) / k, CX + (p.x0 + p.w - CX) / k)
+    ya = int(CY + (p.y0 - CY) / k)
+    yb = int(round(CY + (p.y0 + p.h - CY) / k))
+    q = Piece(xa, ya, xb - xa, yb - ya)
+    for y in range(ya, yb):
+        for x in range(xa, xb):
+            sx = int(CX + (x + 0.5 - CX) * k)
+            sy = int(CY + (y + 0.5 - CY) * k)
+            if 0 <= sx - p.x0 < p.w and 0 <= sy - p.y0 < p.h:
+                q.set(x, y, p.px[sy - p.y0][sx - p.x0])
+    return q
 
 
 def make_trap():
@@ -1117,6 +1381,31 @@ def crop(p, top, height):
     return out
 
 
+def mini_face(p):
+    """Le portrait reduit de moitie pour le panneau du groupe : six blocs
+    de vingt-quatre lignes n'ont plus la place du grand, qui reste sur
+    la fiche. Chaque pixel prend la teinte la plus presente de son carre
+    de deux sur deux -- des index de palette ne se moyennent pas --, et
+    le bas du buste est rogne."""
+    q = Piece(0, 0, 16, FACE_H)
+    for y in range(FACE_H):
+        for x in range(16):
+            seen = {}
+            for dy in (0, 1):
+                for dx in (0, 1):
+                    sy, sx = 2 * y + dy + FACE_TOP, 2 * x + dx
+                    if 0 <= sy < p.h and 0 <= sx < p.w:
+                        c = p.px[sy][sx]
+                        if c is not None:
+                            seen[c] = seen.get(c, 0) + 1
+            if seen:
+                q.px[y][x] = max(seen, key=lambda c: (seen[c], -c))
+    return q
+
+
+FACE_TOP, FACE_H = 2, 15                 # le visage reduit : tete et cou
+
+
 def make_portrait(cls):
     """Portrait 32x32, un par classe : meme tete eclairee, coiffee,
     casquee ou encapuchonnee selon le metier."""
@@ -1188,7 +1477,7 @@ def make_portrait(cls):
         for x in (FACE_CX - 4, FACE_CX + 4):                    # rides du front
             p.set(x, EYE_Y - 6, pal.lit("SKIN", 0.62))
             p.set(x, EYE_Y - 5, pal.lit("SKIN", 0.62))
-    else:                                             # ensorceleur
+    elif cls == 7:                                    # ensorceleur
         draw_shoulders(p, (pal.lit("CLOTHP", 0.40), pal.lit("CLOTHP", 0.70)))
         draw_hair(p, HAIR_DARK, jaw=0.42, hairline=-0.20, drop=0.66,
                   volume=1.26, base=0.14, sweep=-0.26)
@@ -1198,6 +1487,38 @@ def make_portrait(cls):
                       brow=pal.lit("HAIRD", 0.85))
         for k in range(4):                            # une meche libre
             p.set(FACE_CX - 5 + k, EYE_Y - 4 + k, pal.lit("HAIRD", 0.55))
+    elif cls == 8:                                    # druide
+        draw_shoulders(p, (pal.lit("CLOTHG", 0.55), pal.lit("EARTH", 0.70)))
+        draw_hair(p, HAIR_LIGHT, jaw=0.34, hairline=-0.10, drop=0.95,
+                  volume=1.30, base=0.18)
+        draw_face(p, SKIN, jaw=0.34)
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=pal.lit("MOSS", 0.30),
+                      brow=pal.lit("HAIRL", 0.55))
+        draw_beard(p, HAIR_LIGHT, length=6, moustache=True)
+        for k, x in enumerate(range(FACE_CX - 8, FACE_CX + 9, 2)):
+            y = EYE_Y - 9 + abs(x - FACE_CX) // 4     # la couronne de feuilles
+            p.set(x, y, pal.lit("MOSS", 0.25 + 0.2 * (k % 2)))
+            p.set(x + 1, y + 1, pal.lit("MOSS", 0.55))
+    elif cls == 9:                                    # moine
+        draw_shoulders(p, (pal.lit("GOLD", 0.55), pal.lit("FIRE", 0.72)))
+        draw_face(p, SKIN, jaw=0.36, ry=FACE_RY * 1.04)   # crane rase
+        draw_neck(p, SKIN, wide=4)
+        draw_features(p, SKIN, iris=pal.lit("EARTH", 0.65),
+                      brow=pal.lit("HAIRD", 0.80))
+        p.set(FACE_CX, EYE_Y - 5, pal.lit("BLOOD", 0.30))   # la marque
+        p.set(FACE_CX, EYE_Y - 4, pal.lit("BLOOD", 0.40))
+    elif cls == 10:                                   # forgeron
+        draw_shoulders(p, (pal.lit("HIDE", 0.35), pal.lit("HIDE", 0.65)))
+        draw_hair(p, HAIR_DARK, jaw=0.26, hairline=-0.30, drop=0.30,
+                  volume=1.02, base=0.20)
+        draw_face(p, SKIN, jaw=0.24)
+        draw_neck(p, SKIN, wide=6)
+        draw_features(p, SKIN, iris=pal.lit("WOOD", 0.60),
+                      brow=pal.lit("HAIRD", 0.85))
+        draw_beard(p, HAIR_DARK, length=4, moustache=True)
+        for k in range(3):                            # la suie sur la joue
+            p.set(FACE_CX + 5 + k % 2, EYE_Y + 2 + k, pal.lit("IRON", 0.70))
     return p
 
 
@@ -1246,15 +1567,17 @@ def ellipse(p, cx, cy, rx, ry, idx):
                 p.set(x, y, idx)
 
 
-def make_monster(kind, frame=0):
-    """Neuf familles de creatures, deux poses chacune, sculptees et
-    eclairees par tools/monster_art.py. Chaque famille sert plusieurs
-    entrees du bestiaire."""
-    import monster_art
-    w, h = monster_art.W, monster_art.H              # largeur multiple de 16
-    x0 = ((CX - w // 2) // 16) * 16
-    p = Piece(x0, CY - h // 2 + 6, w, h)
-    p.px = monster_art.monster(kind, frame)
+def make_monster(kind, pose=0):
+    """Une creature en combat, a un pas : modelee en volumes par
+    tools/monsters.py, et posee dans la vue les pieds sur le dallage de
+    la case d'en face."""
+    import monsters
+    x0 = ((CX - monsters.W // 2) // 16) * 16
+    p = Piece(x0, CY - monsters.H // 2 + 6, monsters.W, monsters.H)
+    for y, row in enumerate(monsters.draw(kind, pose)):
+        for x, idx in enumerate(row):
+            if idx is not None:
+                p.px[y][x] = idx
     return p
 
 
@@ -1293,9 +1616,9 @@ def build_art():
     pieces += [make_side(i, 0.5) for i in range(DEPTHS)]
     ART_INDEX["ART_DOOR"] = len(pieces)
     pieces += [make_front(k, door=True) for k in (1, 2, 3)]
-    ART_INDEX["ART_MONSTER"] = len(pieces)
-    for k in range(NMONSTERART):                                 # deux poses
-        pieces += [make_monster(k, 0), make_monster(k, 1)]
+    # Le bestiaire ne part plus avec l'executable : il est dans le paquet
+    # du donjon (voir build_bestiary), a la suite des morceaux communs.
+    # Ses indices continuent ceux d'ici ; BlitPiece sait ou chercher.
     # de quoi habiller les passages lateraux : la face du fond du passage
     # et son mur exterieur, sans quoi une ouverture n'est qu'un trou noir
     ART_INDEX["ART_FRONTL"] = len(pieces)
@@ -1314,10 +1637,28 @@ def build_art():
     pieces += [make_lever(s) for s in (0, 1)]
     ART_INDEX["ART_NICHE"] = len(pieces)
     pieces += [make_niche()]
-    ART_INDEX["ART_SHOP"] = len(pieces)
-    pieces += [make_shop()]
-    ART_INDEX["ART_LEDGER"] = len(pieces)
-    pieces += [make_ledger()]
+    ART_INDEX["ART_SHOP"] = len(pieces)            # a un, deux, trois pas
+    shop = make_shop()
+    pieces += [shop, trim(shrink(shop, 2)), trim(shrink(shop, 3))]
+    ART_INDEX["ART_FLAME"] = len(pieces)           # trois flammes, a un pas
+    pieces += [make_flame(1, f) for f in range(3)]
+    ART_INDEX["ART_LEDGER"] = len(pieces)          # a un, deux, trois pas :
+    ledger = make_ledger()                         # on le voit du fond de
+    pieces += [ledger, shrink(ledger, 2), shrink(ledger, 3)]    # la salle
+    ART_INDEX["ART_ARCHIVE"] = len(pieces)          # les rayonnages du
+    pieces += [make_front(k, shelf=True) for k in (1, 2, 3)]      # greffe
+    ART_INDEX["ART_ARCHL"] = len(pieces)
+    pieces += [make_side(i, -0.5, shelf=True) for i in range(4)]
+    ART_INDEX["ART_ARCHR"] = len(pieces)
+    pieces += [make_side(i, 0.5, shelf=True) for i in range(4)]
+    ART_INDEX["ART_ARCHFL"] = len(pieces)          # au fond d'un passage
+    pieces += [make_front(k, offset=-1, shelf=True) for k in (1, 2, 3, 4)]
+    ART_INDEX["ART_ARCHFR"] = len(pieces)
+    pieces += [make_front(k, offset=1, shelf=True) for k in (1, 2, 3, 4)]
+    ART_INDEX["ART_ARCHOL"] = len(pieces)          # et le mur exterieur :
+    pieces += [make_side(i, -1.5, shelf=True) for i in (2, 3)]   # la salle
+    ART_INDEX["ART_ARCHOR"] = len(pieces)          # vue de son entree
+    pieces += [make_side(i, 1.5, shelf=True) for i in (2, 3)]
     ART_INDEX["ART_TRAP"] = len(pieces)
     pieces += [make_trap()]
     ART_INDEX["ART_PORTRAIT"] = len(pieces)
@@ -1326,9 +1667,20 @@ def build_art():
     # lui, ce qui laisse la place d'ecrire les points sans abreger.
     pieces += [crop(make_portrait(c), PORTRAIT_TOP, PORTRAIT_H)
                for c in range(NCLASSPORTRAIT)]
+    ART_INDEX["ART_FACE"] = len(pieces)            # le meme, pour le
+    pieces += [mini_face(make_portrait(c))         # panneau des six
+               for c in range(NCLASSPORTRAIT)]
     ART_INDEX["ART_ICON"] = len(pieces)
     pieces += [make_icon(k) for k in range(5)]
 
+    ART_INDEX["ART_BANK"] = len(pieces)            # le bestiaire commence la
+    return encode_bank(pieces), pieces
+
+
+def encode_bank(pieces):
+    """Un banc de morceaux : leur nombre, un descripteur de douze octets
+    par morceau (decalage depuis le debut du banc, largeur en mots,
+    hauteur, destination a l'ecran), puis leurs plans."""
     blobs, descs = [], []
     offset = 2 + len(pieces) * 12
     for p in pieces:
@@ -1337,8 +1689,48 @@ def build_art():
         descs.append(struct.pack(">IHHHH", offset, wwords, p.h, dst, 0))
         blobs.append(data)
         offset += len(data)
-    return (struct.pack(">H", len(pieces)) + b"".join(descs) + b"".join(blobs),
-            pieces)
+    return struct.pack(">H", len(pieces)) + b"".join(descs) + b"".join(blobs)
+
+
+def build_bestiary():
+    """Le bestiaire d'un donjon : trois poses par famille, puis deux vues
+    lointaines. Il se range dans le paquet du donjon, pas dans
+    l'executable : chaque donjon aura le sien, comme dans les jeux de
+    l'epoque ou un donjon etait un jeu de fichiers sur la disquette."""
+    base = ART_INDEX["ART_BANK"]
+    pieces, far = [], []
+    for k in range(NMONSTERART):                   # trois poses : deux qui
+        near = [make_monster(k, p) for p in range(NMONPOSES)]   # respirent,
+        pieces += [trim(p) for p in near]          # une qui frappe
+        # La meme creature dans le couloir, une et deux cases plus loin :
+        # la case d'en face est a un pas et demi, les suivantes a deux et
+        # demi et trois et demi -- tout se rapproche du point de fuite
+        # d'autant.
+        far += [trim(shrink(near[0], 2.5 / 1.5)),
+                trim(shrink(near[0], 3.5 / 1.5))]
+    ART_INDEX["ART_MONSTER"] = base
+    ART_INDEX["ART_MONFAR"] = base + len(pieces)
+    pieces += far
+    return encode_bank(pieces), pieces
+
+
+PACKMAGIC = b"FDG1"
+
+
+def build_pack(maps, bank):
+    """Le paquet d'un donjon, tel que LoadDungeon le lit : une en-tete
+    (magique, puis decalage et taille des cartes, puis du bestiaire),
+    les cartes, et le banc de morceaux cale sur quatre octets -- le
+    blitter lit des mots, et le paquet est charge tel quel en Chip."""
+    head = 4 + 4 * 4
+    map_off = head
+    art_off = (map_off + len(maps) + 3) & ~3
+    out = bytearray(PACKMAGIC)
+    out += struct.pack(">IIII", map_off, len(maps), art_off, len(bank))
+    out += maps
+    out += bytes(art_off - len(out))
+    out += bank
+    return bytes(out)
 
 
 
@@ -1406,6 +1798,9 @@ LEVER, GATE = 7, 8                       # herse et son levier
 SHOP, TRAP = 9, 10                       # echoppe et dallage piege
 LEDGER = 11                              # le grand registre, dernier etage
 STAIRSUP = 12                            # l'escalier qui remonte d'un etage
+ARCHIVE = 13                             # un rayonnage du greffe
+NARCHIVES = 3                            # les trois livres qu'on y lit
+SOLID = (WALL, NICHE, LEVER, GATE, SHOP, LEDGER, ARCHIVE)
 NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 
@@ -1604,55 +1999,22 @@ def build_level(level, seed):
             free.remove(shop)
 
     # Le grand registre, au dernier etage seulement : le greffe est au
-    # fond, la ou les echeances sont les plus vieilles. On le scelle
-    # dans un mur borde par un couloir, loin du depart -- il faut le
-    # chercher -- mais jamais colle a l'escalier, sinon on tomberait
-    # dessus en sortant. Sans lui, la porte des quittances ne cede pas.
-    ledger, greffe = None, None
+    # fond, la ou les echeances sont les plus vieilles. Loin du depart --
+    # il faut le chercher -- mais jamais colle a l'escalier, sinon on
+    # tomberait dessus en sortant. Sans lui, la porte des quittances ne
+    # cede pas.
+    ledger = greffe = None
     if level == 2:
-        for (cx, cy), d in sorted(reach.items(), key=lambda kv: -kv[1]):
-            if grid[cy][cx] != FLOOR:
-                continue
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                nx, ny = cx + dx, cy + dy
-                if not (0 < nx < MAPW - 1 and 0 < ny < MAPH - 1):
-                    continue
-                if grid[ny][nx] != WALL or par[ny][nx]:
-                    continue
-                if abs(nx - far[0]) + abs(ny - far[1]) < 3:
-                    continue
-                if shop and abs(nx - shop[0]) + abs(ny - shop[1]) < 3:
-                    continue
-                ledger, greffe = (nx, ny), (cx, cy)
-                break
-            if ledger:
-                break
-        assert ledger, "dernier etage sans grand registre"
-        grid[ledger[1]][ledger[0]] = LEDGER
-        if ledger in free:
-            free.remove(ledger)
-
-        # La salle du greffe : le pupitre ne donne plus sur un bout de
-        # couloir mais sur une chambre. On n'ouvre que du mur nu, et
-        # jamais au contact d'un levier ou d'une herse -- ceux-la
-        # comptent sur le trace pour couper la route, et une salle
-        # percee a cote leur ferait un contournement.
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                x, y = greffe[0] + dx, greffe[1] + dy
-                if not (1 <= x < MAPW - 1 and 1 <= y < MAPH - 1):
-                    continue
-                if grid[y][x] != WALL or par[y][x]:
-                    continue
-                if any(grid[y + b][x + a] in (GATE, LEVER)
-                       for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
-                    continue
-                grid[y][x] = FLOOR
-                free.append((x, y))
+        ledger, greffe = place_greffe(grid, par, reach, far, shop,
+                                      start)
+        close_greffe(grid, par, greffe, start)
+        shelve_greffe(grid, par, greffe)
+        free[:] = [c for c in free if grid[c[1]][c[0]] & 0x0f == FLOOR]
+        free.extend(c for c in greffe["room"] if c not in free)
 
     # Les dalles piegees : sur du dallage nu, loin du depart, et jamais
-    # devant l'echoppe ni devant le registre -- on doit pouvoir aller
-    # marchander et signer sans sauter.
+    # devant l'echoppe ni dans le greffe -- on doit pouvoir aller
+    # marchander, lire et signer sans sauter.
     traps = 0
     for x, y in list(free):
         if traps >= 4 + 2 * level:
@@ -1663,7 +2025,7 @@ def build_level(level, seed):
             continue
         if shop and abs(x - shop[0]) + abs(y - shop[1]) <= 1:
             continue
-        if ledger and abs(x - ledger[0]) + abs(y - ledger[1]) <= 1:
+        if greffe and (x, y) in greffe["room"]:
             continue
         grid[y][x] = TRAP
         par[y][x] = rnd.randrange(NTRAPKINDS)
@@ -1685,12 +2047,234 @@ def build_level(level, seed):
                     par[y][x] = ITEMS[rnd.choice(loot)]
                     niches += 1
     # L'escalier qui remonte, sur la case d'arrivee : on redescend par ou
-    # l'on est venu. Le premier etage n'en a pas -- au-dessus, c'est le
-    # jour, et la crypte ne se quitte que par le bas.
-    if level > 0:
-        grid[start[1]][start[0]] = STAIRSUP
+    # l'on est venu. Celui du premier etage ramene a Ambelune -- on en
+    # sort, mais on n'est pas quitte : la crypte ne se quitte que par le
+    # bas.
+    grid[start[1]][start[0]] = STAIRSUP
 
     return grid, par, start, far
+
+
+def components(grid):
+    """Les zones qu'on parcourt sans rien forcer : ni serrure, ni herse,
+    ni porte a runes. -> {case: numero de zone}."""
+    import collections
+    blockers = SOLID + (LOCKED, RUNE)
+    zone, n = {}, 0
+    for y in range(MAPH):
+        for x in range(MAPW):
+            if (x, y) in zone or (grid[y][x] & 0x0f) in blockers:
+                continue
+            zone[(x, y)] = n
+            q = collections.deque([(x, y)])
+            while q:
+                cx, cy = q.popleft()
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = cx + dx, cy + dy
+                    if not (0 <= nx < MAPW and 0 <= ny < MAPH):
+                        continue
+                    if (nx, ny) in zone or (grid[ny][nx] & 0x0f) in blockers:
+                        continue
+                    zone[(nx, ny)] = n
+                    q.append((nx, ny))
+            n += 1
+    return zone
+
+
+def place_greffe(grid, par, reach, far, shop, start):
+    """Le greffe : le pupitre du grand registre au milieu du mur du fond,
+    et devant lui une salle de trois sur trois.
+
+    Le pupitre etait scelle dans le premier mur venu, la salle creusee
+    tout autour de la case d'ou on le lit : il se retrouvait souvent en
+    pilier au milieu, du couloir des deux cotes. On cherche maintenant un
+    mur dont les deux voisins le long du fond sont du mur aussi, et l'on
+    creuse la salle devant, en profondeur.
+
+    Une salle percee dans un labyrinthe relie les couloirs qu'elle
+    touche. Elle ne doit donc jamais joindre deux zones que separait une
+    serrure, une herse ou une porte a runes : ce serait un passage de
+    service autour de l'obstacle. On le verifie zone par zone."""
+    zone = components(grid)
+    best = None
+    deep = max(reach.values()) // 2                  # la moitie du fond
+    for (cx, cy), d in sorted(reach.items(), key=lambda kv: -kv[1]):
+        if grid[cy][cx] & 0x0f != FLOOR or d < deep:
+            continue
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            lx, ly = cx + dx, cy + dy                # le pupitre
+            if not (1 <= lx < MAPW - 1 and 1 <= ly < MAPH - 1):
+                continue
+            if grid[ly][lx] != WALL or par[ly][lx]:
+                continue
+            if abs(lx - far[0]) + abs(ly - far[1]) < 3:
+                continue
+            if shop and abs(lx - shop[0]) + abs(ly - shop[1]) < 3:
+                continue
+            nx, ny = -dx, -dy                        # vers la salle
+            tx, ty = dy, dx                          # le long du fond
+            flanks = [(lx + tx, ly + ty), (lx - tx, ly - ty)]
+            if any(grid[y][x] != WALL for x, y in flanks):
+                continue
+            room = [(lx + nx * k + tx * l, ly + ny * k + ty * l)
+                    for k in (1, 2, 3) for l in (-1, 0, 1)]
+            if not all(1 <= x < MAPW - 1 and 1 <= y < MAPH - 1
+                       for x, y in room):
+                continue
+            ok = True
+            for x, y in room:
+                t = grid[y][x] & 0x0f
+                if t not in (FLOOR, WALL) or (t == WALL and par[y][x]):
+                    ok = False
+                    break
+                if (x, y) == far or any(
+                        (grid[y + b][x + a] & 0x0f) in (GATE, LEVER, STAIRS)
+                        for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                    ok = False
+                    break
+            if not ok:
+                continue
+            touched = set()                          # les zones que la
+            for x, y in room:                        # salle rejoindrait
+                for a, b in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+                    if (x + a, y + b) in zone:
+                        touched.add(zone[(x + a, y + b)])
+            if len(touched) != 1:
+                continue
+            walls = set()                            # le pourtour, en mur nu
+            for x, y in room + [(lx, ly)]:
+                for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    c = (x + a, y + b)
+                    if c in room or c == (lx, ly):
+                        continue
+                    if grid[c[1]][c[0]] == WALL and not par[c[1]][c[0]] \
+                            and 0 < c[0] < MAPW - 1 and 0 < c[1] < MAPH - 1:
+                        walls.add(c)
+            if len(walls) < NARCHIVES + 2:
+                continue
+            # On essaie la salle sur une copie, muree au mieux : le
+            # meilleur greffe est celui qui garde le moins d'entrees --
+            # une salle, pas un carrefour --, et a egalite le plus loin.
+            trial = [row[:] for row in grid]
+            greffe = dig_greffe(trial, (lx, ly), room, flanks, (nx, ny))
+            close_greffe(trial, par, greffe, start)
+            doors = len(openings(trial, room))
+            score = (doors, -d)
+            if best is None or score < best[0]:
+                best = score, greffe
+    assert best, "dernier etage sans place pour le greffe"
+    greffe = dig_greffe(grid, *(best[1][k] for k in
+                                ("ledger", "room", "flanks", "normal")))
+    return greffe["ledger"], greffe
+
+
+def dig_greffe(grid, ledger, room, flanks, normal):
+    grid[ledger[1]][ledger[0]] = LEDGER
+    for x, y in room:
+        if grid[y][x] == WALL:
+            grid[y][x] = FLOOR
+    return {"ledger": ledger, "room": room, "flanks": flanks,
+            "normal": normal}
+
+
+def openings(grid, room):
+    """Les cases de dallage qui touchent la salle du dehors."""
+    room = set(room)
+    out = set()
+    for x, y in room:
+        for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            c = (x + a, y + b)
+            if c not in room and (grid[c[1]][c[0]] & 0x0f) not in \
+                    (WALL, NICHE, LEVER, SHOP, LEDGER, ARCHIVE):
+                out.add(c)
+    return out
+
+
+def close_greffe(grid, par, greffe, start):
+    """Une salle creusee dans le labyrinthe s'ouvre sur tous les couloirs
+    qu'elle touche : ce n'est plus une salle, c'est un carrefour. On mure
+    donc chaque ouverture dont le reste de l'etage peut se passer -- une
+    case de dallage nu, sans rien au contact, dont la fermeture ne coupe
+    rien : ni une case de l'etage de son depart, ni deux cases d'une meme
+    zone, ce qui ferait d'une serrure ou d'une herse le seul chemin. Il
+    reste au moins une entree, puisque la salle elle-meme doit rester
+    atteignable."""
+    room = set(greffe["room"])
+    special = (DOOR, LOCKED, RUNE, LEVER, GATE, SHOP, NICHE, STAIRS,
+               STAIRSUP, LEDGER)
+    around = set()
+    for x, y in room:
+        for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            c = (x + a, y + b)
+            if c not in room and grid[c[1]][c[0]] == FLOOR:
+                around.add(c)
+
+    def everything(g):                               # tout ce qu'on atteint,
+        seen = distances_all(g, start)               # en forcant tout
+        return seen
+
+    for x, y in sorted(around):
+        if par[y][x] or (x, y) == start:
+            continue
+        if any((grid[y + b][x + a] & 0x0f) in special
+               for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            continue
+        before = everything(grid)
+        zones = len(set(components(grid).values()))
+        grid[y][x] = WALL
+        after = everything(grid)
+        if after != before - {(x, y)} or \
+                len(set(components(grid).values())) != zones:
+            grid[y][x] = FLOOR                       # elle servait
+    return greffe
+
+
+def distances_all(grid, start):
+    """Les cases qu'on atteint en ouvrant tout ce qui s'ouvre."""
+    import collections
+    seen, q = {start}, collections.deque([start])
+    while q:
+        x, y = q.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
+                continue
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP, LEDGER,
+                                         ARCHIVE):
+                continue
+            seen.add((nx, ny))
+            q.append((nx, ny))
+    return seen
+
+
+def shelve_greffe(grid, par, greffe):
+    """Les rayonnages : les deux pans du fond qui encadrent le pupitre
+    d'abord, puis les murs lateraux, du fond vers l'entree. Chacun porte
+    en parametre le livre qu'on y lit ; ce qui reste de mur nu dans la
+    salle se couvre aussi de registres, mais muets."""
+    lx, ly = greffe["ledger"]
+    nx, ny = greffe["normal"]
+    room = set(greffe["room"])
+    tx, ty = ny, nx
+    cands = list(greffe["flanks"])
+    for k in (1, 2, 3):                              # les murs lateraux,
+        for l in (-2, 2):                            # du fond vers l'entree
+            cands.append((lx + nx * k + tx * l, ly + ny * k + ty * l))
+    for l in (-1, 0, 1):                             # le mur d'en face
+        cands.append((lx + nx * 4 + tx * l, ly + ny * 4 + ty * l))
+    book = 0
+    for x, y in cands:
+        if not (0 < x < MAPW - 1 and 0 < y < MAPH - 1):
+            continue
+        if grid[y][x] != WALL or par[y][x]:
+            continue
+        if not any((x + a, y + b) in room
+                   for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            continue
+        grid[y][x] = ARCHIVE
+        par[y][x] = book if book < NARCHIVES else 0x7f
+        book += 1
+    assert book >= NARCHIVES, "un greffe sans ses trois livres"
 
 
 def build_maps():
@@ -1723,8 +2307,7 @@ def distances(grid, start, blocked=()):
                 continue
             if (nx, ny) in blocked:
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, GATE, SHOP,
-                                         LEDGER):
+            if (grid[ny][nx] & 0x0f) in SOLID:
                 continue
             dist[(nx, ny)] = dist[(x, y)] + 1
             q.append((nx, ny))
@@ -1751,7 +2334,7 @@ def check_solvable(grid, par, start):
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
             if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LOCKED, LEVER, SHOP,
-                                         LEDGER):
+                                         LEDGER, ARCHIVE):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
@@ -1782,7 +2365,8 @@ def check_solvable(grid, par, start):
                 # Une serrure ne coupe pas la route : le groupe a des
                 # cles. Seule la herse compte, c'est tout l'objet du
                 # controle.
-                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP):
+                if (grid[ny][nx] & 0x0f) in (WALL, NICHE, LEVER, SHOP,
+                                             LEDGER, ARCHIVE):
                     continue
                 reach.add((nx, ny))
                 q.append((nx, ny))
@@ -1818,7 +2402,8 @@ def check_reachable(grid, start):
             nx, ny = x + dx, y + dy
             if (nx, ny) in seen or not (0 <= nx < MAPW and 0 <= ny < MAPH):
                 continue
-            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP, LEDGER):
+            if (grid[ny][nx] & 0x0f) in (WALL, NICHE, SHOP, LEDGER,
+                                         ARCHIVE):
                 continue
             seen.add((nx, ny))
             q.append((nx, ny))
@@ -1876,6 +2461,10 @@ if __name__ == "__main__":
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
     art, pieces = build_art()
     open(os.path.join(ROOT, "data", "dgnart.bin"), "wb").write(art)
+    bank, beasts = build_bestiary()
+    maps, levels = build_maps()
+    pack = build_pack(maps, bank)
+    open(os.path.join(ROOT, "data", "crypte.dgn"), "wb").write(pack)
     with open(os.path.join(ROOT, "src", "artidx.i"), "w") as f:
         f.write(";----------------------------------------------------------\n")
         f.write("; artidx.i - GENERE PAR tools/gen_dungeon.py\n")
@@ -1889,8 +2478,10 @@ if __name__ == "__main__":
         for k, v in ART_INDEX.items():
             f.write(f"{k}\t= {v}\n")
         f.write(f"NMONSTERART\t= {NMONSTERART}\n")
-    maps, levels = build_maps()
-    open(os.path.join(ROOT, "data", "dgnmap.bin"), "wb").write(maps)
+        f.write(f"NMONPOSES\t= {NMONPOSES}\n")
+        # La place du paquet en Chip : celui-ci, et de quoi en accueillir
+        # un plus gros le jour ou un autre donjon le sera.
+        f.write(f"DGNPACKMAX\t= {(len(pack) * 5 // 4 + 4095) & ~4095}\n")
     write_palette(os.path.join(ROOT, "src", "dgnpal.i"))
     n = write_font8(os.path.join(ROOT, "src", "font8.i"))
     ph = write_pointer(os.path.join(ROOT, "src", "pointer.i"))
@@ -1902,7 +2493,8 @@ if __name__ == "__main__":
         print(f"  niveau {i + 1} : depart {start}, escalier {stairs}, "
               f"{reach} cases ; sans forcer les serrures {open_cells} cases, "
               f"{keys} cles, escalier {'direct' if direct else 'derriere une porte'}")
-    print(f"dgnmap.bin : {len(levels)} niveaux, {len(maps)} octets")
+    print(f"crypte.dgn : {len(levels)} niveaux ({len(maps)} octets), "
+          f"{len(beasts)} morceaux de bestiaire, {len(pack)} octets")
     print(f"font8.i    : {n} glyphes")
     print(f"pointer.i  : sprite de 16 x {ph}")
     print(f"surfgrad.i : {sg} blocs de degrade, {sg * 12} couleurs par trame")

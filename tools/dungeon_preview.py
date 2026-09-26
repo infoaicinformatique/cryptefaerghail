@@ -33,7 +33,7 @@ def art_index():
     """Les indices viennent de src/artidx.i, genere avec l'art."""
     idx = {}
     for line in open(os.path.join(ROOT, "src", "artidx.i")):
-        m = re.match(r"(ART_\w+|NMONSTERART)\s*=\s*(\d+)", line)
+        m = re.match(r"(ART_\w+|NMONSTERART|NMONPOSES)\s*=\s*(\d+)", line)
         if m:
             idx[m.group(1)] = int(m.group(2))
     return idx
@@ -45,20 +45,39 @@ DOOR, MONSTER = _A["ART_DOOR"], _A["ART_MONSTER"]
 FRONTL, FRONTR = _A["ART_FRONTL"], _A["ART_FRONTR"]
 OUTERL, OUTERR = _A["ART_OUTERL"], _A["ART_OUTERR"]
 NICHE, PORTRAIT, ICON = _A["ART_NICHE"], _A["ART_PORTRAIT"], _A["ART_ICON"]
+SHELF, SHELFL, SHELFR = _A["ART_ARCHIVE"], _A["ART_ARCHL"], _A["ART_ARCHR"]
+SHELFFL, SHELFFR = _A["ART_ARCHFL"], _A["ART_ARCHFR"]
+SHELFOL, SHELFOR = _A["ART_ARCHOL"], _A["ART_ARCHOR"]
+
+
+def load_pack():
+    """Le paquet du donjon : ses cartes, puis son banc de morceaux."""
+    raw = open(os.path.join(ROOT, "data", "crypte.dgn"), "rb").read()
+    assert raw[:4] == G.PACKMAGIC, "paquet de donjon illisible"
+    moff, mlen, aoff, alen = struct.unpack(">IIII", raw[4:20])
+    return raw[moff:moff + mlen], raw[aoff:aoff + alen]
 
 
 def load_art():
-    raw = open(os.path.join(ROOT, "data", "dgnart.bin"), "rb").read()
-    n = struct.unpack(">H", raw[:2])[0]
+    """Les morceaux communs, puis ceux du donjon, dans l'espace d'indices
+    du jeu : BlitPiece cherche au-dela de ART_BANK dans le paquet. Les
+    decalages de chaque banc se comptent depuis son propre debut ; on
+    les rapporte ici au debut de la concatenation."""
+    raw = b""
     pieces = []
-    for i in range(n):
-        off, w, h, dst, _ = struct.unpack(">IHHHH", raw[2 + i * 12:14 + i * 12])
-        pieces.append((off, w, h, dst))
+    for bank in (open(os.path.join(ROOT, "data", "dgnart.bin"), "rb").read(),
+                 load_pack()[1]):
+        n = struct.unpack(">H", bank[:2])[0]
+        for i in range(n):
+            off, w, h, dst, _ = struct.unpack(">IHHHH",
+                                              bank[2 + i * 12:14 + i * 12])
+            pieces.append((len(raw) + off, w, h, dst))
+        raw += bank
     return raw, pieces
 
 
 def load_maps():
-    raw = open(os.path.join(ROOT, "data", "dgnmap.bin"), "rb").read()
+    raw = load_pack()[0]
     step = 4 + MAPW * MAPH
     levels = []
     for lv in range(len(raw) // step):
@@ -105,7 +124,7 @@ def solid(c):
     vide, et les captures de ce fichier montraient donc des couloirs qui
     n'existent pas dans le jeu."""
     return (c & 0x0f) in (G.WALL, G.DOOR, G.LOCKED, G.NICHE, G.RUNE,
-                          G.LEVER, G.GATE, G.SHOP, G.LEDGER)
+                          G.LEVER, G.GATE, G.SHOP, G.LEDGER, G.ARCHIVE)
 
 
 def cell_at(grid, px, py, dirn, depth, offset):
@@ -127,6 +146,8 @@ def draw_view(screen, raw, pieces, grid, px, py, dirn):
         c = cell(grid, px + dx * block, py + dy * block)
         if (c & 0x0f) == G.DOOR and block <= 3:
             blit(screen, raw, pieces[DOOR + block - 1])
+        elif (c & 0x0f) == G.ARCHIVE and block <= 3:
+            blit(screen, raw, pieces[SHELF + block - 1])
         else:
             blit(screen, raw, pieces[FRONT + block - 1])
 
@@ -134,13 +155,22 @@ def draw_view(screen, raw, pieces, grid, px, py, dirn):
     for i in range(min(maxd, 3), -1, -1):            # du plus loin au plus pres
         for side, wall, front, outer in ((-1, LEFT, FRONTL, OUTERL),
                                          (1, RIGHT, FRONTR, OUTERR)):
-            if solid(cell_at(grid, px, py, dirn, i, side)):
+            c = cell_at(grid, px, py, dirn, i, side)
+            if solid(c):
+                if (c & 0x0f) == G.ARCHIVE:          # un rayonnage de biais
+                    wall = SHELFL if side < 0 else SHELFR
                 blit(screen, raw, pieces[wall + i])
                 continue
             # passage ouvert : on voit le fond du passage, puis son mur
-            if solid(cell_at(grid, px, py, dirn, i + 1, side)):
+            c = cell_at(grid, px, py, dirn, i + 1, side)
+            if solid(c):
+                if (c & 0x0f) == G.ARCHIVE:          # des registres au fond
+                    front = SHELFFL if side < 0 else SHELFFR
                 blit(screen, raw, pieces[front + i])
-            if i >= 2 and solid(cell_at(grid, px, py, dirn, i, 2 * side)):
+            c = cell_at(grid, px, py, dirn, i, 2 * side)
+            if i >= 2 and solid(c):
+                if (c & 0x0f) == G.ARCHIVE:
+                    outer = SHELFOL if side < 0 else SHELFOR
                 blit(screen, raw, pieces[outer + i - 2])
 
 
@@ -249,7 +279,7 @@ if __name__ == "__main__":
         help_line = "FLECHES  ESPACE OUVRIR  P BOIRE  ESC"
     else:
         blit(screen, raw, pieces[BG], masked=False)
-        blit(screen, raw, pieces[MONSTER + monster * 2])
+        blit(screen, raw, pieces[MONSTER + monster * _A["NMONPOSES"]])
         log = ["UN ORC SURGIT !",
                "LE GROUPE INFLIGE 21 DEGATS.",
                "ORC TOUCHE MYRA : 6",

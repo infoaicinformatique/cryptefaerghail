@@ -129,58 +129,59 @@ NSPELLS		= 16
 
 ; nom (16), des de vie, faces, bonus PV, CA, attaque, des,
 ; faces, bonus degats, marge critique, multiplicateur,
-; Vigueur, Reflexes, Volonte, PX, or, silhouette
+; Vigueur, Reflexes, Volonte, PX, or, silhouette, langue,
+; temperament (0 hostile, 1 mefiant, 2 paisible)
 MonTypes:
 	dc.b	"KOBOLD",0,0,0,0,0,0,0,0,0,0
-	dc.w	1,8,0,15,1,1,6,-1,20,2,2,2,0,18,4,2
+	dc.w	1,8,0,15,1,1,6,-1,20,2,2,2,0,18,4,2,2,1
 	dc.b	"GOBELIN",0,0,0,0,0,0,0,0,0
-	dc.w	1,8,1,15,2,1,6,0,20,2,3,1,-1,24,6,2
+	dc.w	1,8,1,15,2,1,6,0,20,2,3,1,-1,24,6,2,2,1
 	dc.b	"RAT SANGUIN",0,0,0,0,0
-	dc.w	1,8,1,15,4,1,4,0,20,2,3,3,3,24,0,0
+	dc.w	1,8,1,15,4,1,4,0,20,2,3,3,3,24,0,0,0,0
 	dc.b	"SQUELETTE",0,0,0,0,0,0,0
-	dc.w	1,12,0,15,1,1,6,1,18,2,0,1,2,24,0,1
+	dc.w	1,12,0,15,1,1,6,1,18,2,0,1,2,24,0,1,0,0
 	dc.b	"ORC",0,0,0,0,0,0,0,0,0,0,0,0,0
-	dc.w	1,8,1,15,4,2,4,4,18,2,3,0,-2,37,10,3
+	dc.w	1,8,1,15,4,2,4,4,18,2,3,0,-2,37,10,3,3,1
 	dc.b	"HOBGOBELIN",0,0,0,0,0,0
-	dc.w	1,8,2,15,2,1,8,1,19,2,4,1,-1,37,12,2
+	dc.w	1,8,2,15,2,1,8,1,19,2,4,1,-1,37,12,2,2,1
 	dc.b	"ZOMBI",0,0,0,0,0,0,0,0,0,0,0
-	dc.w	2,12,3,11,2,1,6,1,20,2,0,-1,3,37,0,1
+	dc.w	2,12,3,11,2,1,6,1,20,2,0,-1,3,37,0,1,0,0
 	dc.b	"LOUP",0,0,0,0,0,0,0,0,0,0,0,0
-	dc.w	2,8,4,14,3,1,6,1,20,2,5,5,1,75,0,0
+	dc.w	2,8,4,14,3,1,6,1,20,2,5,5,1,75,0,0,0,0
 	dc.b	"GNOLL",0,0,0,0,0,0,0,0,0,0,0
-	dc.w	2,8,2,15,3,1,8,2,20,3,4,0,0,75,14,3
+	dc.w	2,8,2,15,3,1,8,2,20,3,4,0,0,75,14,3,3,1
 	dc.b	"GOULE",0,0,0,0,0,0,0,0,0,0,0
-	dc.w	2,12,0,14,2,1,6,1,20,2,0,2,5,75,0,1
+	dc.w	2,12,0,14,2,1,6,1,20,2,0,2,5,75,0,1,0,0
 	dc.b	"BUGBEAR",0,0,0,0,0,0,0,0,0
-	dc.w	3,8,3,17,5,1,8,2,20,2,4,3,1,150,22,3
+	dc.w	3,8,3,17,5,1,8,2,20,2,4,3,1,150,22,3,2,1
 	dc.b	"WORG",0,0,0,0,0,0,0,0,0,0,0,0
-	dc.w	4,10,8,14,7,1,6,4,20,2,6,6,3,150,0,0
+	dc.w	4,10,8,14,7,1,6,4,20,2,6,6,3,150,0,0,0,0
 	dc.b	"OMBRE",0,0,0,0,0,0,0,0,0,0,0
-	dc.w	3,12,0,13,3,1,6,0,20,2,1,3,4,225,0,5
+	dc.w	3,12,0,13,3,1,6,0,20,2,1,3,4,225,0,5,0,0
 	dc.b	"OGRE",0,0,0,0,0,0,0,0,0,0,0,0
-	dc.w	4,8,11,16,8,2,8,7,20,2,6,0,1,225,45,4
+	dc.w	4,8,11,16,8,2,8,7,20,2,6,0,1,225,45,4,4,1
 	dc.b	"HOMME-LÉZARD",0,0,0,0
-	dc.w	2,8,2,15,3,1,8,1,20,2,3,3,0,75,12,3
+	dc.w	2,8,2,15,3,1,8,1,20,2,3,3,0,75,12,3,5,2
 	dc.b	"GARGOUILLE",0,0,0,0,0,0
-	dc.w	4,8,19,16,6,1,4,2,20,2,5,6,4,300,30,7
+	dc.w	4,8,19,16,6,1,4,2,20,2,5,6,4,300,30,7,0,0
 	dc.b	"OMBRE BLÊME",0,0,0,0,0
-	dc.w	4,12,0,15,3,1,4,1,20,2,1,2,5,225,25,5
+	dc.w	4,12,0,15,3,1,4,1,20,2,1,2,5,225,25,5,0,0
 	dc.b	"OURSALOUP",0,0,0,0,0,0,0
-	dc.w	5,10,25,15,9,1,6,5,20,2,9,5,2,300,0,0
+	dc.w	5,10,25,15,9,1,6,5,20,2,9,5,2,300,0,0,0,0
 	dc.b	"HARPIE",0,0,0,0,0,0,0,0,0,0
-	dc.w	7,8,0,15,7,1,6,0,20,2,2,7,6,300,40,7
+	dc.w	7,8,0,15,7,1,6,0,20,2,2,7,6,300,40,7,1,0
 	dc.b	"MINOTAURE",0,0,0,0,0,0,0
-	dc.w	6,8,12,15,9,3,6,6,20,3,6,5,5,300,60,4
+	dc.w	6,8,12,15,9,3,6,6,20,3,6,5,5,300,60,4,4,0
 	dc.b	"TROLL",0,0,0,0,0,0,0,0,0,0,0
-	dc.w	6,8,36,16,9,1,6,6,20,2,11,4,3,375,55,4
+	dc.w	6,8,36,16,9,1,6,6,20,2,11,4,3,375,55,4,4,0
 	dc.b	"SPECTRE",0,0,0,0,0,0,0,0,0
-	dc.w	7,12,0,15,6,1,8,0,20,2,2,5,7,525,70,5
+	dc.w	7,12,0,15,6,1,8,0,20,2,2,5,7,525,70,5,0,0
 	dc.b	"MOMIE",0,0,0,0,0,0,0,0,0,0,0
-	dc.w	8,12,3,20,11,1,6,10,20,2,4,2,8,375,90,6
+	dc.w	8,12,3,20,11,1,6,10,20,2,4,2,8,375,90,6,1,0
 	dc.b	"HYDRE",0,0,0,0,0,0,0,0,0,0,0
-	dc.w	5,10,28,15,6,1,10,3,20,2,9,5,3,375,80,8
+	dc.w	5,10,28,15,6,1,10,3,20,2,9,5,3,375,80,8,0,0
 	dc.b	"GÉANT COLLINE",0,0,0
-	dc.w	12,8,48,17,16,2,8,10,20,2,12,3,4,525,200,4
+	dc.w	12,8,48,17,16,2,8,10,20,2,12,3,4,525,200,4,4,1
 NMONSTERS	= 25
 
 ; rencontres par niveau de donjon : numeros de monstres
@@ -217,7 +218,13 @@ ClassTable:
 	dc.w	4,2,0,0,1,1
 	dc.b	"ENSORCELEUR",0
 	dc.w	4,2,0,0,1,1
-NCLASSES	= 8
+	dc.b	"DRUIDE",0,0,0,0,0,0
+	dc.w	8,1,1,0,1,2
+	dc.b	"MOINE",0,0,0,0,0,0,0
+	dc.w	8,1,1,1,1,0
+	dc.b	"FORGERON",0,0,0,0
+	dc.w	10,0,1,0,0,0
+NCLASSES	= 11
 
 ; emplacements de sorts : niveaux 1 a 8, sorts de niveau 0 a 3
 SlotTable:
@@ -231,14 +238,107 @@ SlotTable:
 	dc.w	4,4,3,3
 
 StartGear:			; arme, armure, bouclier, sorts
-	dc.w	3,14,16,0
-	dc.w	4,13,0,0
-	dc.w	2,13,0,0
-	dc.w	7,13,0,0
-	dc.w	3,14,16,2
-	dc.w	6,13,16,66
-	dc.w	8,12,0,13
-	dc.w	8,12,0,5
+	dc.w	3,14,16,$0000	; 
+	dc.w	4,13,0,$0000	; 
+	dc.w	2,13,0,$0000	; 
+	dc.w	7,13,0,$0000	; 
+	dc.w	3,14,16,$0010	; SOINS LÉGERS
+	dc.w	6,13,16,$0030	; SOINS LÉGERS, BENEDICTION
+	dc.w	8,12,0,$0007	; RAYON DE GIVRE, PROJECTILE MAGIQUE, MAINS BRÛLANTES
+	dc.w	8,12,0,$0003	; RAYON DE GIVRE, PROJECTILE MAGIQUE
+	dc.w	8,13,0,$0050	; SOINS LÉGERS, TERREUR
+	dc.w	8,12,0,$0000	; 
+	dc.w	6,14,16,$0000	; 
+
+; nom (12), FOR, DEX, CON, INT, SAG, CHA, classes interdites
+RaceTable:
+	dc.b	"HUMAIN",0,0,0,0,0,0
+	dc.w	0,0,0,0,0,0,$0000
+	dc.b	"NAIN",0,0,0,0,0,0,0,0
+	dc.w	0,0,2,0,0,-2,$00c0
+	dc.b	"ELFE",0,0,0,0,0,0,0,0
+	dc.w	0,2,-2,0,0,0,$0012
+	dc.b	"HALFELIN",0,0,0,0
+	dc.w	-2,2,0,0,0,0,$0402
+	dc.b	"DEMI-ELFE",0,0,0
+	dc.w	0,0,0,0,0,0,$0000
+	dc.b	"DEMI-ORC",0,0,0,0
+	dc.w	2,0,0,-2,0,-2,$0140
+NRACES		= 6
+
+; les langues : leur nom, puis ce que parlent races et classes
+NTONGUES	= 6
+TongueNames:
+	dc.l	TxtTongue0
+	dc.l	TxtTongue1
+	dc.l	TxtTongue2
+	dc.l	TxtTongue3
+	dc.l	TxtTongue4
+	dc.l	TxtTongue5
+TxtTongue0:	dc.b	"",0
+TxtTongue1:	dc.b	"COMMUN",0
+TxtTongue2:	dc.b	"GOBELIN",0
+TxtTongue3:	dc.b	"ORC",0
+TxtTongue4:	dc.b	"GÉANT",0
+TxtTongue5:	dc.b	"DRACONIQUE",0
+	even
+RaceTongues:
+	dc.w	$0002	; HUMAIN
+	dc.w	$0016	; NAIN
+	dc.w	$0022	; ELFE
+	dc.w	$0006	; HALFELIN
+	dc.w	$000a	; DEMI-ELFE
+	dc.w	$000e	; DEMI-ORC
+ClassTongues:
+	dc.w	$0002	; GUERRIER
+	dc.w	$0002	; BARBARE
+	dc.w	$0002	; ROUBLARD
+	dc.w	$000a	; RÔDEUR
+	dc.w	$0002	; PALADIN
+	dc.w	$0002	; CLERC
+	dc.w	$0022	; MAGICIEN
+	dc.w	$0022	; ENSORCELEUR
+	dc.w	$0012	; DRUIDE
+	dc.w	$0002	; MOINE
+	dc.w	$0002	; FORGERON
+
+; competences : leur nom, puis le depart par classe et ce que
+; la race y ajoute, un octet par competence
+NSKILLS		= 6
+SkillNames:
+	dc.l	TxtSkill0
+	dc.l	TxtSkill1
+	dc.l	TxtSkill2
+	dc.l	TxtSkill3
+	dc.l	TxtSkill4
+	dc.l	TxtSkill5
+TxtSkill0:	dc.b	"COMBAT",0
+TxtSkill1:	dc.b	"DÉFENSE",0
+TxtSkill2:	dc.b	"CONCENTRATION",0
+TxtSkill3:	dc.b	"VIGILANCE",0
+TxtSkill4:	dc.b	"DÉSAMORÇAGE",0
+TxtSkill5:	dc.b	"MARCHANDAGE",0
+	even
+SkillClass:
+	dc.b	30,25,0,10,5,10	; GUERRIER
+	dc.b	30,20,0,15,0,5	; BARBARE
+	dc.b	15,15,0,30,35,20	; ROUBLARD
+	dc.b	25,15,10,25,10,10	; RÔDEUR
+	dc.b	25,25,15,10,5,10	; PALADIN
+	dc.b	15,20,25,10,5,15	; CLERC
+	dc.b	5,10,30,10,5,15	; MAGICIEN
+	dc.b	5,10,30,10,5,20	; ENSORCELEUR
+	dc.b	10,15,25,20,10,10	; DRUIDE
+	dc.b	25,30,20,20,10,5	; MOINE
+	dc.b	25,25,0,10,15,30	; FORGERON
+SkillRace:
+	dc.b	5,0,0,0,0,5	; HUMAIN
+	dc.b	0,5,0,0,5,5	; NAIN
+	dc.b	0,0,5,10,0,0	; ELFE
+	dc.b	0,0,0,5,10,0	; HALFELIN
+	dc.b	0,0,0,5,0,5	; DEMI-ELFE
+	dc.b	10,0,0,0,0,0	; DEMI-ORC
+	even
 
 NameList:			; 9 octets par nom
 	dc.b	"ALDER",0,0,0,0

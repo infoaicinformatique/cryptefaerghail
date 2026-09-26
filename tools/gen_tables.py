@@ -93,6 +93,42 @@ MONSTERS = [
     ("GÉANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4),
 ]
 
+# --- Langues et temperaments -------------------------------------------
+# Une rencontre ne commence plus forcement par le fer : on peut saluer,
+# discuter -- si quelqu'un du groupe parle la langue --, ou se retirer.
+# Chaque espece a sa langue (0 : elle ne parle pas) et son temperament :
+# 0 toujours hostile, 1 mefiant, 2 plutot paisible.
+TONGUES = ["", "COMMUN", "GOBELIN", "ORC", "GÉANT", "DRACONIQUE"]
+SPECIES_TALK = {
+    "KOBOLD": (2, 1), "GOBELIN": (2, 1), "RAT SANGUIN": (0, 0),
+    "SQUELETTE": (0, 0), "ORC": (3, 1), "HOBGOBELIN": (2, 1),
+    "ZOMBI": (0, 0), "LOUP": (0, 0), "GNOLL": (3, 1), "GOULE": (0, 0),
+    "BUGBEAR": (2, 1), "WORG": (0, 0), "OMBRE": (0, 0), "OGRE": (4, 1),
+    "HOMME-LÉZARD": (5, 2), "GARGOUILLE": (0, 0), "OMBRE BLÊME": (0, 0),
+    "OURSALOUP": (0, 0), "HARPIE": (1, 0), "MINOTAURE": (4, 0),
+    "TROLL": (4, 0), "SPECTRE": (0, 0),
+    # La momie est un Faerghail qui a refuse qu'on le raye : elle parle
+    # la langue du pays, et ne veut rien entendre.
+    "MOMIE": (1, 0), "HYDRE": (0, 0), "GÉANT COLLINE": (4, 1),
+}
+# ce que chaque race parle, en plus du commun
+RACE_TONGUES = {
+    "HUMAIN": [], "NAIN": ["GOBELIN", "GÉANT"], "ELFE": ["DRACONIQUE"],
+    "HALFELIN": ["GOBELIN"], "DEMI-ELFE": ["ORC"],
+    "DEMI-ORC": ["ORC", "GOBELIN"],
+}
+# et ce que la classe apprend
+CLASS_TONGUES = {"MAGICIEN": ["DRACONIQUE"], "ENSORCELEUR": ["DRACONIQUE"],
+                 "DRUIDE": ["GÉANT"], "RÔDEUR": ["ORC"]}
+
+
+def tongue_mask(names):
+    mask = 1 << TONGUES.index("COMMUN")
+    for n in names:
+        mask |= 1 << TONGUES.index(n)
+    return mask
+
+
 # Ce que rapporte une victoire, selon le facteur de puissance (FP) :
 # le SRD donne 300 x FP pour un groupe de niveau egal, divise par quatre
 # aventuriers, ce qui tient dans un mot.
@@ -275,14 +311,16 @@ with open(OUT, "w", encoding="latin-1") as f:
 
     f.write("\n; nom (16), des de vie, faces, bonus PV, CA, attaque, des,\n")
     f.write("; faces, bonus degats, marge critique, multiplicateur,\n")
-    f.write("; Vigueur, Reflexes, Volonte, PX, or, silhouette\n")
+    f.write("; Vigueur, Reflexes, Volonte, PX, or, silhouette, langue,\n")
+    f.write("; temperament (0 hostile, 1 mefiant, 2 paisible)\n")
     f.write("MonTypes:\n")
     for (name, hd, hdf, hpb, ac, atk, dice, faces, dmg, crit, mult,
          fort, ref, will, cr, gold, art) in MONSTERS:
         f.write(pad(name, 16))
+        tongue, temper = SPECIES_TALK[name]
         f.write(f"\tdc.w\t{hd},{hdf},{hpb},{ac},{atk},{dice},{faces},{dmg},"
                 f"{crit},{mult},{fort},{ref},{will},{monster_xp(cr)},"
-                f"{gold},{art}\n")
+                f"{gold},{art},{tongue},{temper}\n")
     f.write(f"NMONSTERS\t= {len(MONSTERS)}\n")
 
     f.write("\n; rencontres par niveau de donjon : numeros de monstres\n")
@@ -326,6 +364,21 @@ with open(OUT, "w", encoding="latin-1") as f:
         f.write("\tdc.w\t" + ",".join(str(m) for m in mods)
                 + f",${mask:04x}\n")
     f.write(f"NRACES\t\t= {len(RACES)}\n")
+
+    f.write("\n; les langues : leur nom, puis ce que parlent races et classes\n")
+    f.write(f"NTONGUES\t= {len(TONGUES)}\n")
+    f.write("TongueNames:\n")
+    for i in range(len(TONGUES)):
+        f.write(f"\tdc.l\tTxtTongue{i}\n")
+    for i, name in enumerate(TONGUES):
+        f.write(f'TxtTongue{i}:\tdc.b\t"{name}",0\n')
+    f.write("\teven\nRaceTongues:\n")
+    for name, *_ in RACES:
+        f.write(f"\tdc.w\t${tongue_mask(RACE_TONGUES[name]):04x}\t; {name}\n")
+    f.write("ClassTongues:\n")
+    for name, *_ in CLASSES:
+        f.write(f"\tdc.w\t${tongue_mask(CLASS_TONGUES.get(name, [])):04x}"
+                f"\t; {name}\n")
 
     f.write("\n; competences : leur nom, puis le depart par classe et ce que\n")
     f.write("; la race y ajoute, un octet par competence\n")

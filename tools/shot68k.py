@@ -289,6 +289,9 @@ if __name__ == "__main__":
                     shoot(g, "monstre-couloir")
             if not P.step_to(g, cell, []) or g.w("InCombat"):
                 break
+    if g.w("InCombat") and g.w("MeetPhase"):
+        shoot(g, "rencontre")             # avant le fer, la parole
+        g.key(T.K_A)                      # ici, on degaine
     shoot(g, "combat")
     if g.w("InCombat"):                   # la pose d'attaque, tenue
         g.setw("StrikeTime", 400)

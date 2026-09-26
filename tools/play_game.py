@@ -452,6 +452,12 @@ def main():
             was = g.mem.r8(g.addr("MapTerrain")
                            + cell[1] * MAPW + cell[0]) & 0x0f
             if not step_to(g, cell, log):
+                # Une creature est venue a nous pendant le pas : on ne
+                # tourne plus en combat, et le pas echoue. On le livre,
+                # puis on repart du but suivant.
+                if g.w("InCombat"):
+                    fight(g, fails, stats)
+                    break
                 log.append(("bloque", here, cell))
                 break
             if was == T_TRAP:

@@ -168,7 +168,9 @@ mt_Will		= 40
 mt_Xp		= 42
 mt_Gold		= 44
 mt_Art		= 46
-mt_SIZEOF	= 48
+mt_Tongue	= 48			; langue parlee (TongueNames), 0 aucune
+mt_Temper	= 50			; 0 hostile, 1 mefiant, 2 paisible
+mt_SIZEOF	= 52
 
 ; --- classes ---
 cl_Name		= 0			; 12 octets
@@ -273,7 +275,8 @@ KEY_S		= $21
 KEY_M_QW	= $37			; M sur un clavier anglais
 KEY_M_AZ	= $29			; M sur un clavier francais
 KEY_U		= $16
-KEY_O		= $18			; meme place en AZERTY et en QWERTY
+KEY_O		= $18
+KEY_N		= $36			; meme place en AZERTY et en QWERTY			; meme place en AZERTY et en QWERTY
 
 ; --- disposition de l'ecran ---
 PANEL_X		= 224
@@ -2523,6 +2526,12 @@ DrawStatus:
 	tst.w	InCombat
 	beq.s	.helpMove
 	lea	TxtHelpFight,a0
+	tst.w	MeetPhase
+	beq	.help
+	lea	TxtHelpMeet,a0
+	cmp.w	#MEET_TOLL,MeetPhase
+	bne	.help
+	lea	TxtHelpToll,a0
 	bra	.help
 .helpMove:
 	lea	TxtHelpMove,a0
@@ -4931,6 +4940,7 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	move.w	d0,MonKind
 	move.w	d4,MonX			; c'est la case ou il tient
 	move.w	d5,MonY
+	clr.w	MeetAmbush		; c'est nous qui venons a lui
 	bsr	StartCombat
 	bra.s	.redraw
 .stairs:
@@ -6697,7 +6707,8 @@ MonTry:
 	move.w	d0,MonKind
 	move.w	d6,MonX			; c'est lui qui tient la case
 	move.w	d7,MonY
-	bsr	StartCombat
+	move.w	#1,MeetAmbush		; c'est lui qui vient : il peut
+	bsr	StartCombat		; nous surprendre
 	bra	.yes
 .notParty:
 	move.w	MonToX,d0		; du dallage nu, et rien dessus
@@ -6893,6 +6904,7 @@ StartCombat:
 .alone:
 	bsr	FirstOrder		; le premier debout donne son ordre
 	clr.w	RoundNo
+	bsr	BeginMeet		; mais d'abord, la rencontre
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
 
@@ -7479,6 +7491,19 @@ DrawRound:
 ; tour et ce qu'il a fait au round d'avant ; en bas, combien ils sont.
 DrawOrderTag:
 	movem.l	d0-d7/a0-a6,-(sp)
+	tst.w	MeetPhase		; la rencontre : la question, pas l'ordre
+	beq.s	.orders
+	lea	TxtMeetAsk,a0
+	cmp.w	#MEET_TOLL,MeetPhase
+	bne.s	.ask
+	lea	TxtTollTag,a0
+.ask:
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	bra	.foes
+.orders:
 	move.w	OrderHero,d0
 	bmi	.foes
 	bsr	HeroPtr
@@ -7704,7 +7729,7 @@ DrawSkills:
 	move.l	(a0,d0.w),a0
 	moveq	#3,d0
 	move.w	d7,d1
-	mulu.w	#14,d1
+	mulu.w	#13,d1
 	add.w	#40,d1
 	move.w	#C_TEXT,d2
 	bsr	DrawText
@@ -7721,13 +7746,13 @@ DrawSkills:
 	moveq	#23,d0
 .two:
 	move.w	d7,d1
-	mulu.w	#14,d1
+	mulu.w	#13,d1
 	add.w	#40,d1
 	move.w	#C_PARCHD,d2
 	bsr	DrawText
 	move.w	#24,d0			; et sa jauge, sous le nom
 	move.w	d7,d1
-	mulu.w	#14,d1
+	mulu.w	#13,d1
 	add.w	#49,d1
 	move.w	#176,d2
 	move.w	d6,d3
@@ -7737,12 +7762,385 @@ DrawSkills:
 	addq.w	#1,d7
 	cmp.w	#NSKILLS,d7
 	blt	.loop
+	bsr	DrawTongues		; et les langues qu'il parle
 	lea	TxtSkillsHelp,a0
 	moveq	#3,d0
-	move.w	#134,d1
+	move.w	#138,d1
 	move.w	#C_TEXTDIM,d2
 	bsr	DrawText
 	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;----------------------------------------------------------------------
+; Les rencontres : avant le fer, la parole
+;
+; Comme dans Legend of Faerghail, une rencontre ne commence pas
+; forcement par un combat. Le groupe voit ce qui vient, et choisit :
+; S saluer, D discuter -- si quelqu'un parle la langue de ceux d'en
+; face --, F se retirer, A attaquer. Chaque espece a sa langue et son
+; temperament (MonTypes) : les morts et les betes ne repondent qu'au fer,
+; les mefiants se laissent parler, et un jet de reaction -- charisme,
+; marchandage, et ce qu'on a dit -- decide s'ils passent leur chemin,
+; demandent un peage, ou degainent.
+;
+; Quand c'est la creature qui vient a nous, elle peut nous surprendre :
+; elle frappe alors la premiere, et il n'y a plus rien a dire. La
+; vigilance du groupe l'evite, et progresse quand elle y parvient.
+;
+; MeetPhase : 0 le combat, 1 la rencontre, 2 le peage en question.
+;----------------------------------------------------------------------
+MEET_CHOICE	= 1
+MEET_TOLL	= 2
+; Les seuils du jet de reaction. Un orc mefiant, a qui le negociateur
+; du groupe parle sa langue, laisse passer deux fois sur trois, demande
+; un peage le plus souvent le reste du temps, et degaine rarement --
+; mesure par le banc sur quarante rencontres. Salue sans un mot de sa
+; langue, il a quatre points de moins, et les seuils sont les memes.
+GREET_PASS	= 20
+GREET_STARE	= 12
+TALK_PASS	= 20
+TALK_TOLL	= 12
+
+; BeginMeet : appele a la fin de StartCombat
+BeginMeet:
+	movem.l	d0-d3/a0-a2/a6,-(sp)
+	clr.w	MeetGreeted
+	move.w	#MEET_CHOICE,MeetPhase
+	tst.w	MeetAmbush		; c'est lui qui vient : surprise ?
+	beq.s	.done
+	bsr	BestVigil		; a6 = le plus vigilant, d0 = sa valeur
+	divu.w	#5,d0
+	and.l	#$0000ffff,d0
+	moveq	#30,d2			; trente pour cent, moins sa vigilance
+	sub.w	d0,d2
+	cmp.w	#5,d2
+	bge.s	.chance
+	moveq	#5,d2
+.chance:
+	moveq	#100,d1
+	bsr	RndMod
+	cmp.w	d2,d0
+	bhs.s	.seen
+	clr.w	MeetPhase		; surpris : pas un mot, ils frappent
+	lea	TxtSurprised,a0
+	bsr	LogAdd
+	bsr	MonsterTurn
+	bra.s	.done
+.seen:
+	lea	TxtSeenComing,a0	; on les a vus venir
+	bsr	LogAdd
+	moveq	#SK_VIGIL,d0
+	bsr	SkillUse
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d3/a0-a2/a6
+	rts
+
+; MeetKey : d0 = touche, pendant la rencontre
+MeetKey:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.l	MonPtr,a2
+	cmp.w	#MEET_TOLL,MeetPhase
+	bne.s	.choice
+	cmp.w	#KEY_O,d0		; --- le peage : O payer, N refuser
+	beq.s	.pay
+	cmp.w	#KEY_N,d0
+	bne	.done
+	lea	TxtTollRefused,a0
+	bsr	LogAdd
+	bra	.fight
+.pay:
+	move.w	MeetToll,d1
+	cmp.w	Gold,d1
+	bls.s	.canPay
+	lea	TxtTollPoor,a0
+	bsr	LogAdd
+	bra	.fight
+.canPay:
+	sub.w	d1,Gold
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	lea	TmpStr,a1
+	lea	TxtTollPaid,a0
+	bsr	StrCopy
+	move.w	d1,d0
+	bsr	StrNum
+	lea	TxtTollPaid2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra	.peace
+
+.choice:
+	cmp.w	#KEY_A_QW,d0		; --- A : attaquer
+	beq.s	.attack
+	cmp.w	#KEY_A_AZ,d0
+	beq.s	.attack
+	cmp.w	#KEY_F,d0		; --- F : se retirer
+	bne.s	.notFlee
+	clr.w	MeetPhase		; manquee, la retraite tourne au combat
+	bsr	CombatFlee
+	tst.w	InCombat
+	beq	.done
+	bsr	FirstOrder
+	bra	.done
+.notFlee:
+	cmp.w	#KEY_S,d0
+	beq.s	.greet
+	cmp.w	#KEY_D,d0
+	beq	.talk
+	bra	.done
+.attack:
+	lea	TxtToArms,a0
+	bsr	LogAdd
+	bra	.fight
+
+.greet:					; --- S : saluer
+	tst.w	mt_Temper(a2)
+	beq	.deaf
+	tst.w	MeetGreeted		; on ne salue pas deux fois
+	bne	.impatient
+	move.w	#1,MeetGreeted
+	moveq	#0,d3
+	bsr	React
+	cmp.w	#GREET_PASS,d0
+	bge.s	.greetBack
+	cmp.w	#GREET_STARE,d0
+	bge.s	.stare
+	lea	TxtMenacing,a0
+	bsr	LogAdd
+	bra	.fight
+.greetBack:
+	lea	TxtGreetBack,a0
+	bsr	LogAdd
+	bra	.peace
+.stare:
+	lea	TxtStare,a0
+	bsr	LogAdd
+	bra	.done
+.impatient:
+	lea	TxtImpatient,a0
+	bsr	LogAdd
+	bra	.fight
+
+.talk:					; --- D : discuter
+	move.w	mt_Tongue(a2),d2
+	bne.s	.speaks
+	lea	TxtNoTongue,a0		; ils ne parlent pas : rien de fait
+	bsr	LogAdd
+	bra	.done
+.speaks:
+	bsr	PartyTongues
+	btst	d2,d0
+	bne.s	.understood
+	lea	TmpStr,a1		; personne ne parle leur langue
+	lea	TxtNobodySpeaks,a0
+	bsr	StrCopy
+	move.w	d2,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra	.done
+.understood:
+	bsr	BestTrader		; a6 = celui qui parle
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtParleys,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	tst.w	mt_Temper(a2)
+	beq	.deaf
+	moveq	#4,d3			; parler leur langue, ca compte
+	bsr	React
+	cmp.w	#TALK_PASS,d0
+	bge.s	.letPass
+	cmp.w	#TALK_TOLL,d0
+	bge.s	.toll
+	lea	TxtTalkFails,a0
+	bsr	LogAdd
+	bra	.fight
+.letPass:
+	moveq	#SK_TRADE,d0
+	bsr	SkillUse
+	lea	TxtLetPass,a0
+	bsr	LogAdd
+	bra	.peace
+.toll:
+	move.w	mt_Gold(a2),d0		; ce qu'ils portent, fois leur nombre,
+	mulu.w	GroupN,d0		; et un peu plus a mesure qu'on descend
+	move.w	Level,d1
+	addq.w	#1,d1
+	mulu.w	#5,d1
+	add.w	d1,d0
+	move.w	d0,MeetToll
+	move.w	#MEET_TOLL,MeetPhase
+	lea	TmpStr,a1
+	lea	TxtTollAsk,a0
+	bsr	StrCopy
+	move.w	MeetToll,d0
+	bsr	StrNum
+	lea	TxtTollAsk2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	bra.s	.done
+
+.deaf:
+	lea	TxtDeaf,a0		; ils ne repondent qu'au fer
+	bsr	LogAdd
+.fight:
+	clr.w	MeetPhase		; au combat : les ordres
+	bsr	FirstOrder
+	bra.s	.done
+.peace:
+	bsr	MeetPeace		; ils passent leur chemin
+.done:
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; React : le jet de reaction. d3 = bonus de ce qu'on a dit -> d0.
+; d20, plus trois fois le temperament, plus le charisme du meilleur
+; negociateur et le dixieme de son marchandage.
+React:
+	movem.l	d1/a2/a6,-(sp)
+	move.l	MonPtr,a2
+	bsr	D20
+	move.w	d0,d1
+	move.w	mt_Temper(a2),d0
+	mulu.w	#3,d0
+	add.w	d0,d1
+	add.w	d3,d1
+	bsr	BestTrader
+	moveq	#SK_TRADE,d0
+	bsr	SkillTen
+	add.w	d0,d1
+	move.w	hr_Cha(a6),d0
+	bsr	StatMod
+	add.w	d1,d0
+	movem.l	(sp)+,d1/a2/a6
+	rts
+
+; MeetPeace : ils passent leur chemin. Leur case se vide, sans or ni
+; experience -- on n'a rien gagne qu'un peu de temps.
+MeetPeace:
+	movem.l	d0-d2,-(sp)
+	clr.w	MeetPhase
+	clr.w	InCombat
+	move.w	MonX,d0
+	move.w	MonY,d1
+	bsr	MapCell
+	move.w	d0,d2
+	and.w	#$000f,d2
+	move.w	MonX,d0
+	move.w	MonY,d1
+	bsr	MapSet
+	movem.l	(sp)+,d0-d2
+	rts
+
+; PartyTongues : -> d0 = les langues que parle le groupe debout
+PartyTongues:
+	movem.l	d1-d2/a0/a6,-(sp)
+	moveq	#0,d0
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d2
+.loop:
+	tst.w	hr_Hp(a6)
+	beq.s	.next
+	bsr	HeroTongues
+	or.w	d1,d0
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d2,.loop
+	movem.l	(sp)+,d1-d2/a0/a6
+	rts
+
+; HeroTongues : a6 = heros -> d1 = ses langues, par sa race et sa classe
+HeroTongues:
+	movem.l	d0/a0,-(sp)
+	move.w	hr_Race(a6),d0
+	add.w	d0,d0
+	lea	RaceTongues,a0
+	move.w	(a0,d0.w),d1
+	move.w	hr_Class(a6),d0
+	add.w	d0,d0
+	lea	ClassTongues,a0
+	or.w	(a0,d0.w),d1
+	movem.l	(sp)+,d0/a0
+	rts
+
+; BestVigil : -> a6 = l'aventurier debout le plus vigilant, d0 = sa valeur
+BestVigil:
+	movem.l	d1-d3/a0,-(sp)
+	lea	Heroes,a0
+	move.l	a0,a6
+	moveq	#-1,d2
+	moveq	#NHEROES-1,d3
+.loop:
+	tst.w	hr_Hp(a0)
+	beq.s	.next
+	moveq	#0,d1
+	move.b	hr_Skills+SK_VIGIL(a0),d1
+	cmp.w	d2,d1
+	ble.s	.next
+	move.w	d1,d2
+	move.l	a0,a6
+.next:
+	lea	hr_SIZEOF(a0),a0
+	dbf	d3,.loop
+	moveq	#0,d0
+	tst.w	d2
+	bmi.s	.done
+	move.w	d2,d0
+.done:
+	movem.l	(sp)+,d1-d3/a0
+	rts
+
+; DrawTongues : a6 = heros. Ses langues, sur la page des competences.
+DrawTongues:
+	movem.l	d0-d7/a0-a1,-(sp)
+	lea	TxtTonguesLbl,a0
+	moveq	#3,d0
+	moveq	#118,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	bsr	HeroTongues
+	move.w	d1,d6
+	lea	TmpStr,a1
+	moveq	#1,d7			; la langue zero, c'est "ne parle pas"
+.loop:
+	btst	d7,d6
+	beq.s	.next
+	cmp.l	#TmpStr,a1
+	beq.s	.first
+	move.b	#' ',(a1)+
+.first:
+	move.w	d7,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+.next:
+	addq.w	#1,d7
+	cmp.w	#NTONGUES,d7
+	blt.s	.loop
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#127,d1
+	move.w	#C_PARCHD,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a1
 	rts
 
 ;----------------------------------------------------------------------
@@ -8879,7 +9277,12 @@ HandleKey:
 	bsr	DoAction
 	bra	.done
 
-.fight:					; --- combat : les ordres
+.fight:					; --- la rencontre, puis les ordres
+	tst.w	MeetPhase
+	beq.s	.orders
+	bsr	MeetKey
+	bra	.done
+.orders:
 	bsr	CombatKey
 	bra	.done
 
@@ -9376,6 +9779,30 @@ ResTexts:
 	dc.l	TxtResSpell,TxtResConc
 OrderNames:
 	dc.l	TxtOrdAttack,TxtOrdGuard
+TxtSurprised:	dc.b	"VOUS ÊTES SURPRIS !",0
+TxtSeenComing:	dc.b	"VOUS LES VOYEZ VENIR.",0
+TxtToArms:	dc.b	"AUX ARMES !",0
+TxtDeaf:	dc.b	"ILS NE RÉPONDENT QU'AU FER.",0
+TxtMenacing:	dc.b	"ILS AVANCENT, MENAÇANTS.",0
+TxtGreetBack:	dc.b	"ILS RENDENT LE SALUT ET PASSENT.",0
+TxtStare:	dc.b	"ILS VOUS FIXENT, SANS BOUGER.",0
+TxtImpatient:	dc.b	"ILS PERDENT PATIENCE.",0
+TxtNoTongue:	dc.b	"ILS NE PARLENT PAS.",0
+TxtNobodySpeaks: dc.b	"PERSONNE NE PARLE ",0
+TxtParleys:	dc.b	" PARLEMENTE.",0
+TxtTalkFails:	dc.b	"ILS NE VEULENT RIEN ENTENDRE.",0
+TxtLetPass:	dc.b	"ILS VOUS LAISSENT PASSER.",0
+TxtTollAsk:	dc.b	"ILS DEMANDENT ",0
+TxtTollAsk2:	dc.b	" PIÈCES. O OU N ?",0
+TxtTollPaid:	dc.b	"VOUS PAYEZ ",0
+TxtTollPaid2:	dc.b	" PIÈCES. ILS PASSENT.",0
+TxtTollRefused:	dc.b	"ILS DÉGAINENT.",0
+TxtTollPoor:	dc.b	"VOUS N'AVEZ PAS DE QUOI.",0
+TxtTonguesLbl:	dc.b	"LANGUES",0
+TxtMeetAsk:	dc.b	"QUE FAITES-VOUS ?",0
+TxtTollTag:	dc.b	"PAYER LE PÉAGE ?",0
+TxtHelpMeet:	dc.b	"S SALUE D PARLE F FUIT A ATTAQUE",0
+TxtHelpToll:	dc.b	"O PAYER   N REFUSER",0
 TxtToBack:	dc.b	" PASSE À L'ARRIÈRE.",0
 TxtToFront:	dc.b	" PASSE À L'AVANT.",0
 TxtNotAlone:	dc.b	"IL N'EST PAS SEUL : ILS SONT ",0
@@ -9668,6 +10095,10 @@ MonLastVbi:	ds.w	1		; VBI_Count au dernier passage de MonWalk
 HitFlags:	ds.b	NHEROES		; ceux qui ont touche pendant le round
 	even
 SheetPage:	ds.w	1		; fiche : 0 le heros, 1 ses competences
+MeetPhase:	ds.w	1		; 0 combat, 1 rencontre, 2 peage
+MeetAmbush:	ds.w	1		; la creature est venue a nous
+MeetGreeted:	ds.w	1		; on a deja salue
+MeetToll:	ds.w	1		; le peage demande
 Guarding:	ds.b	NHEROES		; ceux qui parent ce round
 ResCode:	ds.b	NHEROES		; ce que chacun a fait, pour le panneau
 ResVal:		ds.w	NHEROES		; et ses degats

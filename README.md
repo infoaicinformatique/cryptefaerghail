@@ -277,6 +277,46 @@ meilleurs dés**, comme il se doit ; `R` relance, `ENTRÉE` valide. Le nom se
 tape au clavier — et comme le CIA rend des **positions de touches**, pas des
 caractères, `TAB` bascule entre AZERTY et QWERTY.
 
+### Les rencontres : avant le fer, la parole
+
+Une rencontre ne commence plus forcément par un combat. Le groupe voit ce qui
+vient, et choisit : `S` saluer, `D` discuter, `F` se retirer, `A` attaquer.
+
+Chaque espèce a sa **langue** et son **tempérament**. Les morts, les bêtes et
+les monstres ne répondent qu'au fer ; les kobolds, gobelins, orcs, gnolls,
+ogres et géants sont méfiants ; les hommes-lézards plutôt paisibles. La momie
+parle la langue du pays — c'est un Faerghail qui a refusé qu'on le raye — et
+ne veut rien entendre.
+
+On ne discute qu'avec qui l'on comprend. Les langues viennent de la race et de
+la classe :
+
+| | Parle, en plus du commun |
+|---|---|
+| Nain | gobelin, géant |
+| Elfe | draconique |
+| Halfelin | gobelin |
+| Demi-elfe | orc |
+| Demi-orc | orc, gobelin |
+| Magicien, ensorceleur | draconique |
+| Druide | géant |
+| Rôdeur | orc |
+
+Le meilleur négociateur parle pour tout le groupe. Un **jet de réaction** —
+d20, trois fois le tempérament, son charisme, le dixième de son marchandage, et
+quatre de plus si on leur parle leur langue — décide : ils passent leur chemin,
+ils **demandent un péage** (`O` payer, `N` refuser), ou ils dégainent. Saluer
+ne marche qu'une fois ; la seconde, ils perdent patience. Une rencontre réglée
+à l'amiable ne rapporte ni or ni expérience — seulement du temps et du sang
+épargné. Les langues de chaque héros sont sur la page des compétences.
+
+Quand c'est la créature qui vient au groupe, elle peut le **surprendre** :
+trente pour cent, moins le cinquième de la meilleure vigilance du groupe.
+Surpris, on n'a rien à dire : elle frappe la première. Sinon, on la voit
+venir, et la vigilance progresse.
+
+![La rencontre](docs/emu-rencontre.png)
+
 ### Le combat par rounds
 
 Le combat se joue comme dans *Legend of Faerghail* et les jeux de rôle à

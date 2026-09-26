@@ -136,6 +136,7 @@ Chaque étape laisse un jeu jouable, testé par les bancs, avant la suivante.
 3. **Le combat à rangs** : groupes d'ennemis, lignes, ordres par personnage,
    déroulé détaillé ou rapide, mémoire des ordres. *Fait.*
 4. **Les rencontres** : saluer, parler, se retirer ; langues ; recrutement.
+   *Fait, sauf le recrutement.*
 5. **La ville** : échoppe, banque, auberge, temple, guilde (entraînement payant,
    sorts, langues), vol à la tire.
 6. **L'extérieur** : grille en plein air, heure, météo, rations, moral.

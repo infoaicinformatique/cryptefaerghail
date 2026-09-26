@@ -112,6 +112,15 @@ COMMANDES
     A frapper   D parer   S un sort   1 a 6 changer de heros
     ENTREE rejoue les ordres retenus pour tous   F fuir   I sac
 
+LES RENCONTRES
+  Avant le fer, la parole : S saluer, D discuter, F se retirer,
+  A attaquer. On ne discute qu'avec qui l'on comprend -- les langues
+  viennent de la race et de la classe, et sont sur la page des
+  competences. Selon leur humeur, ils passent leur chemin, demandent
+  un peage (O payer, N refuser) ou degainent. Les morts et les betes
+  ne repondent qu'au fer. Quand c'est eux qui viennent, ils peuvent
+  vous surprendre : la vigilance du groupe l'evite.
+
 LE COMBAT
   En face, un groupe de un a quatre creatures ; quand celle de devant
   tombe, la suivante s'avance. Votre groupe se tient sur deux rangs :

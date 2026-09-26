@@ -798,9 +798,14 @@ def combat_test(g, fails):
     g.setw("MonKind", 4)                  # des orcs
     g.setw("MonX", g.w("PosX"))
     g.setw("MonY", g.w("PosY"))
+    g.setw("MeetAmbush", 0)               # c'est nous qui venons : pas de
     if not check(g.call(g.addr("StartCombat")), "StartCombat ne rend pas "
-                 "la main", fails):
+                 "la main", fails):       # surprise
         return
+    check(g.w("MeetPhase") == 1, "pas de rencontre avant le combat", fails)
+    g.key(K_A)                            # A : aux armes
+    check(g.w("MeetPhase") == 0, "A ne tourne pas la rencontre au combat",
+          fails)
     n = g.w("GroupN")
     check(1 <= n <= 4, f"groupe de {n} creatures", fails)
     check(g.w("OrderHero") == 0, f"l'ordre commence au heros "
@@ -863,6 +868,71 @@ def combat_test(g, fails):
     heal(g)
     print(f"  un groupe de {n}, les ordres un par un, l'arriere a l'arc, "
           f"la parade, et la suivante qui s'avance")
+
+
+def meet(g, kind):
+    """Provoque une rencontre d'autorite, sur la case du groupe."""
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("UiMode", 0)
+    g.setw("MonKind", kind)
+    g.setw("MonX", g.w("PosX"))
+    g.setw("MonY", g.w("PosY"))
+    g.setw("MeetAmbush", 0)
+    return g.call(g.addr("StartCombat"))
+
+
+def meet_test(g, fails):
+    """La rencontre avant le combat : saluer, discuter, payer, degainer.
+
+    Le rat ne parle pas et ne repond qu'au fer. L'orc parle la langue
+    des orcs, que le demi-elfe et le demi-orc du groupe connaissent : il
+    laisse passer, demande un peage ou degaine, selon le jet de
+    reaction -- on essaie assez de fois pour voir chaque issue, et on
+    verifie que chacune tient ses promesses."""
+    heal(g)
+    if not check(meet(g, 2), "StartCombat ne rend pas la main", fails):
+        return
+    check(g.w("MeetPhase") == 1, "pas de rencontre avec le rat", fails)
+    g.key(K_D)
+    check(g.w("MeetPhase") == 1 and g.w("InCombat") == 1,
+          "discuter avec un rat change quelque chose", fails)
+    g.key(K_S)
+    check(g.w("MeetPhase") == 0 and g.w("InCombat") == 1,
+          "le rat salue ne tourne pas au combat", fails)
+
+    seen = {"passe": 0, "peage": 0, "combat": 0}
+    for _ in range(40):
+        heal(g)
+        g.setw("Gold", 5000)
+        if not meet(g, 4):
+            fails.append("StartCombat ne rend pas la main")
+            break
+        g.key(K_D)
+        if not g.w("InCombat"):
+            seen["passe"] += 1
+            check(g.w("MeetPhase") == 0, "ils passent, la rencontre reste",
+                  fails)
+        elif g.w("MeetPhase") == 2:
+            seen["peage"] += 1
+            toll, gold0 = g.w("MeetToll"), g.w("Gold")
+            check(toll > 0, "un peage de zero piece", fails)
+            g.key(0x18)                   # O : payer
+            check(g.w("Gold") == gold0 - toll, f"le peage de {toll} coute "
+                  f"{gold0 - g.w('Gold')}", fails)
+            check(not g.w("InCombat"), "le peage paye, ils restent", fails)
+        else:
+            seen["combat"] += 1
+            check(g.w("MeetPhase") == 0 and g.w("InCombat") == 1,
+                  f"discussion sans issue (rencontre {g.w('MeetPhase')}, "
+                  f"combat {g.w('InCombat')})", fails)
+    check(seen["passe"] + seen["peage"] > 0, f"les orcs ne se laissent "
+          f"jamais parler : {seen}", fails)
+    g.setw("InCombat", 0)
+    g.setw("MeetPhase", 0)
+    g.setw("Gold", 100)
+    heal(g)
+    print(f"  le rat ne parle pas ; quarante orcs : {seen}")
 
 
 def trap_test(g, fails):
@@ -1238,6 +1308,9 @@ if __name__ == "__main__":
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
           f"niveau {g.w('Level')} or {g.w('Gold')}")
+
+    print("--- les rencontres ---")
+    meet_test(g, fails)
 
     print("--- le combat par rounds ---")
     combat_test(g, fails)

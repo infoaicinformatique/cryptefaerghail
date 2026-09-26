@@ -89,6 +89,27 @@ ItemTable:
 	; 28 COURONNE
 	dc.b	"COURONNE",0,0,0,0,0,0,0,0,0,0
 	dc.w	6,0,0,0,400,0,20,2
+	; 29 ÉPÉE LONGUE +2
+	dc.b	"ÉPÉE LONGUE +2",0,0,0,0
+	dc.w	0,1,8,2,300,0,19,2
+	; 30 MARTEAU +1
+	dc.b	"MARTEAU +1",0,0,0,0,0,0,0,0
+	dc.w	0,1,8,1,150,1,20,3
+	; 31 ARC LONG +1
+	dc.b	"ARC LONG +1",0,0,0,0,0,0,0
+	dc.w	0,1,8,1,250,2,20,3
+	; 32 MAILLES ELFIQUES
+	dc.b	"MAILLES ELFIQUES",0,0
+	dc.w	1,6,0,0,400,0,20,2
+	; 33 BOUCLIER +1
+	dc.b	"BOUCLIER +1",0,0,0,0,0,0,0
+	dc.w	2,3,0,0,150,0,20,2
+	; 34 POTION SUPRÊME
+	dc.b	"POTION SUPRÊME",0,0,0,0
+	dc.w	3,4,8,4,150,0,20,2
+	; 35 SCEAU DU GAGE
+	dc.b	"SCEAU DU GAGE",0,0,0,0,0
+	dc.w	6,0,0,0,600,0,20,2
 
 ; nom (20), niveau, effet, des/niveau, faces, bonus, plafond,
 ; sauvegarde, moitie si reussie, ecole
@@ -182,7 +203,21 @@ MonTypes:
 	dc.w	5,10,28,15,6,1,10,3,20,2,9,5,3,375,80,8,0,0
 	dc.b	"GÉANT COLLINE",0,0,0
 	dc.w	12,8,48,17,16,2,8,10,20,2,12,3,4,525,200,4,4,1
-NMONSTERS	= 25
+	dc.b	"NÉCROPHAGE",0,0,0,0,0,0
+	dc.w	4,12,0,15,3,1,4,1,20,2,1,1,5,225,30,1,1,0
+	dc.b	"CHIEN INFERNAL",0,0
+	dc.w	4,8,4,16,5,1,8,1,20,2,5,5,1,225,0,0,0,0
+	dc.b	"APPARITION",0,0,0,0,0,0
+	dc.w	5,12,0,15,5,1,4,0,20,2,1,3,6,375,50,5,0,0
+	dc.b	"BASILIC",0,0,0,0,0,0,0,0,0
+	dc.w	6,10,12,16,8,1,8,3,20,2,9,4,3,375,0,8,0,0
+	dc.b	"MANTICORE",0,0,0,0,0,0,0
+	dc.w	6,10,24,17,10,2,4,5,20,2,9,7,3,375,70,7,1,0
+	dc.b	"ETTIN",0,0,0,0,0,0,0,0,0,0,0
+	dc.w	10,8,20,18,12,2,6,6,20,2,9,3,5,450,120,4,4,1
+	dc.b	"GOLEM DE CHAIR",0,0
+	dc.w	9,10,30,18,10,2,8,5,20,2,3,2,3,525,0,3,0,0
+NMONSTERS	= 32
 
 ; rencontres par niveau de donjon : numeros de monstres
 Encounter0:
@@ -194,11 +229,15 @@ Encounter1:
 	dc.b	12
 	even
 Encounter2:
-	dc.b	13,15,16,17,18,19,20,21,22,23,24
-	dc.b	11
+	dc.b	13,15,16,17,18,19,20,21,22,23,24,25,26
+	dc.b	13
+	even
+Encounter3:
+	dc.b	17,19,20,21,22,23,24,25,26,27,28,29,30,31
+	dc.b	14
 	even
 EncounterTab:
-	dc.l	Encounter0,Encounter1,Encounter2
+	dc.l	Encounter0,Encounter1,Encounter2,Encounter3
 
 ; nom (12), de de vie, attaque, sauvegardes fortes, lanceur
 ClassTable:

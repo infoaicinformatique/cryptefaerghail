@@ -45,10 +45,11 @@ bien faite — bien plus longtemps qu'on ne l'espérait.
 ## Comment on creuse une maison vers le bas
 
 Faerghail n'a pas été construite : elle a été **reprise**. Sous la colline
-courait une ancienne carrière de schiste, trois niveaux de galeries que les
+courait une ancienne carrière de schiste, quatre niveaux de galeries que les
 carriers avaient abandonnées en descendant, comme on descend toujours, quand
 le meilleur banc s'enfonce. La maison de garde s'est installée dans les
-chambres du haut et a suivi la pierre.
+chambres du haut et a suivi la pierre sur trois étages ; le quatrième, le fond
+de la carrière, est resté brut.
 
 D'où la forme du lieu, qui déroute tous ceux qui y entrent : ce n'est ni un
 tombeau, ni un temple, ni un donjon de guerre. C'est un **classement**. Des
@@ -143,6 +144,26 @@ Quant à ce qui ne s'explique pas — l'hydre dans la citerne, le géant qui a f
 sa tanière d'une salle de dépôt —, c'est le sort ordinaire de tout endroit qui
 reste ouvert et que plus personne ne surveille.
 
+## La carrière
+
+Sous le troisième étage, il reste ce que les carriers ont laissé en partant :
+les galeries du fond, là où le banc de schiste plonge vers la gueule. Les
+greffiers ne les ont jamais habillées — ni niches régulières, ni couloirs
+droits, ni classement. Ils y ont seulement porté ce qu'on ne range pas : le
+grand registre, qu'il fallait tenir près de la porte des quittances, puisqu'on
+raye la ligne avant de sortir, et les gages dont personne, même la maison, ne
+voulait plus au-dessus.
+
+C'est là qu'on trouve les plus anciens dépôts de la vallée — une épée
+reforgée deux fois, des mailles d'un travail qu'on ne sait plus faire, et le
+**sceau du gage**, la matrice dont on marquait les premières quittances. Et
+c'est là que vit ce qui a trouvé le chemin par la gueule plutôt que par
+l'escalier : le chien infernal, la manticore, l'ettin qui a pris une chambre
+de taille pour tanière. Le **nécrophage** est d'ici aussi : un déposant mort
+avant l'échéance, qui parle encore la langue du pays et réclame son gage à
+qui passe. Le **golem de chair**, lui, n'a pas de langue ; il a été cousu pour
+garder quelque chose, et il garde.
+
 ## Pourquoi la sortie est en bas
 
 C'est la question que pose tout le monde en jouant, et elle a une réponse de
@@ -192,12 +213,14 @@ Ils vont chercher le grand registre au dernier étage, et une plume.
 | Un marchand scellé dans un mur, un par étage | L'emmurement de garde d'Ossian Vaugris : le greffier est devenu une clause, et un guichet est un endroit, pas un homme |
 | Il rachète à moitié prix | Le taux d'un dépôt refait |
 | Ce qui est vendu reste vendu | Une maison de garde tient ses comptes |
-| Une porte à runes par étage, trois réponses | Le contrôle par question, et les trois colonnes du registre |
+| Deux portes à runes par étage, trois réponses | Le contrôle par question, et les trois colonnes du registre |
 | Une réponse fausse brûle un aventurier | La rune ne punit pas : elle inscrit |
 | Des dalles piégées, deux fois plus en bas | Une dette impayée, un ressort tendu ; en bas, les échéances sont plus vieilles |
 | Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
 | Une croix à la craie sur la dalle repérée | La marque des greffiers, sur un compte à examiner |
 | Trois étages, de plus en plus dangereux | Un étage par génération, la profondeur vaut l'ancienneté |
+| Un quatrième, brut, sous les trois autres | La carrière elle-même, que les greffiers n'ont jamais habillée |
+| Le greffe est dans la carrière | Le registre se tient près de la porte des quittances : on raye, puis on sort |
 | Six aventuriers, ni quatre ni cinq | Six colonnes de signature au bas d'une quittance |
 | La sortie est tout en bas | La gueule de la carrière, devenue porte des quittances |
 | Elle ne s'ouvre qu'une fois la ligne rayée au registre | On ne sort de Faerghail qu'acquitté |
@@ -218,7 +241,7 @@ registre et de quoi écrire*, et ce de quoi écrire n'a jamais servi depuis.
 
 Ce que cela change, en jouant : l'escalier du dernier étage ne mène plus
 nulle part tant que la ligne n'est pas rayée. La porte des quittances tient
-bon, et le groupe repart chercher le greffe. Le troisième étage n'est plus une
+bon, et le groupe repart chercher le greffe. Le dernier étage n'est plus une
 sortie à trouver, mais un compte à solder puis une sortie à trouver.
 
 ## Ambelune, en haut de l'escalier

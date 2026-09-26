@@ -51,22 +51,44 @@ python3 tools/dungeon_preview.py 0 3 1 1 combat.png 2   # ecran de combat
 make wav           # rejoue les modules en Python et écrit deux WAV
 ```
 
-## Deux disquettes prêtes à l'emploi
+## Trois disquettes prêtes à l'emploi
 
-Le jeu tient sur **deux disquettes 880 Ko** : celle du jeu en **FFS** (DOS1,
-512 octets utiles par bloc au lieu de 488 — cinq pour cent de place en plus, et
-le jeu demande de toute façon un Kickstart 3), celle du source en OFS (DOS0,
-lisible dès le Kickstart 1.3) :
+Le jeu tient sur **trois disquettes 880 Ko** : celles du jeu et des données en
+**FFS** (DOS1, 512 octets utiles par bloc au lieu de 488 — cinq pour cent de
+place en plus, et le jeu demande de toute façon un Kickstart 3), celle du
+source en OFS (DOS0, lisible dès le Kickstart 1.3) :
 
 | | Contenu |
 |---|---|
 | `dist/Faerghail1.adf` | **amorçable**, en FFS : le jeu, un `Lisezmoi.txt` et un `S/Startup-Sequence` qui le lance au démarrage |
 | `dist/Faerghail2.adf` | le source : tout ce qui s'assemble, écrit à la main ou généré, et les données qui tiennent à côté |
+| `dist/Faerghail3.adf` | **la disquette des données**, volume `FaerghailData`, en FFS : le paquet du donjon `Donjons/Crypte.dgn` et son `Lisezmoi.txt` |
 
 Une seule ne suffisait plus. À huit bitplanes le jeu pèse à lui seul plus d'un
-demi-mégaoctet, et il fallait choisir entre le source et les décors : la
-disquette du jeu était pleine à 98 %. Il a maintenant la sienne, remplie à 87 %,
-et plus de cent Ko de place pour des images plus riches.
+demi-mégaoctet, et il fallait choisir entre le source et les décors. Le jeu a
+eu sa disquette ; ses données ont maintenant la leur. Le paquet du donjon
+quitte la disquette 1, qui tombe à 66 % et garde près de 300 Ko pour
+l'exécutable ; la disquette des données n'est remplie qu'à 30 % — plus de
+600 Ko pour d'autres étages, d'autres donjons, un bestiaire plus riche.
+
+**Le jeu la demande par son nom.** Il cherche d'abord son paquet à côté de lui
+(`PROGDIR:Donjons/Crypte.dgn` : une installation sur disque dur n'a besoin de
+rien d'autre), puis `FaerghailData:Donjons/Crypte.dgn`. Si la disquette n'est
+dans aucun lecteur, c'est DOS qui affiche « insérez le volume FaerghailData »,
+comme les jeux de l'époque demandaient leur disquette 2 — avec deux lecteurs,
+on la laisse dans DF1: et il n'y a rien à faire. Aussitôt après, le jeu relit
+sa sauvegarde sur `PROGDIR:`, et DOS redemande la disquette 1 : le joueur à un
+seul lecteur la remet, et la laisse pendant qu'il joue.
+
+**Une fois l'écran pris, plus de requête.** Une requête de DOS s'afficherait
+sur l'écran du Workbench, que le jeu vient de remplacer : la partie attendrait
+une disquette sans que personne le voie. Le jeu pose donc `pr_WindowPtr` à −1
+(retrouvé par `FindTask`) avant de prendre l'écran, et le rend en sortant.
+Une sauvegarde sans sa disquette échoue sur-le-champ, et le journal le dit :
+« PAS SAUVÉE : DISQUETTE 1 ABSENTE ? ». Le banc 68020 connaît le volume
+(`$AGA_DATADIR`, `bin/` par défaut), et `tools/test_save.py` vérifie qu'un
+`PROGDIR:` vide fait lire le paquet sur `FaerghailData:`, et que les requêtes
+sont coupées une fois l'écran pris.
 
 La seconde porte `crawl.s`, les fichiers dont il dépend, toutes les tables
 générées, les bruitages, les deux modules et les cartes. Seuls les décors
@@ -75,12 +97,14 @@ vivent dans **`dist/Faerghail.lha`**, qui porte tout, et les générateurs Pytho
 les refont en quelques secondes.
 
 ```sh
-make disk          # refabrique les trois -- nécessite pip install amitools
+make disk          # refabrique les quatre (trois ADF, un .lha) -- nécessite pip install amitools
 ```
 
-- **Émulateur** : montez `Faerghail1.adf` dans DF0: et démarrez dessus ;
-  `Faerghail2.adf` dans DF1: si vous voulez lire le source.
-- **Machine réelle** : écrivez les ADF sur deux disquettes (ADF Blitzer,
+- **Émulateur** : montez `Faerghail1.adf` dans DF0: et `Faerghail3.adf`
+  (les données) dans DF1:, et démarrez ; `Faerghail2.adf` dans un autre
+  lecteur si vous voulez lire le source. Avec un seul lecteur, changez de
+  disquette quand le Workbench le demande.
+- **Machine réelle** : écrivez les ADF sur trois disquettes (ADF Blitzer,
   X-Copy + Amiga Explorer, Greaseweazle…), ou copiez le `.lha` sur le disque
   dur et faites `lha x Faerghail.lha`.
 
@@ -161,8 +185,9 @@ tools/test_copper.py contrôle la copperlist du jeu
 tools/test_save.py   accueil, sauvegarde et reprise, fichiers à l'appui
 tools/test_layout.py vérifie qu'aucun panneau ne déborde de la vue
 docs/histoire.md     le fond de fiction : ce qu'était Faerghail
-disk/                fichiers écrits à la main pour la disquette
-scripts/make-disk.sh fabrique les deux ADF (jeu amorçable, source) et le .lha
+disk/                fichiers écrits à la main pour les disquettes
+disk/Data/           le Lisezmoi de la disquette des données
+scripts/make-disk.sh fabrique les trois ADF (jeu amorçable, source, données) et le .lha
 scripts/get-toolchain.sh  installation de vasm + vlink
 ```
 
@@ -181,8 +206,10 @@ garde** — l'endroit où, faute de juge et de prince, on descendait déposer un
 objet pour garantir une promesse, et où un greffier tenait le registre des
 échéances. Trois étages, un par génération de greffiers, creusés dans une
 ancienne carrière de schiste : d'où la forme du lieu, qui n'est ni un tombeau
-ni un donjon de guerre mais un **classement**, et d'où la sortie tout en bas,
-là où la carrière débouche sur la vallée.
+ni un donjon de guerre mais un **classement**. Dessous, **la carrière**
+elle-même, que les greffiers n'ont jamais habillée : le greffe s'y est tenu,
+au bord de la gueule, et la sortie est tout en bas, là où la carrière débouche
+sur la vallée.
 
 Le fond n'a pas été inventé à côté du jeu, mais à partir de lui : chaque règle
 déjà écrite y trouve sa raison.
@@ -194,7 +221,7 @@ déjà écrite y trouve sa raison.
 | La sortie ne s'ouvre qu'une fois la ligne rayée | On ne sort de Faerghail qu'acquitté |
 | Un marchand scellé dans un mur, un par étage | L'emmurement de garde du dernier greffier : il est devenu une clause de la maison, et un guichet est un endroit, pas un homme |
 | Il rachète à moitié prix | Le taux d'un dépôt refait |
-| Une porte à runes par étage, **trois** réponses | Le contrôle par question — une clé se vole, pas une réponse — et les trois colonnes du registre |
+| Deux portes à runes par étage, **trois** réponses | Le contrôle par question — une clé se vole, pas une réponse — et les trois colonnes du registre |
 | Une réponse fausse brûle un aventurier | La rune ne punit pas : elle inscrit |
 | Des dalles piégées, deux fois plus en bas | Une dette impayée, un ressort tendu ; en bas, les échéances sont plus vieilles |
 | Une dalle ne se déclenche qu'une fois | Le ressort détendu, le compte est soldé |
@@ -424,10 +451,17 @@ et son type de lanceur (profane sur l'Intelligence, divin sur la Sagesse).
 
 ### Le bestiaire
 
-25 créatures du SRD, avec leurs statistiques d'origine : kobold, gobelin, rat
+32 créatures du SRD, avec leurs statistiques d'origine : kobold, gobelin, rat
 sanguin, squelette, orc, hobgobelin, zombi, loup, gnoll, goule, bugbear, worg,
 ombre, ogre, homme-lézard, gargouille, oursaloup, harpie, minotaure, troll,
-spectre, momie, hydre, géant des collines… Chaque monstre tire ses points de
+spectre, momie, hydre, géant des collines — et, pour les caveaux et la
+carrière, nécrophage, chien infernal, apparition, basilic, manticore, ettin et
+golem de chair. Chacune des sept nouvelles reprend une famille de silhouettes
+déjà modelée (le nécrophage marche comme un mort, l'apparition flotte comme une
+ombre, le basilic rampe comme l'hydre, la manticore vole, l'ettin et le golem
+ont la carrure des brutes) : le paquet du donjon ne grossit pas d'un octet de
+bestiaire. Le nécrophage parle encore le commun — un déposant mort avant
+l'échéance, qui réclame son gage. Chaque monstre tire ses points de
 vie à ses dés de vie à l'apparition, et les rencontres sont réparties par
 niveau de donjon selon leur facteur de puissance.
 
@@ -454,14 +488,34 @@ ouvre le prologue, `ESC` quitte.
 
 ### Contenu
 
-Trois niveaux, 28 objets (11 armes, 5 protections, potions, 6 parchemins,
-clés, trésors), 25 créatures en neuf familles modelées en volumes, trois
+**Quatre niveaux**, 35 objets (14 armes, 7 protections, potions, 6 parchemins,
+clés, trésors), 32 créatures en neuf familles modelées en volumes, trois
 poses chacune, coffres, objets au sol,
 niches creusées dans les murs, portes ordinaires, portes verrouillées, le
 grand registre au fond du dernier étage — et
-une **porte à runes** par niveau, qui pose une énigme à trois réponses :
-juste, elle s'efface et le groupe gagne de l'expérience ; faux, la rune brûle
-un aventurier.
+**deux portes à runes** par niveau, huit énigmes en tout, chacune à trois
+réponses : juste, elle s'efface et le groupe gagne de l'expérience ; faux, la
+rune brûle un aventurier.
+
+**La carrière**, le quatrième étage, est sous les trois étages des greffiers :
+c'est là que sont maintenant le greffe et la porte des quittances. Elle a son
+bestiaire (du troll au golem de chair), son butin — épée longue +2, marteau
++1, arc long +1, mailles elfiques, bouclier +1, potion suprême, et le **sceau
+du gage**, le trésor le plus cher de la crypte —, son étal au guichet
+d'Ossian, et deux énigmes de plus.
+
+**Chaque étage sous le premier est plus garni** : deux coffres, un objet au
+sol, deux monstres, une porte et une niche de plus qu'avant. Le premier étage
+reste l'apprentissage qu'il était — un groupe de niveau 1 n'en supporte pas
+davantage — et ne gagne que sa seconde porte à runes. Le générateur pose
+celle-ci en dernier, pour ne rien déranger de ce qui précède, à six pas au
+moins de la première, jamais devant l'échoppe ni dans le greffe. Et quand un
+labyrinthe n'a pas la place d'un greffe ou d'une route sûre, il essaie la
+graine suivante, dans un ordre fixe : les cartes restent les mêmes d'une
+génération à l'autre.
+
+L'état de quatre étages ne tient plus dans une sauvegarde de trois : le nombre
+magique devient `FAEA`.
 
 **Le bestiaire** est modelé, et non plus peint à plat. Les premières
 silhouettes avaient été dessinées pour seize couleurs : des ellipses d'une
@@ -539,7 +593,7 @@ serrures et des herses. Le générateur essaie donc chaque emplacement de la
 moitié du fond de l'étage, mure toute ouverture dont le reste de l'étage peut
 se passer — sans rien couper, ni relier deux zones qu'une serrure, une herse
 ou une porte à runes séparait —, et garde celui qui laisse le moins d'entrées.
-Sur le troisième étage, il n'en reste qu'une : une porte. Et le chemin de la
+Sur le dernier étage, il n'en reste qu'une : une porte. Et le chemin de la
 sortie passe par le greffe.
 
 Ses murs sont des **rayonnages** : quatre planches de chêne et, dessus, les
@@ -565,7 +619,7 @@ Les autres rayonnages sont muets : des comptes, rien qui vous regarde.
 ![Le guichet](docs/emu-livre.png)
 
 Sans cela, **l'escalier du dernier étage ne mène nulle part** : la porte des
-quittances ne cède qu'à qui a rayé sa ligne. Le troisième étage a donc un
+quittances ne cède qu'à qui a rayé sa ligne. Le dernier étage a donc un
 objet, et pas seulement une sortie — trouver le greffe, puis trouver
 l'escalier. Le générateur place le registre dans un mur bordé par un couloir
 atteignable **sans forcer une serrure**, jamais collé à l'escalier, et le

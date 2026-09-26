@@ -4,6 +4,8 @@ echo "  -------------------------"
 echo "  Creez votre groupe, puis explorez.*N"
 echo "  Fleches bouger   ESPACE agir   C fiche   I sac"
 echo "  Combat : A attaquer  S sort  F fuir*N"
+echo "  Un seul lecteur ? A la demande, inserez la disquette"
+echo "  FaerghailData, puis remettez celle-ci.*N"
 echo "  Chargement..."
 AGACrawl
 echo "*N  Voir Lisezmoi.txt.*N"

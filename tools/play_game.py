@@ -263,15 +263,21 @@ def step_to(g, target, log):
         return (g.w("PosX"), g.w("PosY")) != before
     g.key(T.K_SPACE)                      # porte, rune, levier
     if g.w("UiMode") == 4:                # une enigme barre le passage
-        for answer in range(3):
-            g.key(T.K_1 + answer)
-            if g.w("UiMode") != 4:
-                break
-        else:
+        # La rune se referme a chaque reponse, juste ou fausse : on
+        # retient ce qu'on a deja essaye, comme un joueur qui a pris un
+        # coup de fer, et l'on propose la suivante au prochain passage.
+        idx = g.w("RiddleIdx")
+        tried = RIDDLE_TRIES.get(idx, 0)
+        g.key(T.K_1 + tried % 3)
+        RIDDLE_TRIES[idx] = tried + 1
+        if g.w("UiMode") == 4:
             g.key(T.K_ESC)
-        log.append(("enigme", g.w("RiddleIdx")))
+        log.append(("enigme", idx))
     g.key(T.K_UP)
     return (g.w("PosX"), g.w("PosY")) != before
+
+
+RIDDLE_TRIES = {}                         # enigme -> reponses deja donnees
 
 
 def exercise_ui(g, fails, stats):
@@ -331,11 +337,11 @@ def check_state(g, fails):
         lvl = g.hero(i, "hr_Level")
         if not 1 <= lvl <= 10:
             fails.append(f"heros {i} : niveau {lvl}")
-        if not 0 <= g.hero(i, "hr_Weapon") <= 28:
+        if not 0 <= g.hero(i, "hr_Weapon") <= 35:
             fails.append(f"heros {i} : arme {g.hero(i, 'hr_Weapon')}")
     if g.sw("Gold") < 0:
         fails.append(f"or negatif : {g.sw('Gold')}")
-    if not 0 <= g.w("Level") < 3:
+    if not 0 <= g.w("Level") < T.read_equ("LEVELS", 4):
         fails.append(f"niveau de donjon {g.w('Level')}")
     if not 0 <= g.w("UiMode") <= 8:
         fails.append(f"UiMode {g.w('UiMode')}")
@@ -496,7 +502,8 @@ def main():
     if levers and not stats["levers"]:
         fails.append(f"{levers} levier(s) sur le niveau, aucun tire")
     for tour in range(40):
-        if g.w("Level") == 2 and not g.w("Acquitted") and not g.w("GameOver"):
+        if g.w("Level") == T.read_equ("LEVELS", 4) - 1 \
+                and not g.w("Acquitted") and not g.w("GameOver"):
             sign_ledger(g, fails, stats)  # sinon la sortie ne cede pas
         grid = terrain(g)
         here = (g.w("PosX"), g.w("PosY"))

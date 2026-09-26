@@ -112,6 +112,8 @@ _LVOFreeMem     = -210
 _LVOPermit      = -138
 _LVOOpenLibrary = -552
 _LVOCloseLibrary = -414
+_LVOFindTask    = -294
+pr_WindowPtr    = 184           ; Process : ou DOS pose ses requetes
 
 ; --- dos.library : sauvegarde de la partie ---
 _LVOOpen        = -30

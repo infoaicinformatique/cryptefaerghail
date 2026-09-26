@@ -227,10 +227,10 @@ if __name__ == "__main__":
     shot(g, "round", fails)
     g.setw("UiMode", 0)
 
-    # Les trois enigmes, sans chercher les portes : le titre depassait
+    # Les huit enigmes, sans chercher les portes : le titre depassait
     # de la vue, et le banc ne le voyait que s'il trouvait un chemin
     # jusqu'a une porte a runes.
-    for riddle in range(3):
+    for riddle in range(T.read_equ("NRIDDLES", 8)):
         g.setw("RiddleIdx", riddle)
         g.setw("UiMode", T.read_equ("UI_RIDDLE", 4))
         g.setw("NeedRedraw", 1)

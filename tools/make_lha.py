@@ -62,6 +62,8 @@ def collect():
               "S/Startup-Sequence"),
              (os.path.join(ROOT, "bin", "Donjons", "Crypte.dgn"),
               "Donjons/Crypte.dgn"),
+             (os.path.join(ROOT, "disk", "Data", "Lisezmoi.txt"),
+              "Donjons/Lisezmoi.txt"),
              (os.path.join(ROOT, "data", "dgnart.bin"), "Src/data/dgnart.bin"),
              (os.path.join(ROOT, "data", "crypte.dgn"), "Src/data/crypte.dgn"),
              (os.path.join(ROOT, "data", "sfx.bin"), "Src/data/sfx.bin"),

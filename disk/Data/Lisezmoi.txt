@@ -1,0 +1,26 @@
+LA CRYPTE DE FAERGHAIL -- DISQUETTE DES DONNEES
+===============================================
+
+Cette disquette ne demarre pas : elle se lit. Elle porte les paquets
+des donjons, dans le tiroir Donjons :
+
+  Donjons/Crypte.dgn   la crypte de Faerghail : ses quatre etages
+                       (trois de greffiers, et la carriere tout en
+                       bas) et son bestiaire
+
+Le jeu cherche son paquet a cote de lui (PROGDIR:Donjons), puis sur
+le volume FaerghailData -- cette disquette, par son nom.
+
+AVEC DEUX LECTEURS
+  La disquette 1 dans DF0:, celle-ci dans DF1:. Le jeu la trouve seul.
+
+AVEC UN SEUL LECTEUR
+  Demarrez sur la disquette 1. Quand le Workbench demande le volume
+  FaerghailData, inserez celle-ci ; quand il redemande Faerghail,
+  remettez la disquette 1. La partie se sauvegarde sur la disquette 1 :
+  laissez-la dans le lecteur pendant que vous jouez. Si elle n'y est
+  pas, le journal dit que la partie n'a pas ete sauvee.
+
+SUR DISQUE DUR
+  Copiez AGACrawl et le tiroir Donjons dans le meme tiroir : le jeu
+  n'a alors plus besoin de cette disquette.

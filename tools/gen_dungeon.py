@@ -1800,6 +1800,10 @@ LEDGER = 11                              # le grand registre, dernier etage
 STAIRSUP = 12                            # l'escalier qui remonte d'un etage
 ARCHIVE = 13                             # un rayonnage du greffe
 NARCHIVES = 3                            # les trois livres qu'on y lit
+NLEVELS = 4                              # trois etages de greffiers, et
+                                         # la carriere tout en bas
+NRIDDLES = 8                             # deux portes a runes par etage :
+                                         # l'enigme n de l'etage, puis n+4
 SOLID = (WALL, NICHE, LEVER, GATE, SHOP, LEDGER, ARCHIVE)
 NTRAPKINDS = 4
 CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
@@ -1808,7 +1812,8 @@ CHEST, MONSTER, ITEM = 0x10, 0x20, 0x30              # quartet haut
 ENCOUNTERS = [
     [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
     [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16],
-    [13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24],
+    [13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26],
+    [17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
 ]
 
 # Objets : doivent suivre exactement ItemTable dans src/crawl.s
@@ -1823,6 +1828,9 @@ ITEMS = {
     "PARCHEMIN 4": 22, "PARCHEMIN 5": 23, "PARCHEMIN 6": 24,
     "CLE DE FER": 25, "CLE D'ARGENT": 26,
     "GEMME": 27, "COURONNE": 28,
+    "EPEE LONGUE +2": 29, "MARTEAU +1": 30, "ARC LONG +1": 31,
+    "MAILLES ELFIQUES": 32, "BOUCLIER +1": 33, "POTION SUPREME": 34,
+    "SCEAU DU GAGE": 35,
 }
 
 # butin par niveau, du plus modeste au plus rare
@@ -1833,7 +1841,10 @@ LOOT = [
      "POTION DE SOIN", "POTION MAJEURE", "PARCHEMIN 3", "PARCHEMIN 4", "GEMME"],
     ["HACHE DE GUERRE", "EPEE LONGUE +1", "HACHE RUNIQUE +2",
      "DAGUE DE FEU +1", "HARNOIS", "POTION MAJEURE", "PARCHEMIN 5",
-     "PARCHEMIN 6", "COURONNE"],
+     "PARCHEMIN 6", "COURONNE", "BOUCLIER +1", "ARC LONG +1"],
+    ["EPEE LONGUE +2", "MARTEAU +1", "ARC LONG +1", "MAILLES ELFIQUES",
+     "BOUCLIER +1", "POTION SUPREME", "POTION MAJEURE", "PARCHEMIN 6",
+     "HACHE RUNIQUE +2", "SCEAU DU GAGE", "COURONNE"],
 ]
 
 
@@ -1893,17 +1904,21 @@ def build_level(level, seed):
         out, free[:] = free[:n], free[n:]
         return out
 
-    for x, y in take(4 + level):                     # coffres : or et objets
+    # Le premier etage reste ce qu'il etait : c'est l'apprentissage, et
+    # un groupe de niveau 1 n'en supporte pas davantage. Plus bas, chaque
+    # etage a deux coffres, un objet, deux monstres et une porte de plus.
+    more = 2 if level else 0
+    for x, y in take(4 + level + more):              # coffres : or et objets
         grid[y][x] |= CHEST
         par[y][x] = ITEMS[rnd.choice(loot)]
-    for x, y in take(3 + level):                     # objets au sol
+    for x, y in take(3 + level + more // 2):         # objets au sol
         grid[y][x] |= ITEM
         par[y][x] = ITEMS[rnd.choice(loot)]
     tier = ENCOUNTERS[level]                         # bestiaire du niveau
-    for i, (x, y) in enumerate(take(8 + 3 * level)):  # monstres postes
+    for i, (x, y) in enumerate(take(8 + 3 * level + more)):  # monstres
         grid[y][x] = (grid[y][x] & 0x0f) | MONSTER
         par[y][x] = tier[(i * 3 + level) % len(tier)]
-    for x, y in take(2 + level):                     # portes ordinaires
+    for x, y in take(2 + level + more // 2):         # portes ordinaires
         if grid[y][x] == FLOOR:
             grid[y][x] = DOOR
     # Serrures et cles : une serrure posee au hasard peut couper le niveau
@@ -1911,13 +1926,15 @@ def build_level(level, seed):
     dist = distances(grid, start)
     far_cells = [c for c in free if dist.get(c, 99) >= 12]
     near_cells = [c for c in free if 2 <= dist.get(c, 99) <= 7]
+    runes = []
     for x, y in far_cells[:1]:                       # une porte a runes
         if grid[y][x] == FLOOR:
             grid[y][x] = RUNE
             par[y][x] = level
             free.remove((x, y))
+            runes.append((x, y))
     placed = 0
-    for x, y in far_cells[1:]:
+    for x, y in far_cells:
         if placed >= 1 + level:
             break
         if grid[y][x] == FLOOR:
@@ -2004,7 +2021,7 @@ def build_level(level, seed):
     # tomberait dessus en sortant. Sans lui, la porte des quittances ne
     # cede pas.
     ledger = greffe = None
-    if level == 2:
+    if level == NLEVELS - 1:
         ledger, greffe = place_greffe(grid, par, reach, far, shop,
                                       start)
         close_greffe(grid, par, greffe, start)
@@ -2036,7 +2053,7 @@ def build_level(level, seed):
     niches = 0
     for y in range(1, MAPH - 1):
         for x in range(1, MAPW - 1):
-            if niches >= 3 + level:
+            if niches >= 3 + level + (level > 0):
                 break
             if grid[y][x] != WALL or par[y][x]:
                 continue
@@ -2046,6 +2063,27 @@ def build_level(level, seed):
                     grid[y][x] = NICHE
                     par[y][x] = ITEMS[rnd.choice(loot)]
                     niches += 1
+    # La seconde porte a runes, et sa seconde enigme (celle de l'etage
+    # plus quatre). Posee en dernier, pour ne rien deranger de ce qui
+    # precede : ni loin de la premiere, ni devant l'echoppe, ni dans le
+    # greffe, ni sur une dalle deja tendue.
+    for x, y in far_cells:
+        if grid[y][x] != FLOOR or par[y][x]:
+            continue
+        if any(abs(x - rx) + abs(y - ry) < 6 for rx, ry in runes):
+            continue
+        if shop and abs(x - shop[0]) + abs(y - shop[1]) <= 1:
+            continue
+        if greffe and (x, y) in greffe["room"]:
+            continue
+        if any((grid[y + b][x + a] & 0x0f) in (LEDGER, ARCHIVE, LEVER, GATE)
+               for a, b in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+            continue
+        grid[y][x] = RUNE
+        par[y][x] = level + 4
+        runes.append((x, y))
+        break
+
     # L'escalier qui remonte, sur la case d'arrivee : on redescend par ou
     # l'on est venu. Celui du premier etage ramene a Ambelune -- on en
     # sort, mais on n'est pas quitte : la crypte ne se quitte que par le
@@ -2280,10 +2318,21 @@ def shelve_greffe(grid, par, greffe):
 def build_maps():
     out = bytearray()
     levels = []
-    for lv in range(3):
-        grid, par, start, stairs = build_level(lv, 1000 + lv * 77)
-        check_reachable(grid, start)
-        check_solvable(grid, par, start)
+    for lv in range(NLEVELS):
+        # Un labyrinthe tire au hasard n'a pas toujours la place d'un
+        # greffe, ni une route sure jusqu'a l'escalier. Plutot que de
+        # chercher une graine a la main, on essaie les suivantes dans un
+        # ordre fixe : la carte reste la meme d'une generation a l'autre.
+        for attempt in range(64):
+            try:
+                grid, par, start, stairs = build_level(
+                    lv, 1000 + lv * 77 + attempt * 7919)
+                check_reachable(grid, start)
+                check_solvable(grid, par, start)
+                break
+            except AssertionError:
+                if attempt == 63:
+                    raise
         levels.append((grid, par, start, stairs))
         out += bytes((start[0], start[1], 1, 0))
         for y in range(MAPH):

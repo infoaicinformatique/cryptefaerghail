@@ -46,6 +46,16 @@ ITEMS = [
     ("CLÉ D'ARGENT",     KE, 0, 0, 0, 25, 0, 20, 2),
     ("GEMME",            TR, 0, 0, 0, 120, 0, 20, 2),
     ("COURONNE",         TR, 0, 0, 0, 400, 0, 20, 2),
+    # La carriere, quatrieme etage : ce que les plus vieux deposants ont
+    # laisse, et qu'on ne trouve nulle part au-dessus. A la suite, pour
+    # que les numeros deja semes ne bougent pas.
+    ("ÉPÉE LONGUE +2",   W, 1, 8, 2, 300, SFX_SWORD, 19, 2),
+    ("MARTEAU +1",       W, 1, 8, 1, 150, SFX_AXE, 20, 3),
+    ("ARC LONG +1",      W, 1, 8, 1, 250, SFX_BOW, 20, 3),
+    ("MAILLES ELFIQUES", A, 6, 0, 0, 400, 0, 20, 2),
+    ("BOUCLIER +1",      SH, 3, 0, 0, 150, 0, 20, 2),
+    ("POTION SUPRÊME",   PO, 4, 8, 4, 150, 0, 20, 2),
+    ("SCEAU DU GAGE",    TR, 0, 0, 0, 600, 0, 20, 2),
 ]
 
 # nom, cout, genre (0 degats, 1 soin, 2 armure, 3 effroi), des, faces, bonus
@@ -91,6 +101,18 @@ MONSTERS = [
     ("MOMIE", 8, 12, 3, 20, 11, 1, 6, 10, 20, 2, 4, 2, 8, 5.0, 90, 6),
     ("HYDRE", 5, 10, 28, 15, 6, 1, 10, 3, 20, 2, 9, 5, 3, 5.0, 80, 8),
     ("GÉANT COLLINE", 12, 8, 48, 17, 16, 2, 8, 10, 20, 2, 12, 3, 4, 7.0, 200, 4),
+    # La carriere : sept especes de plus, chacune prise dans une famille
+    # de silhouettes deja modelee -- le necrophage marche comme un mort,
+    # l'apparition flotte comme une ombre, le basilic rampe comme
+    # l'hydre, la manticore vole, l'ettin et le golem ont la carrure
+    # des brutes.
+    ("NÉCROPHAGE", 4, 12, 0, 15, 3, 1, 4, 1, 20, 2, 1, 1, 5, 3.0, 30, 1),
+    ("CHIEN INFERNAL", 4, 8, 4, 16, 5, 1, 8, 1, 20, 2, 5, 5, 1, 3.0, 0, 0),
+    ("APPARITION", 5, 12, 0, 15, 5, 1, 4, 0, 20, 2, 1, 3, 6, 5.0, 50, 5),
+    ("BASILIC", 6, 10, 12, 16, 8, 1, 8, 3, 20, 2, 9, 4, 3, 5.0, 0, 8),
+    ("MANTICORE", 6, 10, 24, 17, 10, 2, 4, 5, 20, 2, 9, 7, 3, 5.0, 70, 7),
+    ("ETTIN", 10, 8, 20, 18, 12, 2, 6, 6, 20, 2, 9, 3, 5, 6.0, 120, 4),
+    ("GOLEM DE CHAIR", 9, 10, 30, 18, 10, 2, 8, 5, 20, 2, 3, 2, 3, 7.0, 0, 3),
 ]
 
 # --- Langues et temperaments -------------------------------------------
@@ -110,6 +132,11 @@ SPECIES_TALK = {
     # La momie est un Faerghail qui a refuse qu'on le raye : elle parle
     # la langue du pays, et ne veut rien entendre.
     "MOMIE": (1, 0), "HYDRE": (0, 0), "GÉANT COLLINE": (4, 1),
+    # Le necrophage est un deposant mort avant l'echeance : il parle
+    # encore le commun, et reclame son gage a qui passe.
+    "NÉCROPHAGE": (1, 0), "CHIEN INFERNAL": (0, 0), "APPARITION": (0, 0),
+    "BASILIC": (0, 0), "MANTICORE": (1, 0), "ETTIN": (4, 1),
+    "GOLEM DE CHAIR": (0, 0),
 }
 # ce que chaque race parle, en plus du commun
 RACE_TONGUES = {
@@ -326,11 +353,13 @@ with open(OUT, "w", encoding="latin-1") as f:
     f.write("\n; rencontres par niveau de donjon : numeros de monstres\n")
     tiers = [[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
              [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16],
-             [13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24]]
+             [13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26],
+             [17, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]]
     for i, t in enumerate(tiers):
         f.write(f"Encounter{i}:\n\tdc.b\t" + ",".join(str(v) for v in t) + "\n")
         f.write(f"\tdc.b\t{len(t)}\n\teven\n")
-    f.write("EncounterTab:\n\tdc.l\tEncounter0,Encounter1,Encounter2\n")
+    f.write("EncounterTab:\n\tdc.l\t"
+            + ",".join(f"Encounter{i}" for i in range(len(tiers))) + "\n")
 
     f.write("\n; nom (12), de de vie, attaque, sauvegardes fortes, lanceur\n")
     f.write("ClassTable:\n")

@@ -73,7 +73,8 @@ def skills_of(g, i):
 
 HR = {k: read_equ(k, 0) for k in
       ("hr_Name", "hr_Class", "hr_Level", "hr_Xp", "hr_Hp", "hr_HpMax",
-       "hr_Mp", "hr_MpMax", "hr_Str", "hr_Weapon", "hr_SIZEOF", "hr_Slots")}
+       "hr_Mp", "hr_MpMax", "hr_Str", "hr_Weapon", "hr_SIZEOF", "hr_Slots",
+       "hr_Tongues", "hr_Flags")}
 MAPW = 24
 
 
@@ -207,10 +208,23 @@ class Game(R.Harness):
         err = self.run(slices=slices, idle=self.idle)
         assert err is None or "termine" in err, err
 
+    # La marche au hasard remonte parfois l'escalier du premier etage,
+    # et Ambelune ne se quitte que par son menu : sans cela, les bancs
+    # qui errent y resteraient. Ceux qui visitent le village expres
+    # (town_test, play_game, les captures) mettent stay_in_town.
+    stay_in_town = False
+
     def key(self, code, slices=80):
         self.press(code)
         err = self.run(slices=slices, idle=self.idle)
         assert err is None or "termine" in err, err
+        if not self.stay_in_town and self.w("InTown"):
+            self.setw("UiMode", 0)
+            self.setw("TownPlace", 0)
+            self.setw("TownCursor", 6)       # DESCENDRE A LA CRYPTE
+            self.press(K_RET)
+            err = self.run(slices=slices, idle=self.idle)
+            assert err is None or "termine" in err, err
 
     def keys(self, seq, slices=40):
         for k in seq:
@@ -935,6 +949,223 @@ def meet_test(g, fails):
     print(f"  le rat ne parle pas ; quarante orcs : {seen}")
 
 
+def sethero(g, i, field, val):
+    base = g.addr("Heroes") + i * HR["hr_SIZEOF"]
+    g.mem.w16(base + HR[field], val & 0xffff)
+
+
+def town_goto(g, row):
+    """Revenir sur la place, puis ouvrir la porte de la ligne voulue."""
+    g.key(K_ESC)
+    g.setw("TownCursor", row)
+    g.key(K_RET)
+
+
+def town_test(g, fails):
+    """Le bourg, au-dessus du premier etage : chaque porte tient-elle ce
+    qu'elle affiche ? L'auberge rend les forces, le temple soigne et
+    releve, la guilde forme contre or et experience -- l'experience
+    seule ne fait plus passer de niveau -- et enseigne les langues, la
+    banque garde l'or, la rue le risque, et la sauvegarde s'en souvient."""
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("MeetPhase", 0)
+    g.setw("UiMode", 0)
+    g.setw("Level", 0)
+    heal(g)
+    g.call(g.addr("LevelEnter"))
+    up = [(x, y) for y in range(MAPH) for x in range(MAPW)
+          if grid_of(g)[y][x] & 0x0f == T_STAIRSUP]
+    if not check(up, "pas d'escalier montant au premier etage", fails):
+        return
+    g.setw("PosX", up[0][0])
+    g.setw("PosY", up[0][1])
+    g.setw("Gold", 5)                     # pas de quoi tenter un coupe-bourse
+    g.stay_in_town = True
+    g.call(g.addr("Ascend"))
+    if not check(g.w("InTown") == 1, "remonter du premier etage ne mene pas "
+                 "au bourg", fails):
+        g.stay_in_town = False
+        return
+    check(g.w("Level") == 0 and g.w("UiMode") == 0 and g.w("TownPlace") == 0,
+          "l'arrivee au bourg n'ouvre pas la place", fails)
+    ter = g.addr("MapTerrain")
+    stair = g.mem.r8(ter + g.w("PosY") * MAPW + g.w("PosX")) & 0x0f
+    g.key(K_UP)                           # pas un pas au bourg
+    check(g.w("TownCursor") == 0 and g.w("InTown"), "la fleche fait autre "
+          "chose que viser une porte", fails)
+    g.key(K_M_QW)
+    check(g.w("UiMode") == 0, "la carte s'ouvre au bourg", fails)
+    living = sum(1 for i in range(NH) if g.hero(i, "hr_Hp") > 0)
+
+    # --- l'auberge : la chambre rend tout, pour cinq pieces par tete
+    g.setw("Gold", 1000)
+    town_goto(g, 1)
+    check(g.w("TownPlace") == 1, "la porte de l'auberge ne s'ouvre pas", fails)
+    sethero(g, 0, "hr_Hp", 1)
+    g.setw("TownCursor", 1)
+    g.key(K_RET)
+    check(g.w("Gold") == 1000 - 5 * living, f"la chambre coute "
+          f"{1000 - g.w('Gold')} au lieu de {5 * living}", fails)
+    check(g.hero(0, "hr_Hp") == g.hero(0, "hr_HpMax"), "la chambre ne rend "
+          "pas les points de vie", fails)
+    g.key(K_ESC)
+    check(g.w("TownPlace") == 0 and g.w("InTown"), "ESC ne ramene pas sur "
+          "la place", fails)
+
+    # --- le temple : soigner, et relever -- les dieux refusent parfois
+    town_goto(g, 2)
+    sethero(g, 2, "hr_Hp", 3)
+    g.setw("Gold", 1000)
+    g.setw("TownCursor", 2)
+    g.key(K_RET)
+    cost = (g.hero(2, "hr_HpMax") - 3 + 1) // 2
+    check(g.hero(2, "hr_Hp") == g.hero(2, "hr_HpMax")
+          and g.w("Gold") == 1000 - cost, "le temple soigne mal", fails)
+    sethero(g, 1, "hr_Hp", 0)
+    price = 30 * g.hero(1, "hr_Level")
+    tries = 0
+    while g.hero(1, "hr_Hp") == 0 and tries < 20:
+        g.setw("Gold", 1000)
+        g.setw("TownCursor", 1)
+        g.key(K_RET)
+        tries += 1
+        check(g.w("Gold") == 1000 - price, f"relever coute "
+              f"{1000 - g.w('Gold')} au lieu de {price}", fails)
+    check(g.hero(1, "hr_Hp") == g.hero(1, "hr_HpMax"), "vingt offrandes et "
+          "le mort reste mort", fails)
+    g.setw("Gold", 0)
+    sethero(g, 1, "hr_Hp", 0)
+    g.key(K_RET)
+    check(g.hero(1, "hr_Hp") == 0 and g.w("Gold") == 0, "le temple releve "
+          "a credit", fails)
+    heal(g)
+    print(f"  auberge et temple : releve en {tries} offrande(s) de {price}")
+
+    # --- l'experience ne suffit plus : la guilde forme contre or
+    sethero(g, 0, "hr_Xp", 150)
+    lvl0 = g.hero(0, "hr_Level")
+    base0 = g.addr("Heroes")
+    g.call(g.addr("CheckLevel"), a6=base0)
+    check(g.hero(0, "hr_Level") == lvl0, "l'experience fait encore passer le "
+          "niveau toute seule", fails)
+    check(g.hero(0, "hr_Flags") & 1, "le heros pret n'est pas marque", fails)
+    town_goto(g, 3)
+    g.setw("Gold", 1000)
+    sethero(g, 3, "hr_Xp", 0)
+    g.setw("TownCursor", 3)
+    g.key(K_RET)
+    check(g.hero(3, "hr_Level") == 1 and g.w("Gold") == 1000, "la guilde "
+          "forme sans experience", fails)
+    hpm = g.hero(0, "hr_HpMax")
+    g.setw("TownCursor", 0)
+    g.key(K_RET)
+    check(g.hero(0, "hr_Level") == lvl0 + 1, "la guilde ne forme pas", fails)
+    check(g.w("Gold") == 1000 - 25 * lvl0, f"la formation coute "
+          f"{1000 - g.w('Gold')}", fails)
+    check(g.hero(0, "hr_HpMax") > hpm and not g.hero(0, "hr_Flags") & 1,
+          "former n'ajoute pas de vie ou laisse le drapeau", fails)
+
+    # --- les langues : TAB, puis 1 a 6 pour l'eleve
+    g.key(K_TAB)
+    check(g.w("GuildPage") == 1, "TAB n'ouvre pas les langues", fails)
+    learner, tongue = None, None
+    race_off = read_equ("hr_Race", 54)
+    for i in range(NH):                   # g.call rend les registres : on
+        base = base0 + i * HR["hr_SIZEOF"]   # relit les tables a la main
+        known = (g.mem.r16(g.addr("RaceTongues") + 2 * g.mem.r16(base + race_off))
+                 | g.mem.r16(g.addr("ClassTongues") + 2 * g.hero(i, "hr_Class"))
+                 | g.hero(i, "hr_Tongues"))
+        missing = [t for t in range(1, 6) if not (known >> t) & 1]
+        if missing and g.hero(i, "hr_Hp") > 0:
+            learner, tongue = i, missing[0]
+            break
+    if check(learner is not None, "tout le groupe parle deja tout", fails):
+        g.key(K_1 + learner)
+        check(g.w("SelHero") == learner and g.w("InTown"), "1 a 6 ne "
+              "choisit pas l'eleve", fails)
+        g.setw("Gold", 1000)
+        g.setw("TownCursor", tongue - 1)
+        g.key(K_RET)
+        check((g.hero(learner, "hr_Tongues") >> tongue) & 1
+              and g.w("Gold") == 900, "la langue ne s'apprend pas pour 100",
+              fails)
+        g.key(K_RET)
+        check(g.w("Gold") == 900, "une langue sue se paie deux fois", fails)
+    print(f"  guilde : niveau {lvl0} -> {g.hero(0, 'hr_Level')}, "
+          f"langue {tongue} apprise par le heros {learner}")
+
+    # --- la banque
+    town_goto(g, 4)
+    g.setw("Gold", 120)
+    g.setw("Bank", 0)
+    for row, want in ((0, (70, 50)), (1, (0, 120)), (2, (50, 70)),
+                      (3, (120, 0))):
+        g.setw("TownCursor", row)
+        g.key(K_RET)
+        check((g.w("Gold"), g.w("Bank")) == want, f"banque, ligne {row} : "
+              f"or/depot {(g.w('Gold'), g.w('Bank'))} au lieu de {want}",
+              fails)
+
+    # --- la rue : le guet s'eveille, et l'or ne devient jamais negatif
+    town_goto(g, 5)
+    heat0 = g.w("StreetHeat")
+    seen = {"bourse": 0, "rien": 0, "pris": 0}
+    for _ in range(12):
+        heal(g)
+        g.setw("Gold", 200)
+        g.setw("TownCursor", 0)
+        g.key(K_RET)
+        gold = g.w("Gold")
+        seen["bourse" if gold > 200 else "rien" if gold == 200
+             else "pris"] += 1
+        check(gold == 200 or 211 <= gold <= 230 or gold == 150,
+              f"la rue laisse {gold} pieces", fails)
+    check(g.w("StreetHeat") == heat0 + 36, "le guet ne s'eveille pas", fails)
+    check(seen["pris"] > 0, f"le guet n'attrape jamais personne : {seen}",
+          fails)
+    print(f"  la rue, douze essais : {seen}")
+
+    # --- le comptoir : l'etal du bourg, et ESC ramene sur la place
+    town_goto(g, 0)
+    check(g.w("UiMode") == 8, "le comptoir ne s'ouvre pas", fails)
+    stock = [g.byte("ShopStock", k) for k in range(8)]
+    check(stock == [17, 17, 18, 7, 4, 13, 14, 16], f"l'etal du bourg : "
+          f"{stock}", fails)
+    g.key(K_ESC)
+    check(g.w("UiMode") == 0 and g.w("InTown"), "on sort du comptoir hors "
+          "du bourg", fails)
+
+    # --- la sauvegarde s'en souvient
+    g.setw("Bank", 77)
+    g.call(g.addr("SaveGame"))
+    g.setw("Bank", 0)
+    g.setw("InTown", 0)
+    g.call(g.addr("LoadGame"))
+    check(g.w("InTown") == 1 and g.w("Bank") == 77, "la sauvegarde oublie "
+          f"le bourg ({g.w('InTown')}) ou la banque ({g.w('Bank')})", fails)
+    stock = [g.byte("ShopStock", k) for k in range(8)]
+    check(stock[:3] == [17, 17, 18], "relue au bourg, la partie a l'etal "
+          "du guichet", fails)
+
+    # --- et l'on redescend
+    g.setw("TownPlace", 0)
+    g.setw("TownCursor", 6)
+    g.key(K_RET)
+    check(not g.w("InTown") and g.w("Level") == 0, "on ne redescend pas",
+          fails)
+    here = g.mem.r8(ter + g.w("PosY") * MAPW + g.w("PosX")) & 0x0f
+    check(here == stair == T_STAIRSUP, f"on ne redescend pas sur "
+          f"l'escalier (terrain {here})", fails)
+    stock = [g.byte("ShopStock", k) for k in range(8)]
+    check(stock != [17, 17, 18, 7, 4, 13, 14, 16], "le guichet de la crypte "
+          "garde l'etal du bourg", fails)
+    g.stay_in_town = False
+    g.setw("Bank", 0)
+    g.setw("Gold", 100)
+    heal(g)
+
+
 def trap_test(g, fails):
     """Marcher jusqu'a un piege et voir ce qu'il fait."""
     grid = grid_of(g)
@@ -1307,7 +1538,7 @@ if __name__ == "__main__":
         if not check(g.sw("Gold") >= 0, f"Or negatif {g.sw('Gold')}", fails):
             break
     print(f"  800 touches au hasard, ui={g.w('UiMode')} phase={g.w('Phase')} "
-          f"niveau {g.w('Level')} or {g.w('Gold')}")
+          f"niveau {g.w('Level')} or {g.w('Gold')} bourg {g.w('InTown')}")
 
     print("--- les rencontres ---")
     meet_test(g, fails)
@@ -1323,6 +1554,9 @@ if __name__ == "__main__":
 
     print("--- l'escalier qui remonte ---")
     stairs_test(g, fails)
+
+    print("--- le bourg ---")
+    town_test(g, fails)
 
     print("--- le grand registre ---")
     ledger_test(g, fails)

@@ -121,6 +121,21 @@ LES RENCONTRES
   ne repondent qu'au fer. Quand c'est eux qui viennent, ils peuvent
   vous surprendre : la vigilance du groupe l'evite.
 
+AMBELUNE
+  L'escalier qui remonte du premier etage ramene a Ambelune, le
+  village d'ou vous etes descendus : une place
+  et des portes, chacune un menu (HAUT/BAS et ENTREE, ESC revient sur
+  la place). Le comptoir vend et rachete. L'auberge rend les forces :
+  le dortoir la moitie, une chambre tout. Le temple soigne et releve
+  les morts -- pas toujours : les dieux se detournent parfois, et
+  gardent l'offrande. La guilde forme ceux qui sont prets : l'expe-
+  rience ne fait plus passer de niveau toute seule, il faut payer le
+  maitre (25 pieces par niveau). TAB y montre les langues, a 100
+  pieces, pour le heros choisi (1 a 6). La banque garde l'or -- sauf
+  les rares nuits ou on la pille. La rue offre ses bourses aux doigts
+  agiles, et son guet aux maladroits. A l'arrivee, gare aux coupe-
+  bourses : la vigilance du groupe les arrete.
+
 LE COMBAT
   En face, un groupe de un a quatre creatures ; quand celle de devant
   tombe, la suivante s'avance. Votre groupe se tient sur deux rangs :
@@ -278,7 +293,7 @@ ON REMONTE
   l'on arrive. On retombe sur l'escalier descendant de l'etage du
   dessus, et l'etage quitte reste exactement comme on l'a laisse --
   coffres vides, monstres tombes, etal degarni. Au-dessus du premier,
-  c'est le jour.
+  c'est Ambelune.
 
 LE GRAND REGISTRE
   Au fond du dernier etage, scelle dans un mur : un pupitre, le livre

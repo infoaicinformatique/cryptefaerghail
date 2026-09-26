@@ -317,6 +317,39 @@ venir, et la vigilance progresse.
 
 ![La rencontre](docs/emu-rencontre.png)
 
+### Ambelune, au-dessus de la crypte
+
+L'escalier qui remonte du premier étage ne donne plus sur « le jour » : il
+ramène à **Ambelune**, le village d'où le groupe est descendu. Comme dans *Legend of Faerghail*,
+la ville ne se parcourt pas : c'est une place et des portes, chacune un menu
+(`HAUT`/`BAS` et `ENTRÉE`, `ESC` ramène sur la place). La fiche, le sac, le
+grimoire et les réglages s'y ouvrent comme ailleurs.
+
+| Porte | Ce qu'on y fait | Prix |
+|---|---|---|
+| Le comptoir | acheter, vendre (l'étal du village : potions, arc, hache, armures) | celui de l'objet, marchandage compris |
+| L'auberge | le dortoir rend la moitié des forces et les sorts ; une chambre, tout | 2 ou 5 pièces par aventurier debout |
+| Le temple | soigner ; **relever un mort** — une fois sur quatre, les dieux se détournent (moins pour les robustes), et l'offrande reste | 1 pièce les 2 PV ; 30 par niveau du mort |
+| La guilde | **passer le niveau** que l'expérience a gagné ; `TAB` : apprendre une **langue**, pour le héros choisi (`1` à `6`) | 25 par niveau ; 100 la langue |
+| La banque | déposer et retirer, par 50 ou tout | — |
+| La rue | le vol à la tire : Dextérité et désamorçage contre le guet, qui s'éveille à chaque essai. Pris : 50 pièces d'amende, ou la nuit au cachot | — |
+
+**L'expérience ne suffit plus.** Comme dans le jeu d'origine, un héros qui a
+assez appris sous terre ne passe pas son niveau tout seul : le journal dit
+« … EST PRÊT POUR LA GUILDE », et c'est le maître qui le forme, contre or. Il
+faut donc remonter — et le chemin du retour compte.
+
+**Le village a ses risques.** À l'arrivée, un coupe-bourse tente sa chance une
+fois sur trois — la vigilance du groupe l'arrête, sinon il prend le dixième de
+la bourse. La banque le met à l'abri… sauf une fois sur vingt, où elle a été
+pillée d'un quart entre deux visites.
+
+Les langues apprises, le drapeau « prêt », le village, la banque et le guet
+partent avec la sauvegarde, dont le nombre magique devient `FAE9`.
+
+![Ambelune](docs/emu-bourg.png)
+![La guilde](docs/emu-guilde.png)
+
 ### Le combat par rounds
 
 Le combat se joue comme dans *Legend of Faerghail* et les jeux de rôle à
@@ -347,8 +380,7 @@ groupe.
 debout. Le résultat s'affiche **en détail** — un panneau qui dit ce que chacun
 a fait (FRAPPE 7, MANQUE, PARE, LOIN : PARE, SORT 12, DÉCONCENTRÉ) et ce que
 les créatures ont porté —, ou se résume au journal en mode **rapide**. Le choix
-est dans les réglages (`P`) et part avec la sauvegarde, dont le nombre magique
-devient `FAE8`.
+est dans les réglages (`P`) et part avec la sauvegarde.
 
 ![Les ordres](docs/emu-combat-ordres.png)
 ![Le résultat du round](docs/emu-combat-round.png)

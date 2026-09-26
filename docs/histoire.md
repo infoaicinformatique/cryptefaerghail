@@ -221,6 +221,36 @@ nulle part tant que la ligne n'est pas rayée. La porte des quittances tient
 bon, et le groupe repart chercher le greffe. Le troisième étage n'est plus une
 sortie à trouver, mais un compte à solder puis une sortie à trouver.
 
+## Ambelune, en haut de l'escalier
+
+Ambelune est au pied de la colline, et l'entrée de la maison au sommet : on
+entrait par le haut pour déposer. Le village a toujours vécu de Faerghail,
+comme vivent les villages autour des maisons de garde — de quoi loger ceux
+qui venaient déposer, de quoi nourrir ceux qui attendaient l'échéance, de quoi
+prier pour ceux qui ne remontaient pas. Remonter l'escalier du premier étage,
+c'est redescendre la colline et rentrer chez soi pour la nuit.
+
+Ce n'est pas sortir. Les noms à la craie restent sur les portes, et **on ne
+sort de Faerghail qu'acquitté** : par le bas.
+
+Ambelune a gardé les habitudes de la maison, en plus petit et en plus cher.
+Sa **banque** est une maison de dépôt comme l'autre, mais tenue par des
+vivants : elle rend ce qu'on lui confie — presque toujours. Sa **guilde** ne
+croit pas ce qu'on raconte d'en bas ; elle fait passer les épreuves, et fait
+payer le maître, parce qu'un savoir non inscrit ne compte pas. Son **temple**
+relève les morts quand les dieux y consentent, et garde l'offrande quand ils
+refusent : ce n'est pas un commerce, c'est un dépôt fait à plus grand que soi.
+
+Et ses rues ont leurs coupe-bourses, qui sont, eux aussi, une très vieille
+façon de tenir des comptes.
+
+| Ce que le jeu fait | Pourquoi Ambelune le fait |
+|---|---|
+| L'expérience ne fait pas le niveau : la guilde le vend | Un savoir non inscrit ne compte pas — la guilde a pris la manie de la maison |
+| La banque est pillée, rarement | Une maison de dépôt tenue par des vivants |
+| Le temple garde l'offrande d'une résurrection manquée | Un dépôt fait aux dieux ne se reprend pas |
+| Un coupe-bourse à l'arrivée | Le village vit de ceux qui remontent les poches pleines |
+
 ## Ce qui reste à écrire
 
 Le prologue de l'accueil dit le nom, la maison, l'emmurement et Ambelune ; le

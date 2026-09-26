@@ -358,6 +358,38 @@ if __name__ == "__main__":
     shoot(g, "carte")
     g.key(0x37)
 
+    # Le bourg, au-dessus du premier etage : la place, puis la guilde
+    # avec deux eleves prets et de quoi payer l'un d'eux.
+    g.setw("GameOver", 0)
+    g.setw("InCombat", 0)
+    g.setw("MeetPhase", 0)
+    g.setw("UiMode", 0)
+    g.setw("Level", 0)
+    g.call(g.addr("LevelEnter"))
+    g.setw("Gold", 5)
+    g.stay_in_town = True
+    g.call(g.addr("Ascend"))
+    g.setw("Gold", 180)
+    for i in range(T.NH):                 # une nuit a l'auberge, deja
+        base = g.addr("Heroes") + i * T.HR["hr_SIZEOF"]
+        g.mem.w16(base + T.HR["hr_Hp"], g.hero(i, "hr_HpMax"))
+    flags = T.read_equ("hr_Flags", 64)
+    for i in (0, 3):
+        base = g.addr("Heroes") + i * T.HR["hr_SIZEOF"]
+        lvl = g.hero(i, "hr_Level")
+        g.mem.w16(base + T.HR["hr_Xp"], 75 * lvl * (lvl + 1))
+        g.mem.w16(base + flags, 1)
+    g.setw("TownCursor", 3)
+    g.setw("NeedRedraw", 1)
+    g.key(T.K_DOWN); g.key(T.K_UP)
+    shoot(g, "bourg")
+    g.key(T.K_RET)
+    shoot(g, "guilde")
+    g.key(T.K_ESC)
+    g.setw("TownCursor", 6)
+    g.key(T.K_RET)
+    g.stay_in_town = False
+
     # Le greffe du dernier etage. Y arriver en jouant prendrait tout le
     # banc : on descend d'autorite, et on deblaie la traversee -- ce
     # qu'on veut photographier, c'est le pupitre et sa page.

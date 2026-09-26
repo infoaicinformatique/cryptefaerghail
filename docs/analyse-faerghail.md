@@ -115,12 +115,12 @@ Ce qu'il faut en retenir :
 | Compétences | aucune | progressent à l'usage | moyen |
 | Langues et dialogue | non | oui | moyen |
 | Monde | 3 étages d'une crypte | extérieur + 2 villes + 8 donjons | **important** : chargement depuis disquette |
-| Ville | une échoppe par étage | 6 services à menus | moyen : menus, sans rendu 3D |
+| Ville | Ambelune : 6 services à menus | 6 services à menus | *fait* |
 | Rencontres | le combat commence tout de suite | saluer / parler / fuir, groupes pacifiques | moyen |
 | Combat | un monstre, attaque/sort/fuite | des groupes, des rangs, des ordres par personnage, rounds, combat rapide | **important** |
 | Survie | non | rations, moral, heure, météo | moyen |
 | Usure | non | armes, armures, munitions, réparation | faible |
-| Progression | l'expérience seule | expérience + or à la guilde | faible |
+| Progression | expérience + or à la guilde | expérience + or à la guilde | *fait* |
 | Son | musique + bruitages | ambiance par lieu | moyen |
 | Disquettes | 2 (jeu, source) | 3, chargées à la demande | **important** |
 
@@ -138,7 +138,8 @@ Chaque étape laisse un jeu jouable, testé par les bancs, avant la suivante.
 4. **Les rencontres** : saluer, parler, se retirer ; langues ; recrutement.
    *Fait, sauf le recrutement.*
 5. **La ville** : échoppe, banque, auberge, temple, guilde (entraînement payant,
-   sorts, langues), vol à la tire.
+   sorts, langues), vol à la tire. *Fait, sauf l'achat de sorts à la guilde
+   (ils restent sur les parchemins).*
 6. **L'extérieur** : grille en plein air, heure, météo, rations, moral.
 7. **Les donjons thématiques**, avec leur bestiaire, leurs événements scriptés
    et leurs décors. La Crypte actuelle et son greffe en deviennent un.

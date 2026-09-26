@@ -1999,10 +1999,10 @@ def build_level(level, seed):
                     par[y][x] = ITEMS[rnd.choice(loot)]
                     niches += 1
     # L'escalier qui remonte, sur la case d'arrivee : on redescend par ou
-    # l'on est venu. Le premier etage n'en a pas -- au-dessus, c'est le
-    # jour, et la crypte ne se quitte que par le bas.
-    if level > 0:
-        grid[start[1]][start[0]] = STAIRSUP
+    # l'on est venu. Celui du premier etage ramene a Ambelune -- on en
+    # sort, mais on n'est pas quitte : la crypte ne se quitte que par le
+    # bas.
+    grid[start[1]][start[0]] = STAIRSUP
 
     return grid, par, start, far
 

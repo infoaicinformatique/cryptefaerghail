@@ -103,7 +103,10 @@ hr_AcTemp	= 44			; bonus temporaire de CA
 hr_Slots	= 46			; emplacements de sorts, niveaux 0 a 3
 hr_Race		= 54			; numero dans RaceTable
 hr_Skills	= 56			; NSKILLS octets, 0 a 99 (voir SkillUse)
-hr_SIZEOF	= 62
+hr_Tongues	= 62			; langues apprises a la guilde (masque)
+hr_Flags	= 64			; bit HF_READY : la guilde l'attend
+hr_SIZEOF	= 66
+HF_READY	= 0
 
 ; les competences, dans l'ordre de SkillNames
 SK_COMBAT	= 0
@@ -223,13 +226,14 @@ TITLEH		= 176			; hauteur de l'illustration
 LVSTATE		= 3*MAPBYTES+NSHOP
 LVSTORE		= LEVELS*LVSTATE
 
-; "FAE8" : le reglage du combat, detaille ou rapide, part avec les
+; "FAE9" : la ville -- langues apprises, drapeaux du heros, le bourg,
+; la banque et le guet. "FAE8" : le reglage du combat, detaille ou rapide, part avec les
 ; autres ; "FAE7" avait ajoute les competences, "FAE6" la race, "FAE5"
 ; passe le groupe a six. Une sauvegarde plus ancienne n'a plus le bon
 ; compte, et le nombre magique la fait refuser plutot que relire de
 ; travers.
-SAVEMAGIC	= $46414538		; "FAE8"
-SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+8
+SAVEMAGIC	= $46414539		; "FAE9"
+SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+8+6
 UI_VIEW		= 0
 UI_SHEET	= 1
 UI_INV		= 2
@@ -1954,6 +1958,11 @@ DrawScene:
 	bra	.done
 
 .world:
+	tst.w	InTown			; le bourg : la place, ou une porte
+	beq.s	.notTown
+	bsr	DrawTown
+	bra	.done
+.notTown:
 	moveq	#ART_BG,d0
 	moveq	#1,d1
 	bsr	BlitPiece
@@ -2448,11 +2457,18 @@ DrawStatus:
 	bra	.help
 .playing:
 	lea	TmpStr,a1
+	tst.w	InTown
+	beq.s	.inCrypt
+	lea	TxtTownStatus,a0
+	bsr	StrCopy
+	bra.s	.gold
+.inCrypt:
 	lea	TxtNiveau,a0
 	bsr	StrCopy
 	move.w	Level,d0
 	addq.w	#1,d0
 	bsr	StrNum
+.gold:
 	lea	TxtOr,a0
 	bsr	StrCopy
 	move.w	Gold,d0
@@ -2535,6 +2551,9 @@ DrawStatus:
 	bra	.help
 .helpMove:
 	lea	TxtHelpMove,a0
+	tst.w	InTown
+	beq.s	.help
+	lea	TxtHelpTown,a0
 .help:
 	move.w	#2,d0
 	move.w	#238,d1
@@ -3255,7 +3274,10 @@ SaveGame:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	DosBase,d0
 	beq	.done
+	tst.w	InTown			; au bourg, l'etage est deja range et
+	bne.s	.stashed		; l'etal est celui du comptoir
 	bsr	LevelStash		; l'etage courant d'abord, il n'est
+.stashed:
 	bsr	PackSave		; dans la sauvegarde que par son etat
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
@@ -3312,6 +3334,11 @@ LoadGame:				; -> d0 = 1 si la partie est reprise
 	tst.w	d5
 	beq.s	.done
 	bsr	LevelRestore		; la copie de travail vient de l'etat
+	clr.w	TownPlace
+	clr.w	TownCursor
+	tst.w	InTown
+	beq.s	.done
+	bsr	ShopFillTown
 .done:
 	move.w	d5,d0
 	movem.l	(sp)+,d1-d7/a0-a6
@@ -4614,6 +4641,9 @@ NewGame:
 	clr.w	InvTop
 	clr.w	KeyCount
 	clr.w	Acquitted
+	clr.w	InTown
+	clr.w	Bank
+	clr.w	StreetHeat
 	lea	LevelKnown,a1		; aucun etage n'a encore ete vu
 	moveq	#LEVELS-1,d0
 .clrLevel:
@@ -6512,8 +6542,7 @@ Ascend:
 	bsr	LogFloor
 	bra.s	.done
 .jour:
-	lea	TxtNoWayUp,a0		; au-dessus du premier, c'est le jour
-	bsr	LogAdd
+	bsr	EnterTown		; au-dessus du premier, c'est le bourg
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -6556,6 +6585,8 @@ LogFloor:
 MonWalk:
 	movem.l	d0-d7/a0-a6,-(sp)
 	cmp.w	#PHASE_PLAY,Phase
+	bne	.done
+	tst.w	InTown			; au bourg, la crypte attend
 	bne	.done
 	tst.w	InCombat
 	bne	.done
@@ -7772,6 +7803,998 @@ DrawSkills:
 	rts
 
 ;----------------------------------------------------------------------
+; Ambelune : ce qu'il y a au-dessus de la crypte
+;
+; Le village d'ou le groupe est descendu (docs/histoire.md). Dans le
+; code, c'est "le bourg" : InTown, TownPlace, et le reste.
+;
+; Comme dans Legend of Faerghail, la ville ne se parcourt pas : c'est
+; une place et des portes, chacune un menu. On y monte par l'escalier
+; du premier etage. Le comptoir vend et rachete ; l'auberge rend les
+; forces ; le temple soigne et releve les morts, quand les dieux le
+; veulent bien ; la guilde forme ceux qui ont assez appris sous terre
+; -- l'experience seule ne fait plus passer de niveau, il faut payer
+; le maitre -- et enseigne les langues ; la banque garde l'or qu'on ne
+; veut pas porter, et la rue offre ses bourses aux doigts agiles.
+;
+; Le bourg a ses risques : un coupe-bourse a l'arrivee, que la
+; vigilance du groupe arrete, et, rarement, la banque pillee.
+;
+; La vue du bourg, c'est UiMode 0 avec InTown : tous les panneaux
+; (fiche, sac, grimoire, reglages, comptoir) se referment donc sur la
+; place, sans rien savoir de la ville. TownPlace dit quelle porte est
+; ouverte, TownCursor la ligne visee.
+;----------------------------------------------------------------------
+TOWN_SQUARE	= 0
+TOWN_INN	= 1
+TOWN_TEMPLE	= 2
+TOWN_GUILD	= 3
+TOWN_BANK	= 4
+TOWN_STREET	= 5
+TOWN_LEAVE	= 6			; la derniere ligne de la place
+SQUAREROWS	= 7
+TRAIN_COST	= 25			; par niveau atteint
+RAISE_COST	= 30			; par niveau du mort
+TONGUE_COST	= 100
+DORM_COST	= 2			; par aventurier debout
+ROOM_COST	= 5
+BANK_STEP	= 50
+STREET_DC	= 12			; et le guet s'eveille a chaque essai
+STREET_FINE	= 50
+
+; EnterTown : du premier etage, on remonte au jour
+EnterTown:
+	movem.l	d0-d7/a0-a6,-(sp)
+	bsr	LevelStash		; l'etage reste tel qu'on le quitte
+	move.w	#1,InTown
+	clr.w	UiMode
+	clr.w	TownPlace
+	clr.w	TownCursor
+	clr.w	GuildPage
+	clr.w	StreetHeat
+	clr.w	ShopInSight
+	bsr	ShopFillTown
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtTownHello,a0
+	bsr	LogAdd
+	bsr	TownRisks
+	bsr	SaveGame
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; LeaveTown : on redescend sur l'escalier du premier etage
+LeaveTown:
+	movem.l	d0/a0,-(sp)
+	clr.w	InTown
+	clr.w	TownPlace
+	clr.w	TownCursor
+	bsr	LevelRestore		; l'etal du guichet revient
+	moveq	#SFX_DOOR,d0
+	bsr	SfxPlay
+	lea	TxtTownLeave,a0
+	bsr	LogAdd
+	bsr	LogFloor
+	bsr	SaveGame
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0/a0
+	rts
+
+ShopFillTown:				; l'etal du bourg, derriere ceux des
+	movem.l	d1/a0-a1,-(sp)		; etages dans ShopTable
+	lea	ShopTable+LEVELS*NSHOP,a0
+	lea	ShopStock,a1
+	moveq	#NSHOP-1,d1
+.copy:
+	move.b	(a0)+,(a1)+
+	dbf	d1,.copy
+	movem.l	(sp)+,d1/a0-a1
+	rts
+
+; TownRisks : la banque, une fois sur vingt, a ete pillee d'un quart ;
+; une fois sur trois, un coupe-bourse tente sa chance sur le groupe.
+TownRisks:
+	movem.l	d0-d3/a0-a2/a6,-(sp)
+	tst.w	Bank
+	beq.s	.purse
+	moveq	#20,d1
+	bsr	RndMod
+	tst.w	d0
+	bne.s	.purse
+	move.w	Bank,d2
+	lsr.w	#2,d2
+	bne.s	.robbed
+	moveq	#1,d2
+.robbed:
+	sub.w	d2,Bank
+	lea	TxtBankRobbed,a0
+	move.w	d2,d0
+	lea	TxtCoins,a2
+	bsr	LogNum
+.purse:
+	cmp.w	#10,Gold
+	blo.s	.done
+	moveq	#3,d1
+	bsr	RndMod
+	tst.w	d0
+	bne.s	.done
+	bsr	BestVigil		; a6 = le plus vigilant
+	divu.w	#5,d0
+	and.l	#$0000ffff,d0
+	move.w	d0,d2
+	bsr	D20
+	add.w	d2,d0
+	cmp.w	#14,d0
+	blt.s	.lifted
+	lea	TxtCutSeen,a0
+	bsr	LogAdd
+	moveq	#SK_VIGIL,d0
+	bsr	SkillUse
+	bra.s	.done
+.lifted:
+	move.w	Gold,d2
+	divu.w	#10,d2
+	sub.w	d2,Gold
+	lea	TxtCutLifted,a0
+	move.w	d2,d0
+	lea	TxtCoins,a2
+	bsr	LogNum
+.done:
+	movem.l	(sp)+,d0-d3/a0-a2/a6
+	rts
+
+; LogNum : a0 + nombre d0 + a2, une ligne de journal
+LogNum:
+	movem.l	d0/a0-a1,-(sp)
+	lea	TmpStr,a1
+	bsr	StrCopy
+	bsr	StrNum
+	move.l	a2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	movem.l	(sp)+,d0/a0-a1
+	rts
+
+; LogHero : a6 = heros, a0 = la suite de la phrase
+LogHero:
+	movem.l	a0-a1,-(sp)
+	lea	TmpStr,a1
+	move.l	a0,-(sp)
+	move.l	a6,a0
+	bsr	StrCopy
+	move.l	(sp)+,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bsr	LogAdd
+	movem.l	(sp)+,a0-a1
+	rts
+
+; TownPay : d0 = prix -> d0 = 1 si c'est paye, 0 si la bourse est trop
+; legere (et le journal le dit)
+TownPay:
+	cmp.w	Gold,d0
+	bls.s	.rich
+	move.l	a0,-(sp)
+	lea	TxtShopPoor,a0
+	bsr	LogAdd
+	move.l	(sp)+,a0
+	moveq	#0,d0
+	rts
+.rich:
+	sub.w	d0,Gold
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	moveq	#1,d0
+	rts
+
+; LivingCount : -> d0 = aventuriers debout
+LivingCount:
+	movem.l	d1/a6,-(sp)
+	moveq	#0,d0
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d1
+.loop:
+	tst.w	hr_Hp(a6)
+	beq.s	.next
+	addq.w	#1,d0
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d1,.loop
+	movem.l	(sp)+,d1/a6
+	rts
+
+; TownRows : -> d0 = lignes de la porte ouverte
+TownRows:
+	move.w	TownPlace,d0
+	beq.s	.square
+	cmp.w	#TOWN_INN,d0
+	beq.s	.two
+	cmp.w	#TOWN_TEMPLE,d0
+	beq.s	.heroes
+	cmp.w	#TOWN_GUILD,d0
+	beq.s	.guild
+	cmp.w	#TOWN_BANK,d0
+	beq.s	.four
+	moveq	#1,d0			; la rue : une seule chose a y faire
+	rts
+.square:
+	moveq	#SQUAREROWS,d0
+	rts
+.two:
+	moveq	#2,d0
+	rts
+.four:
+	moveq	#4,d0
+	rts
+.guild:
+	tst.w	GuildPage
+	beq.s	.heroes
+	moveq	#NTONGUES-1,d0
+	rts
+.heroes:
+	moveq	#NHEROES,d0
+	rts
+
+; TownKey : d0 = touche, sur la place ou derriere une porte
+TownKey:
+	movem.l	d0-d7/a0-a6,-(sp)
+	cmp.w	#KEY_UP,d0
+	bne.s	.notUp
+	subq.w	#1,TownCursor
+	bra.s	.clamp
+.notUp:
+	cmp.w	#KEY_DOWN,d0
+	bne.s	.notDown
+	addq.w	#1,TownCursor
+	bra.s	.clamp
+.notDown:
+	cmp.w	#KEY_TAB,d0		; la guilde : les niveaux, les langues
+	bne.s	.notTab
+	cmp.w	#TOWN_GUILD,TownPlace
+	bne	.done
+	eor.w	#1,GuildPage
+	clr.w	TownCursor
+	bra.s	.clamp
+.notTab:
+	cmp.w	#KEY_RETURN,d0
+	beq.s	.act
+	cmp.w	#KEY_SPACE,d0
+	bne.s	.done
+.act:
+	bsr	TownAct
+.clamp:
+	bsr	TownRows
+	move.w	TownCursor,d1
+	bpl.s	.notNeg
+	moveq	#0,d1
+.notNeg:
+	cmp.w	d0,d1
+	blt.s	.inside
+	move.w	d0,d1
+	subq.w	#1,d1
+.inside:
+	move.w	d1,TownCursor
+	move.w	#1,NeedRedraw
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; TownAct : la ligne visee, derriere la porte ouverte
+TownAct:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	TownCursor,d7
+	move.w	TownPlace,d0
+	bne.s	.notSquare
+	tst.w	d7			; --- la place
+	bne.s	.notShop
+	move.w	#UI_SHOP,UiMode		; le comptoir est un vrai comptoir
+	clr.w	ShopMode
+	clr.w	ShopCursor
+	clr.w	ShopTop
+	lea	TxtTownShop,a0
+	bsr	LogAdd
+	bra	.done
+.notShop:
+	cmp.w	#TOWN_LEAVE,d7
+	bne.s	.enter
+	bsr	LeaveTown
+	bra	.done
+.enter:
+	move.w	d7,TownPlace		; les portes, dans l'ordre des lignes
+	clr.w	TownCursor
+	clr.w	GuildPage
+	move.w	d7,d0
+	lsl.w	#2,d0
+	lea	TownHellos,a0
+	move.l	(a0,d0.w),a0
+	bsr	LogAdd
+	bra	.done
+.notSquare:
+	cmp.w	#TOWN_INN,d0
+	bne.s	.notInn
+	bsr	InnRest
+	bra	.done
+.notInn:
+	cmp.w	#TOWN_TEMPLE,d0
+	bne.s	.notTemple
+	bsr	TempleServe
+	bra	.done
+.notTemple:
+	cmp.w	#TOWN_GUILD,d0
+	bne.s	.notGuild
+	tst.w	GuildPage
+	bne.s	.tongue
+	bsr	GuildTrain
+	bra	.done
+.tongue:
+	bsr	GuildTongue
+	bra	.done
+.notGuild:
+	cmp.w	#TOWN_BANK,d0
+	bne.s	.notBank
+	bsr	BankDeal
+	bra	.done
+.notBank:
+	bsr	StreetTry
+.done:
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+;--- l'auberge ----------------------------------------------------------
+; InnPrice : d0 = ligne -> d0 = prix, pour tout le groupe debout
+InnPrice:
+	move.w	d1,-(sp)
+	move.w	d0,d1
+	bsr	LivingCount
+	tst.w	d1
+	bne.s	.room
+	mulu.w	#DORM_COST,d0
+	bra.s	.done
+.room:
+	mulu.w	#ROOM_COST,d0
+.done:
+	move.w	(sp)+,d1
+	rts
+
+; InnRest : d7 = 0 le dortoir (la moitie des forces), 1 une chambre
+InnRest:
+	move.w	d7,d0
+	bsr	InnPrice
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	lea	Heroes,a6
+	moveq	#NHEROES-1,d6
+.loop:
+	tst.w	hr_Hp(a6)		; les morts ne dorment pas
+	beq.s	.next
+	move.w	hr_HpMax(a6),d0
+	tst.w	d7
+	bne.s	.heal
+	lsr.w	#1,d0
+.heal:
+	add.w	d0,hr_Hp(a6)
+	move.w	hr_HpMax(a6),d0
+	cmp.w	hr_Hp(a6),d0
+	bge.s	.capped
+	move.w	d0,hr_Hp(a6)
+.capped:
+	bsr	FillSlots
+.next:
+	lea	hr_SIZEOF(a6),a6
+	dbf	d6,.loop
+	lea	TxtInnSlept,a0
+	tst.w	d7
+	beq.s	.say
+	lea	TxtInnRoomed,a0
+.say:
+	bsr	LogAdd
+.done:
+	rts
+
+;--- le temple ----------------------------------------------------------
+; TempleNeed : a6 = heros -> d1 = 0 rien, 1 soigner, 2 relever ;
+; d0 = le prix
+TempleNeed:
+	moveq	#0,d0
+	moveq	#0,d1
+	tst.w	hr_HpMax(a6)
+	beq.s	.done
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	moveq	#2,d1
+	move.w	hr_Level(a6),d0
+	mulu.w	#RAISE_COST,d0
+	rts
+.alive:
+	move.w	hr_HpMax(a6),d0
+	sub.w	hr_Hp(a6),d0
+	beq.s	.done
+	moveq	#1,d1
+	addq.w	#1,d0			; une piece les deux points de vie
+	lsr.w	#1,d0
+.done:
+	rts
+
+; TempleServe : d7 = le heros. Relever un mort echoue une fois sur
+; quatre, moins pour les robustes ; l'offrande reste au temple.
+TempleServe:
+	move.w	d7,d0
+	bsr	HeroPtr
+	bsr	TempleNeed
+	tst.w	d1
+	bne.s	.need
+	lea	TxtTempleNone,a0
+	bra	LogHero
+.need:
+	move.w	d1,d2
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	cmp.w	#2,d2
+	beq.s	.raise
+	move.w	hr_HpMax(a6),hr_Hp(a6)
+	lea	TxtTempleHealed,a0
+	bra	LogHero
+.raise:
+	move.w	hr_Con(a6),d0
+	bsr	StatMod
+	muls.w	#5,d0			; cinq points de chance par modificateur
+	move.w	d0,d2
+	add.w	#75,d2
+	moveq	#100,d1
+	bsr	RndMod
+	cmp.w	d2,d0
+	blt.s	.raised
+	lea	TxtTempleFail,a0
+	bra	LogAdd
+.raised:
+	move.w	hr_HpMax(a6),hr_Hp(a6)
+	bsr	FillSlots
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtTempleRaised,a0
+	bra	LogHero
+.done:
+	rts
+
+;--- la guilde ----------------------------------------------------------
+; XpNeed : a6 = heros -> d0 = PX du prochain palier, 0 au plafond.
+; Palier = 150 x n x (n+1) / 2.
+XpNeed:
+	move.w	d1,-(sp)
+	move.w	hr_Level(a6),d0
+	cmp.w	#MAXCLEVEL,d0
+	blt.s	.calc
+	moveq	#0,d0
+	bra.s	.done
+.calc:
+	move.w	d0,d1
+	addq.w	#1,d1
+	mulu.w	d1,d0
+	lsr.l	#1,d0
+	mulu.w	#150,d0
+.done:
+	move.w	(sp)+,d1
+	rts
+
+; HeroReady : a6 = heros -> d0 = 1 s'il a assez appris pour la guilde
+HeroReady:
+	bsr.s	XpNeed
+	tst.w	d0
+	beq.s	.no
+	cmp.w	hr_Xp(a6),d0
+	bhi.s	.no
+	moveq	#1,d0
+	rts
+.no:
+	moveq	#0,d0
+	rts
+
+; GuildTrain : d7 = le heros. Assez d'experience, et de quoi payer.
+GuildTrain:
+	move.w	d7,d0
+	bsr	HeroPtr
+	tst.w	hr_HpMax(a6)
+	beq.s	.done
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	lea	TxtGuildDead,a0
+	bra	LogHero
+.alive:
+	bsr	XpNeed
+	tst.w	d0
+	bne.s	.notTop
+	lea	TxtGuildTop,a0
+	bra	LogHero
+.notTop:
+	cmp.w	hr_Xp(a6),d0
+	bls.s	.ready
+	sub.w	hr_Xp(a6),d0		; ce qui lui manque
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtGuildLack,a0
+	bsr	StrCopy
+	bsr	StrNum
+	lea	TxtGuildLack2,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bra	LogAdd
+.ready:
+	move.w	hr_Level(a6),d0
+	mulu.w	#TRAIN_COST,d0
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	bsr	TrainHero
+.done:
+	rts
+
+; GuildTongue : d7 = la langue moins un, pour le heros choisi (1 a 6)
+GuildTongue:
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	lea	TxtGuildDead,a0
+	bra	LogHero
+.alive:
+	move.w	d7,d2
+	addq.w	#1,d2
+	bsr	HeroTongues
+	btst	d2,d1
+	beq.s	.learn
+	lea	TxtGuildKnows,a0
+	bra	LogHero
+.learn:
+	move.w	#TONGUE_COST,d0
+	bsr	TownPay
+	tst.w	d0
+	beq.s	.done
+	move.w	hr_Tongues(a6),d1
+	bset	d2,d1
+	move.w	d1,hr_Tongues(a6)
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtGuildLearns,a0
+	bsr	StrCopy
+	move.w	d2,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.b	#'.',(a1)+
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bra	LogAdd
+.done:
+	rts
+
+;--- la banque ----------------------------------------------------------
+; BankDeal : d7 = 0 deposer 50, 1 tout, 2 retirer 50, 3 tout
+BankDeal:
+	cmp.w	#2,d7
+	bge.s	.withdraw
+	move.w	Gold,d0
+	cmp.w	#1,d7
+	beq.s	.putAll
+	cmp.w	#BANK_STEP,d0
+	bls.s	.putAll
+	move.w	#BANK_STEP,d0
+.putAll:
+	tst.w	d0
+	beq.s	.nothing
+	move.w	d0,d1
+	add.w	Bank,d1			; le coffre ne deborde pas
+	bcc.s	.fits
+	move.w	#$ffff,d1
+	move.w	d1,d0
+	sub.w	Bank,d0
+.fits:
+	sub.w	d0,Gold
+	move.w	d1,Bank
+	bra.s	.said
+.withdraw:
+	move.w	Bank,d0
+	cmp.w	#3,d7
+	beq.s	.takeAll
+	cmp.w	#BANK_STEP,d0
+	bls.s	.takeAll
+	move.w	#BANK_STEP,d0
+.takeAll:
+	tst.w	d0
+	beq.s	.nothing
+	move.w	d0,d1
+	add.w	Gold,d1
+	bcc.s	.carry
+	move.w	#$ffff,d1
+	move.w	d1,d0
+	sub.w	Gold,d0
+.carry:
+	sub.w	d0,Bank
+	move.w	d1,Gold
+.said:
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	lea	TxtBankHeld,a0
+	move.w	Bank,d0
+	lea	TxtCoins,a2
+	bra	LogNum
+.nothing:
+	lea	TxtBankNothing,a0
+	bra	LogAdd
+
+;--- la rue -------------------------------------------------------------
+; StreetTry : le heros choisi tente une bourse. La main (DEX) et le
+; metier (DESAMORCAGE : les memes doigts) contre le guet, qui s'eveille
+; un peu plus a chaque essai. Pris, on paie l'amende -- ou, sans le
+; sou, on passe la nuit au cachot et l'on en sort roue de coups.
+StreetTry:
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	tst.w	hr_Hp(a6)
+	bne.s	.alive
+	lea	TxtGuildDead,a0
+	bra	LogHero
+.alive:
+	move.w	hr_Dex(a6),d0
+	bsr	StatMod
+	move.w	d0,d2
+	moveq	#SK_DISARM,d0
+	bsr	SkillTen
+	add.w	d0,d2
+	bsr	D20
+	add.w	d0,d2
+	move.w	StreetHeat,d3
+	add.w	#STREET_DC,d3
+	addq.w	#3,StreetHeat
+	cmp.w	d3,d2
+	blt.s	.missed
+	bsr	D20			; une bourse de bourgeois
+	add.w	#10,d0
+	add.w	d0,Gold
+	bcc.s	.kept
+	move.w	#$ffff,Gold
+.kept:
+	move.w	d0,d2
+	moveq	#SFX_COIN,d0
+	bsr	SfxPlay
+	moveq	#SK_DISARM,d0
+	bsr	SkillUse
+	lea	TmpStr,a1
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtStreetGot,a0
+	bsr	StrCopy
+	move.w	d2,d0
+	bsr	StrNum
+	lea	TxtCoins,a0
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TmpStr,a0
+	bra	LogAdd
+.missed:
+	moveq	#2,d1			; rate : vu, ou pas
+	bsr	RndMod
+	tst.w	d0
+	bne.s	.caught
+	lea	TxtStreetMiss,a0
+	bra	LogAdd
+.caught:
+	move.w	#STREET_FINE,d0
+	cmp.w	Gold,d0
+	bhi.s	.jail
+	sub.w	d0,Gold
+	lea	TxtStreetFine,a0
+	lea	TxtCoins,a2
+	bra	LogNum
+.jail:
+	clr.w	Gold
+	move.w	#1,hr_Hp(a6)
+	lea	TxtStreetJail,a0
+	bra	LogHero
+
+;--- le dessin ----------------------------------------------------------
+; TownLine : d6 = ligne -> TmpStr = son libelle, d4 = le prix (-1 sans),
+; d5 = la couleur du libelle
+TownLine:
+	movem.l	d0-d3/d7/a0-a1/a6,-(sp)
+	moveq	#-1,d4
+	move.w	#C_TEXT,d5
+	lea	TmpStr,a1
+	move.w	TownPlace,d0
+	bne.s	.notSquare
+	move.w	d6,d0			; --- la place
+	lsl.w	#2,d0
+	lea	TownPlaces,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	bra	.done
+.notSquare:
+	cmp.w	#TOWN_INN,d0
+	bne.s	.notInn
+	lea	TxtInnDorm,a0
+	tst.w	d6
+	beq.s	.inn
+	lea	TxtInnRoom,a0
+.inn:
+	bsr	StrCopy
+	move.w	d6,d0
+	bsr	InnPrice
+	move.w	d0,d4
+	bra	.done
+.notInn:
+	cmp.w	#TOWN_TEMPLE,d0
+	bne.s	.notTemple
+	move.w	d6,d0
+	bsr	HeroPtr
+	move.l	a6,a0
+	bsr	StrCopy
+	move.b	#' ',(a1)+
+	bsr	TempleNeed
+	move.w	d1,d2
+	lsl.w	#2,d2
+	lea	TempleWords,a0
+	move.l	(a0,d2.w),a0
+	bsr	StrCopy
+	tst.w	d1
+	bne.s	.priced
+	move.w	#C_TEXTLOW,d5
+	bra	.done
+.priced:
+	move.w	d0,d4
+	bra	.done
+.notTemple:
+	cmp.w	#TOWN_GUILD,d0
+	bne	.notGuild
+	tst.w	GuildPage
+	bne.s	.tongue
+	move.w	d6,d0			; --- les niveaux
+	bsr	HeroPtr
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtGuildLvl,a0
+	bsr	StrCopy
+	move.w	hr_Level(a6),d0
+	bsr	StrNum
+	move.w	#C_TEXTLOW,d5
+	tst.w	hr_Hp(a6)
+	beq	.done
+	bsr	HeroReady
+	tst.w	d0
+	beq	.done
+	move.w	#C_TEXT,d5
+	move.w	hr_Level(a6),d4
+	mulu.w	#TRAIN_COST,d4
+	bra	.done
+.tongue:
+	move.w	d6,d2			; --- les langues, pour le choisi
+	addq.w	#1,d2
+	move.w	d2,d0
+	lsl.w	#2,d0
+	lea	TongueNames,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	bsr	HeroTongues
+	btst	d2,d1
+	bne.s	.known
+	move.w	#TONGUE_COST,d4
+	bra	.done
+.known:
+	lea	TxtGuildKnown,a0
+	bsr	StrCopy
+	move.w	#C_TEXTLOW,d5
+	bra	.done
+.notGuild:
+	cmp.w	#TOWN_BANK,d0
+	bne.s	.street
+	move.w	d6,d0
+	lsl.w	#2,d0
+	lea	BankWords,a0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+	bra.s	.done
+.street:
+	lea	TxtStreetTry,a0
+	bsr	StrCopy
+.done:
+	clr.b	(a1)
+	movem.l	(sp)+,d0-d3/d7/a0-a1/a6
+	rts
+
+DrawTown:
+	movem.l	d0-d7/a0-a6,-(sp)
+	move.w	#16,d0
+	moveq	#16,d1
+	move.w	#192,d2
+	move.w	#136,d3
+	move.w	#C_BLACK,d4
+	bsr	FillRect
+	move.w	TownPlace,d0		; le nom de la porte, et l'or
+	lsl.w	#2,d0
+	lea	TownTitles,a0
+	move.l	(a0,d0.w),a0
+	cmp.w	#TOWN_GUILD,TownPlace
+	bne.s	.title
+	tst.w	GuildPage
+	beq.s	.title
+	lea	TxtGuildTongues,a0
+.title:
+	moveq	#3,d0
+	moveq	#20,d1
+	move.w	#C_HILITE,d2
+	bsr	DrawText
+	lea	TmpStr,a1
+	lea	TxtShopGold,a0
+	bsr	StrCopy
+	move.w	Gold,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#18,d0
+	moveq	#20,d1
+	move.w	#C_GOLD+2,d2
+	bsr	DrawText
+
+	bsr	TownRows
+	move.w	d0,d3
+	moveq	#0,d6
+.row:
+	bsr	TownLine
+	lea	TmpStr,a0		; le curseur, devant le libelle
+	lea	TownBuf,a1
+	move.b	#' ',(a1)+
+	cmp.w	TownCursor,d6
+	bne.s	.noCur
+	move.b	#'>',-1(a1)
+	move.w	#C_HILITE,d5		; la ligne visee s'allume
+.noCur:
+	move.b	#' ',(a1)+
+	bsr	StrCopy
+	clr.b	(a1)
+	lea	TownBuf,a0
+	moveq	#3,d0
+	move.w	d6,d1
+	mulu.w	#11,d1
+	add.w	#34,d1
+	move.w	d5,d2
+	bsr	DrawText
+	tst.w	d4			; le prix, cale a droite comme au
+	bmi.s	.next			; comptoir
+	lea	TmpStr,a1
+	move.w	d4,d0
+	bsr	StrNum
+	clr.b	(a1)
+	lea	TmpStr,a2
+	moveq	#25,d0
+.count:
+	tst.b	(a2)+
+	beq.s	.counted
+	subq.w	#1,d0
+	bra.s	.count
+.counted:
+	move.w	#C_GOLD+2,d2
+	cmp.w	Gold,d4
+	bls.s	.afford
+	move.w	#C_TEXTLOW,d2
+.afford:
+	lea	TmpStr,a0
+	bsr	DrawText
+.next:
+	addq.w	#1,d6
+	cmp.w	d3,d6
+	blt	.row
+
+	lea	TmpStr,a1		; sous la liste : ce qui compte ici
+	move.w	TownPlace,d0
+	cmp.w	#TOWN_BANK,d0
+	bne.s	.notBank
+	lea	TxtBankHeld,a0
+	bsr	StrCopy
+	move.w	Bank,d0
+	bsr	StrNum
+	bra.s	.info
+.notBank:
+	cmp.w	#TOWN_STREET,d0
+	beq.s	.who
+	cmp.w	#TOWN_GUILD,d0
+	bne.s	.plain
+	lea	TxtGuildTab,a0
+	tst.w	GuildPage
+	beq.s	.copyInfo
+.who:
+	lea	TxtTownWho,a0		; la main, ou l'eleve : touches 1 a 6
+	bsr	StrCopy
+	move.w	SelHero,d0
+	bsr	HeroPtr
+	move.l	a6,a0
+	bsr	StrCopy
+	lea	TxtTownWho2,a0
+.copyInfo:
+	bsr	StrCopy
+	bra.s	.info
+.plain:
+	lea	TownInfos,a0
+	lsl.w	#2,d0
+	move.l	(a0,d0.w),a0
+	bsr	StrCopy
+.info:
+	clr.b	(a1)
+	lea	TmpStr,a0
+	moveq	#3,d0
+	move.w	#124,d1
+	move.w	#C_TEXTDIM,d2
+	bsr	DrawText
+	lea	TxtTownHelp,a0
+	tst.w	TownPlace
+	bne.s	.help
+	lea	TxtTownHelp0,a0
+.help:
+	moveq	#3,d0
+	move.w	#135,d1
+	move.w	#C_TEXTLOW,d2
+	bsr	DrawText
+	movem.l	(sp)+,d0-d7/a0-a6
+	rts
+
+; TrainHero : a6 = heros. Le maitre de la guilde lui fait passer le
+; niveau que l'experience lui a gagne : un de de vie, les sorts.
+TrainHero:
+	movem.l	d0-d3/a0-a1,-(sp)
+	addq.w	#1,hr_Level(a6)
+	bclr	#HF_READY,hr_Flags+1(a6)
+	move.w	hr_Class(a6),d0
+	mulu.w	#cl_SIZEOF,d0
+	lea	ClassTable,a0
+	add.l	d0,a0
+	moveq	#1,d0			; un de de vie de plus
+	move.w	cl_Hd(a0),d1
+	bsr	RollDice
+	move.w	d0,d3
+	move.w	hr_Con(a6),d0
+	bsr	StatMod
+	add.w	d0,d3
+	tst.w	d3
+	bgt.s	.hpOk
+	moveq	#1,d3
+.hpOk:
+	add.w	d3,hr_HpMax(a6)
+	move.w	hr_HpMax(a6),hr_Hp(a6)
+	bsr	FillSlots
+	moveq	#SFX_LEVEL,d0
+	bsr	SfxPlay
+	lea	TxtLevelUp,a0
+	bsr	LogHero
+	bsr	CheckLevel		; assez pour le suivant ? on le dit
+	movem.l	(sp)+,d0-d3/a0-a1
+	rts
+
+; CheckLevel : a6 = heros, qui vient de gagner de l'experience. Assez
+; pour la guilde, on le dit une fois ; le niveau, c'est la guilde qui
+; le donne.
+CheckLevel:
+	movem.l	d0/a0,-(sp)
+	bsr	HeroReady
+	tst.w	d0
+	beq.s	.done
+	bset	#HF_READY,hr_Flags+1(a6)
+	bne.s	.done
+	lea	TxtReady,a0
+	bsr	LogHero
+.done:
+	movem.l	(sp)+,d0/a0
+	rts
+
+;----------------------------------------------------------------------
 ; Les rencontres : avant le fer, la parole
 ;
 ; Comme dans Legend of Faerghail, une rencontre ne commence pas
@@ -8076,6 +9099,7 @@ HeroTongues:
 	add.w	d0,d0
 	lea	ClassTongues,a0
 	or.w	(a0,d0.w),d1
+	or.w	hr_Tongues(a6),d1	; et celles de la guilde
 	movem.l	(sp)+,d0/a0
 	rts
 
@@ -8476,53 +9500,6 @@ PickTarget:
 	bsr	RndMod
 	add.w	d2,d0
 	movem.l	(sp)+,d1-d3/a6
-	rts
-
-CheckLevel:				; a6 = heros
-	movem.l	d0-d3/a0-a1,-(sp)
-.again:
-	move.w	hr_Level(a6),d0		; palier = 150 x n x (n+1) / 2
-	cmp.w	#MAXCLEVEL,d0
-	bge	.done
-	move.w	d0,d1
-	addq.w	#1,d1
-	mulu.w	d1,d0
-	lsr.l	#1,d0
-	mulu.w	#150,d0
-	cmp.w	hr_Xp(a6),d0
-	bgt	.done
-	addq.w	#1,hr_Level(a6)
-	move.w	hr_Class(a6),d0
-	mulu.w	#cl_SIZEOF,d0
-	lea	ClassTable,a0
-	add.l	d0,a0
-	moveq	#1,d0			; un de de vie de plus
-	move.w	cl_Hd(a0),d1
-	bsr	RollDice
-	move.w	d0,d3
-	move.w	hr_Con(a6),d0
-	bsr	StatMod
-	add.w	d0,d3
-	tst.w	d3
-	bgt.s	.hpOk
-	moveq	#1,d3
-.hpOk:
-	add.w	d3,hr_HpMax(a6)
-	move.w	hr_HpMax(a6),hr_Hp(a6)
-	bsr	FillSlots
-	moveq	#SFX_LEVEL,d0
-	bsr	SfxPlay
-	lea	TmpStr,a1
-	move.l	a6,a0
-	bsr	StrCopy
-	lea	TxtLevelUp,a0
-	bsr	StrCopy
-	clr.b	(a1)
-	lea	TmpStr,a0
-	bsr	LogAdd
-	bra	.again
-.done:
-	movem.l	(sp)+,d0-d3/a0-a1
 	rts
 
 CombatFlee:
@@ -9068,6 +10045,14 @@ HandleKey:
 	clr.w	UiMode
 	bra	.redraw
 .quit:
+	tst.w	InTown			; au bourg, ESC ramene sur la place
+	beq.s	.quitArm
+	tst.w	TownPlace
+	beq.s	.quitArm
+	clr.w	TownPlace
+	clr.w	TownCursor
+	bra	.redraw
+.quitArm:
 	tst.w	QuitArm			; une seule touche ne doit pas effacer
 	bne.s	.reallyQuit		; une partie entiere
 	move.w	#1,QuitArm
@@ -9211,6 +10196,13 @@ HandleKey:
 	bsr	OptKey
 	bra	.done
 .notInOpts:
+	tst.w	InTown			; au bourg, pas de pas ni de carte :
+	beq.s	.notInTown		; la place et ses portes
+	tst.w	d1
+	bne	.done
+	bsr	TownKey
+	bra	.done
+.notInTown:
 	cmp.w	#KEY_M_QW,d0		; carte du niveau
 	beq.s	.mapKey
 	cmp.w	#KEY_M_AZ,d0
@@ -9402,6 +10394,7 @@ ShopTable:
 	dc.b	17,17,13,16,2,20,25,8	; potions, cuir, bouclier, cle
 	dc.b	17,18,14,3,6,22,21,26	; mailles, epee longue, parchemins
 	dc.b	18,18,15,9,10,11,24,23	; harnois et lames enchantees
+	dc.b	17,17,18,7,4,13,14,16	; le comptoir du bourg
 	even
 
 
@@ -9444,6 +10437,7 @@ SaveList:
 	dc.l	LevelStore,LVSTORE	; les trois etages, chacun dans son etat
 	dc.l	LevelKnown,LEVELS*2	; et ceux que le groupe a deja vus
 	dc.l	OptMusic,8		; musique, bruitages, disposition, combat
+	dc.l	InTown,6		; au bourg ? la banque, le guet
 	dc.l	0,0
 
 	include	"surfgrad.i"
@@ -9748,7 +10742,6 @@ TxtDrops:	dc.b	"VOUS JETEZ ",0
 TxtBagFull:	dc.b	"LE SAC EST PLEIN.",0
 TxtDescend:	dc.b	"UN ESCALIER. VOUS DESCENDEZ.",0
 TxtAscend:	dc.b	"UN ESCALIER. VOUS REMONTEZ.",0
-TxtNoWayUp:	dc.b	"AU-DESSUS, C'EST LE JOUR.",0
 TxtWin:		dc.b	"ACQUITTÉS. VOUS REVOYEZ LE JOUR.",0
 TxtAppears:	dc.b	"UN ",0
 TxtBang:	dc.b	" SURGIT !",0
@@ -9816,6 +10809,76 @@ TxtMissed:	dc.b	" MANQUE ",0
 TxtFalls:	dc.b	" S'EFFONDRE !",0
 TxtDies:	dc.b	" TOMBE ! +",0
 TxtXpGold:	dc.b	" PX, ",0
+TxtTownStatus:	dc.b	"AMBELUNE",0
+TxtHelpTown:	dc.b	"HAUT BAS ENTRÉE C I L P",0
+TxtTownHello:	dc.b	"VOUS REMONTEZ AU JOUR : AMBELUNE.",0
+TxtTownLeave:	dc.b	"VOUS REDESCENDEZ DANS LA CRYPTE.",0
+TxtTownShop:	dc.b	"LE COMPTOIR D'AMBELUNE VOUS ATTEND.",0
+TxtCoins:	dc.b	" PIÈCES.",0
+TxtBankRobbed:	dc.b	"BANQUE PILLÉE : ",0
+TxtCutSeen:	dc.b	"UN COUPE-BOURSE, VU À TEMPS.",0
+TxtCutLifted:	dc.b	"UN COUPE-BOURSE PREND ",0
+TxtInnSlept:	dc.b	"UNE NUIT AU DORTOIR. ON SE REMET.",0
+TxtInnRoomed:	dc.b	"UNE VRAIE NUIT. TOUT EST RENDU.",0
+TxtTempleNone:	dc.b	" N'A BESOIN DE RIEN.",0
+TxtTempleHealed: dc.b	" EST SOIGNÉ.",0
+TxtTempleFail:	dc.b	"LES DIEUX SE DÉTOURNENT.",0
+TxtTempleRaised: dc.b	" REVIENT À LA VIE !",0
+TxtGuildDead:	dc.b	" EST À TERRE.",0
+TxtGuildTop:	dc.b	" A TOUT APPRIS.",0
+TxtGuildLack:	dc.b	" : ENCORE ",0
+TxtGuildLack2:	dc.b	" PX.",0
+TxtGuildKnows:	dc.b	" LA PARLE DÉJÀ.",0
+TxtGuildLearns:	dc.b	" APPREND : ",0
+TxtGuildLvl:	dc.b	" NIV ",0
+TxtGuildKnown:	dc.b	" : SUE",0
+TxtGuildTongues: dc.b	"LES LANGUES",0
+TxtGuildTab:	dc.b	"TAB : LES LANGUES",0
+TxtReady:	dc.b	" EST PRÊT POUR LA GUILDE.",0
+TxtBankHeld:	dc.b	"EN DÉPÔT : ",0
+TxtBankNothing:	dc.b	"RIEN À DÉPLACER.",0
+TxtStreetTry:	dc.b	"TENTER UNE BOURSE",0
+TxtStreetGot:	dc.b	" SUBTILISE ",0
+TxtStreetMiss:	dc.b	"RATÉ. PERSONNE N'A RIEN VU.",0
+TxtStreetFine:	dc.b	"LE GUET ! AMENDE : ",0
+TxtStreetJail:	dc.b	" PASSE LA NUIT AU CACHOT.",0
+TxtTownWho:	dc.b	"POUR ",0
+TxtTownWho2:	dc.b	" (1 À 6)",0
+TxtTownHelp0:	dc.b	"ENTRÉE ENTRE",0
+TxtTownHelp:	dc.b	"ENTRÉE AGIT ESC SORT",0
+TxtPlShop:	dc.b	"LE COMPTOIR",0
+TxtPlInn:	dc.b	"L'AUBERGE",0
+TxtPlTemple:	dc.b	"LE TEMPLE",0
+TxtPlGuild:	dc.b	"LA GUILDE",0
+TxtPlBank:	dc.b	"LA BANQUE",0
+TxtPlStreet:	dc.b	"LA RUE",0
+TxtPlLeave:	dc.b	"DESCENDRE À LA CRYPTE",0
+TxtHiInn:	dc.b	"L'AUBERGISTE ESSUIE UN VERRE.",0
+TxtHiTemple:	dc.b	"L'ENCENS, ET LE SILENCE.",0
+TxtHiGuild:	dc.b	"LE MAÎTRE VOUS TOISE.",0
+TxtHiBank:	dc.b	"LE CHANGEUR COMPTE SES PIÈCES.",0
+TxtHiStreet:	dc.b	"LA FOULE, LES BOURSES, LE GUET.",0
+TxtInnDorm:	dc.b	"LE DORTOIR",0
+TxtInnRoom:	dc.b	"UNE CHAMBRE",0
+TxtTplNone:	dc.b	"INDEMNE",0
+TxtTplHeal:	dc.b	"SOIGNER",0
+TxtTplRaise:	dc.b	"RELEVER",0
+TxtBkPut:	dc.b	"DÉPOSER 50",0
+TxtBkPutAll:	dc.b	"TOUT DÉPOSER",0
+TxtBkTake:	dc.b	"RETIRER 50",0
+TxtBkTakeAll:	dc.b	"TOUT RETIRER",0
+TxtInfoSquare:	dc.b	"OÙ ALLEZ-VOUS ?",0
+TxtInfoInn:	dc.b	"POUR TOUT LE GROUPE",0
+TxtInfoTemple:	dc.b	"L'OFFRANDE D'ABORD",0
+	even
+TownPlaces:	dc.l	TxtPlShop,TxtPlInn,TxtPlTemple,TxtPlGuild,TxtPlBank
+		dc.l	TxtPlStreet,TxtPlLeave
+TownTitles:	dc.l	TxtTownStatus,TxtPlInn,TxtPlTemple,TxtPlGuild,TxtPlBank
+		dc.l	TxtPlStreet
+TownHellos:	dc.l	0,TxtHiInn,TxtHiTemple,TxtHiGuild,TxtHiBank,TxtHiStreet
+TownInfos:	dc.l	TxtInfoSquare,TxtInfoInn,TxtInfoTemple
+TempleWords:	dc.l	TxtTplNone,TxtTplHeal,TxtTplRaise
+BankWords:	dc.l	TxtBkPut,TxtBkPutAll,TxtBkTake,TxtBkTakeAll
 TxtLevelUp:	dc.b	" PASSE UN NIVEAU !",0
 TxtFlee:	dc.b	"VOUS PRENEZ LA FUITE.",0
 TxtFleeFail:	dc.b	"LA FUITE ÉCHOUE !",0
@@ -10131,6 +11194,13 @@ MonX:		ds.w	1		; la case du monstre que l'on combat
 MonY:		ds.w	1
 Phase:		ds.w	1
 UiMode:		ds.w	1
+InTown:		ds.w	1		; le groupe est au bourg (voir EnterTown)
+Bank:		ds.w	1		; l'or en depot
+StreetHeat:	ds.w	1		; le guet, eveille par les essais
+TownPlace:	ds.w	1
+TownCursor:	ds.w	1
+GuildPage:	ds.w	1
+TownBuf:	ds.b	40
 SelHero:	ds.w	1
 InvCursor:	ds.w	1
 InvTop:		ds.w	1

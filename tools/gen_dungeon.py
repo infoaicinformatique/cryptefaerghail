@@ -1569,12 +1569,12 @@ def ellipse(p, cx, cy, rx, ry, idx):
 
 def make_monster(kind, pose=0):
     """Une creature en combat, a un pas : modelee en volumes par
-    tools/monsters.py, et posee dans la vue les pieds sur le dallage de
-    la case d'en face."""
-    import monsters
-    x0 = ((CX - monsters.W // 2) // 16) * 16
-    p = Piece(x0, CY - monsters.H // 2 + 6, monsters.W, monsters.H)
-    for y, row in enumerate(monsters.draw(kind, pose)):
+    tools/monster_art.py puis peinte a la maniere de 1991, et posee dans
+    la vue les pieds sur le dallage de la case d'en face."""
+    import monster_art as art
+    x0 = ((CX - art.W // 2) // 16) * 16
+    p = Piece(x0, CY - art.H // 2 + 6, art.W, art.H)
+    for y, row in enumerate(art.draw(kind, pose)):
         for x, idx in enumerate(row):
             if idx is not None:
                 p.px[y][x] = idx

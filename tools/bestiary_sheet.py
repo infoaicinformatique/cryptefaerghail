@@ -9,7 +9,7 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, "tools"))
-import monsters as M                             # noqa: E402
+import monster_art as M                          # noqa: E402
 import palette as pal                            # noqa: E402
 from gen_tables import MONSTERS                  # noqa: E402
 from PIL import Image, ImageDraw, ImageFont      # noqa: E402

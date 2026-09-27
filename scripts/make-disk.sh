@@ -1,10 +1,13 @@
 #!/bin/sh
-# Fabrique les deux disquettes 880 Ko du jeu :
+# Fabrique les trois disquettes 880 Ko du jeu :
 #
-#   dist/Faerghail1.adf   amorcable, en FFS : le jeu, le paquet de son
-#                         donjon, son Lisezmoi, son Startup-Sequence
+#   dist/Faerghail1.adf   amorcable, en FFS : le jeu, son Lisezmoi, son
+#                         Startup-Sequence
 #   dist/Faerghail2.adf   le source : tout ce qui s'assemble, ecrit a la
 #                         main ou genere, et les donnees qui tiennent
+#   dist/Faerghail3.adf   la disquette des donnees, volume FaerghailData,
+#                         en FFS : les paquets des donjons. Le jeu la
+#                         demande par son nom si PROGDIR: n'a pas le sien
 #
 # Une seule disquette ne suffisait plus : a huit bitplanes le jeu pese a
 # lui seul plus d'un demi-megaoctet, et il fallait choisir entre le
@@ -17,6 +20,7 @@ set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 ADF1="$ROOT/dist/Faerghail1.adf"
 ADF2="$ROOT/dist/Faerghail2.adf"
+ADF3="$ROOT/dist/Faerghail3.adf"
 STAGE="$ROOT/build/disk"       # copie de travail ; disk/ ne contient que
                               # les fichiers ecrits a la main
 
@@ -40,15 +44,25 @@ cp "$ROOT/data/dgnart.bin" "$ROOT/data/crypte.dgn" "$ROOT/data/sfx.bin" \
 # --- disquette 1 : le jeu -------------------------------------------------
 # En FFS : 512 octets utiles par bloc au lieu de 488, cinq pour cent de
 # place en plus. Le jeu demande de toute facon un Kickstart 3.
+# Le paquet du donjon n'y est plus : il vit sur la disquette des
+# donnees, qui a toute sa place pour grandir.
 rm -f "$ADF1"
 xdftool "$ADF1" create + format "Faerghail" ffs \
 	+ write "$STAGE/AGACrawl" \
 	+ write "$STAGE/Lisezmoi.txt" \
 	+ makedir S \
-	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence \
+	+ write "$STAGE/S/Startup-Sequence" S/Startup-Sequence
+xdftool "$ADF1" boot install			# bootblock DOS1 : la disquette demarre
+
+# --- disquette 3 : les donnees ---------------------------------------------
+# Le nom de volume compte : c'est par lui que le jeu la demande
+# (FaerghailData:Donjons/Crypte.dgn), et que DOS dit laquelle inserer.
+# Pas de bloc d'amorce : elle ne demarre rien, elle se lit.
+rm -f "$ADF3"
+xdftool "$ADF3" create + format "FaerghailData" ffs \
+	+ write "$ROOT/disk/Data/Lisezmoi.txt" Lisezmoi.txt \
 	+ makedir Donjons \
 	+ write "$STAGE/Donjons/Crypte.dgn" Donjons/Crypte.dgn
-xdftool "$ADF1" boot install			# bootblock DOS1 : la disquette demarre
 
 # --- disquette 2 : le source ---------------------------------------------
 # Le source tient tout entier, tables generees comprises : on peut
@@ -96,7 +110,7 @@ done
 
 python3 "$ROOT/tools/make_lha.py"		# meme contenu, en archive LhA
 
-for adf in "$ADF1" "$ADF2"; do
+for adf in "$ADF1" "$ADF2" "$ADF3"; do
 	echo "==> $adf"
 	xdftool "$adf" info | awk '/^used:|^free:/'
 done

@@ -28,7 +28,8 @@ SCRSIZE		= PLANESIZE*DEPTH
 MAPW		= 24
 MAPH		= 24
 MAPBYTES	= MAPW*MAPH
-LEVELS		= 3
+LEVELS		= 4			; trois etages de greffiers, la carriere
+NRIDDLES	= 8			; deux portes a runes par etage
 LEVELSIZE	= 4+MAPBYTES*2		; entete, terrain, parametres
 
 ; --- terrain ---
@@ -226,13 +227,14 @@ TITLEH		= 176			; hauteur de l'illustration
 LVSTATE		= 3*MAPBYTES+NSHOP
 LVSTORE		= LEVELS*LVSTATE
 
+; "FAEA" : un quatrieme etage, la carriere -- un etat d'etage de plus.
 ; "FAE9" : la ville -- langues apprises, drapeaux du heros, le bourg,
 ; la banque et le guet. "FAE8" : le reglage du combat, detaille ou rapide, part avec les
 ; autres ; "FAE7" avait ajoute les competences, "FAE6" la race, "FAE5"
 ; passe le groupe a six. Une sauvegarde plus ancienne n'a plus le bon
 ; compte, et le nombre magique la fait refuser plutot que relire de
 ; travers.
-SAVEMAGIC	= $46414539		; "FAE9"
+SAVEMAGIC	= $46414541		; "FAEA"
 SAVESIZE	= 4+14+NHEROES*hr_SIZEOF+INVSIZE+LVSTORE+LEVELS*2+8+6
 UI_VIEW		= 0
 UI_SHEET	= 1
@@ -327,6 +329,22 @@ Start:
 	tst.w	d0
 	beq	ExitNoDungeon
 	bsr	CheckSave
+	; Jusqu'ici, DOS pouvait demander une disquette : celle des donnees
+	; pour le paquet, celle du jeu pour la sauvegarde, et sa requete
+	; s'affichait sur l'ecran du Workbench, que l'on voyait encore. Le
+	; jeu prend maintenant l'ecran : une requete poserait une fenetre
+	; que personne ne verrait, et la partie attendrait une disquette
+	; sans le dire. On les coupe -- une sauvegarde sans sa disquette
+	; echoue, et le journal le dit.
+	move.l	4.w,a6
+	sub.l	a1,a1
+	jsr	_LVOFindTask(a6)
+	move.l	d0,OwnTask
+	beq.s	.noTask
+	move.l	d0,a0
+	move.l	pr_WindowPtr(a0),OldWinPtr
+	move.l	#-1,pr_WindowPtr(a0)
+.noTask:
 	move.l	4.w,a6
 	jsr	_LVOForbid(a6)
 
@@ -473,6 +491,11 @@ MainLoop:
 	bsr	RestoreSystem
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
+	move.l	OwnTask,d0		; les requetes de DOS reviennent
+	beq.s	.noWin
+	move.l	d0,a0
+	move.l	OldWinPtr,pr_WindowPtr(a0)
+.noWin:
 	move.l	DosBase,d0
 	beq.s	.noDos
 	move.l	d0,a1
@@ -531,13 +554,16 @@ LoadDungeon:
 	movem.l	d1-d7/a0-a6,-(sp)
 	moveq	#0,d5
 	move.l	DosBase,d0
-	beq.s	.done
+	beq	.done
 	move.l	d0,a6
-	move.l	#DungeonName,d1
+	lea	DungeonNames,a2		; a cote du jeu, puis sur la disquette
+.try:					; des donnees
+	move.l	(a2)+,d1
+	beq	.done
 	move.l	#MODE_OLDFILE,d2
 	jsr	_LVOOpen(a6)
 	move.l	d0,d4
-	beq.s	.done
+	beq.s	.try
 	move.l	d4,d1
 	move.l	#DgnPack,d2
 	move.l	#DGNPACKMAX,d3
@@ -2915,6 +2941,8 @@ OptToggle:				; agit sur la ligne visee
 	cmp.w	#4,d0
 	bne.s	.notSave
 	bsr	SaveGame
+	tst.w	SaveOk			; sinon SaveGame l'a deja dit
+	beq.s	.redraw
 	lea	TxtSaved,a0
 	bsr	LogAdd
 	bra.s	.redraw
@@ -3279,6 +3307,7 @@ SaveGame:
 	bsr	LevelStash		; l'etage courant d'abord, il n'est
 .stashed:
 	bsr	PackSave		; dans la sauvegarde que par son etat
+	clr.w	SaveOk
 	move.l	4.w,a6
 	jsr	_LVOPermit(a6)
 	move.l	DosBase,a6
@@ -3286,7 +3315,7 @@ SaveGame:
 	move.l	#MODE_NEWFILE,d2
 	jsr	_LVOOpen(a6)
 	move.l	d0,d4
-	beq.s	.reforbid
+	beq.s	.failed
 	move.l	d4,d1
 	move.l	#SaveBuf,d2
 	move.l	#SAVESIZE,d3
@@ -3294,6 +3323,14 @@ SaveGame:
 	move.l	d4,d1
 	jsr	_LVOClose(a6)
 	move.w	#1,HasSave
+	move.w	#1,SaveOk
+	bra.s	.reforbid
+.failed:				; la disquette du jeu n'est pas la,
+	move.l	4.w,a6			; ou elle est protegee : DOS ne pose
+	jsr	_LVOForbid(a6)		; plus de requete, c'est au journal
+	lea	TxtSaveFail,a0		; de le dire
+	bsr	LogAdd
+	bra.s	.done
 .reforbid:
 	move.l	4.w,a6
 	jsr	_LVOForbid(a6)
@@ -5153,7 +5190,7 @@ DoAction:
 	move.w	d4,d0			; l'enigme gravee sur la porte
 	move.w	d5,d1
 	bsr	MapGetParam
-	cmp.w	#3,d0
+	cmp.w	#NRIDDLES,d0
 	blt.s	.riddleOk
 	moveq	#0,d0
 .riddleOk:
@@ -10369,10 +10406,19 @@ DirTable:
 	dc.w	-1,0
 
 SaveName:	dc.b	"PROGDIR:AGACrawl.sav",0
+; Le paquet se cherche d'abord a cote du jeu -- installe sur un disque
+; dur, tout est dans le meme tiroir --, puis sur la disquette des
+; donnees. Celle-ci s'appelle par son nom de volume : si elle n'est
+; dans aucun lecteur, DOS la demande lui-meme, comme les jeux de
+; l'epoque demandaient leur disquette 2.
 DungeonName:	dc.b	"PROGDIR:Donjons/Crypte.dgn",0
+DungeonName2:	dc.b	"FaerghailData:Donjons/Crypte.dgn",0
 TxtNoDungeon:	dc.b	"AGACrawl : Donjons/Crypte.dgn introuvable ou abime.",10
+		dc.b	"Inserez la disquette FaerghailData.",10
 TXTNODUNGEON_LEN = *-TxtNoDungeon
 	even
+DungeonNames:
+	dc.l	DungeonName,DungeonName2,0
 DosName:	dc.b	"dos.library",0
 	even
 
@@ -10394,6 +10440,8 @@ ShopTable:
 	dc.b	17,17,13,16,2,20,25,8	; potions, cuir, bouclier, cle
 	dc.b	17,18,14,3,6,22,21,26	; mailles, epee longue, parchemins
 	dc.b	18,18,15,9,10,11,24,23	; harnois et lames enchantees
+	dc.b	34,34,32,33,29,30,31,18	; la carriere : ce qu'on ne voit
+					; nulle part au-dessus
 	dc.b	17,17,18,7,4,13,14,16	; le comptoir du bourg
 	even
 
@@ -10667,7 +10715,7 @@ TxtAr2L9:	dc.b	"*LE TAUX D'UN DÉPÔT.",0
 	even
 
 FloorLore:				; l'inscription de chaque etage
-	dc.l	TxtFloor0,TxtFloor1,TxtFloor2
+	dc.l	TxtFloor0,TxtFloor1,TxtFloor2,TxtFloor3
 
 RiddleTable:				; trois lignes, trois reponses, la bonne
 	dc.l	TxtR0Q1,TxtR0Q2,TxtR0Q3,TxtR0A1,TxtR0A2,TxtR0A3
@@ -10676,6 +10724,16 @@ RiddleTable:				; trois lignes, trois reponses, la bonne
 	dc.w	1,0
 	dc.l	TxtR2Q1,TxtR2Q2,TxtR2Q3,TxtR2A1,TxtR2A2,TxtR2A3
 	dc.w	1,0
+	dc.l	TxtR3Q1,TxtR3Q2,TxtR3Q3,TxtR3A1,TxtR3A2,TxtR3A3
+	dc.w	1,0
+	dc.l	TxtR4Q1,TxtR4Q2,TxtR4Q3,TxtR4A1,TxtR4A2,TxtR4A3
+	dc.w	2,0
+	dc.l	TxtR5Q1,TxtR5Q2,TxtR5Q3,TxtR5A1,TxtR5A2,TxtR5A3
+	dc.w	0,0
+	dc.l	TxtR6Q1,TxtR6Q2,TxtR6Q3,TxtR6A1,TxtR6A2,TxtR6A3
+	dc.w	1,0
+	dc.l	TxtR7Q1,TxtR7Q2,TxtR7Q3,TxtR7A1,TxtR7A2,TxtR7A3
+	dc.w	2,0
 StatNames:
 	dc.l	TxtFor,TxtDex,TxtCon,TxtInt,TxtSag,TxtCha
 StatOffsets:
@@ -10710,7 +10768,8 @@ TxtCha:		dc.b	"CHA ",0
 TxtIntro:	dc.b	"ON NE SORT DE FAERGHAIL QU'ACQUITTÉ.",0
 TxtFloor0:	dc.b	"LE GREFFE. LES GAGES SONT RÉCENTS.",0
 TxtFloor1:	dc.b	"PLUS BAS : LES VIEILLES ÉCHÉANCES.",0
-TxtFloor2:	dc.b	"LE FOND. PLUS PERSONNE N'A PAYÉ.",0
+TxtFloor2:	dc.b	"LES CAVEAUX : PERSONNE N'A PAYÉ.",0
+TxtFloor3:	dc.b	"LA CARRIÈRE. LA GUEULE EST EN BAS.",0
 TxtCreate1:	dc.b	"CRÉEZ VOS SIX AVENTURIERS.",0
 TxtCreate2:	dc.b	"CHAQUE CLASSE A SES FORCES.",0
 TxtCreateTitle:	dc.b	"CRÉATION DU GROUPE",0
@@ -11000,6 +11059,36 @@ TxtR2Q3:	dc.b	"QUI SUIS-JE ?",0
 TxtR2A1:	dc.b	"LE BORGNE",0
 TxtR2A2:	dc.b	"L'AIGUILLE",0
 TxtR2A3:	dc.b	"LA TOUR DE GUET",0
+TxtR3Q1:	dc.b	"ON ME ROMPT RIEN",0
+TxtR3Q2:	dc.b	"QU'EN ME NOMMANT.",0
+TxtR3Q3:	dc.b	"QUI SUIS-JE ?",0
+TxtR3A1:	dc.b	"LE VERRE",0
+TxtR3A2:	dc.b	"LE SILENCE",0
+TxtR3A3:	dc.b	"UN SERMENT",0
+TxtR4Q1:	dc.b	"J'AI DES DENTS",0
+TxtR4Q2:	dc.b	"ET JE NE MORDS PAS.",0
+TxtR4Q3:	dc.b	"QUI SUIS-JE ?",0
+TxtR4A1:	dc.b	"LE LOUP",0
+TxtR4A2:	dc.b	"LE SERPENT",0
+TxtR4A3:	dc.b	"LE PEIGNE",0
+TxtR5Q1:	dc.b	"PLUS ON EST À ME",0
+TxtR5Q2:	dc.b	"GARDER, MOINS JE",0
+TxtR5Q3:	dc.b	"SUIS GARDÉ. QUOI ?",0
+TxtR5A1:	dc.b	"LE SECRET",0
+TxtR5A2:	dc.b	"LE TRÉSOR",0
+TxtR5A3:	dc.b	"LE ROI",0
+TxtR6Q1:	dc.b	"JE COURS SANS JAMBES,",0
+TxtR6Q2:	dc.b	"J'AI UN LIT ET NE DORS",0
+TxtR6Q3:	dc.b	"JAMAIS. QUI SUIS-JE ?",0
+TxtR6A1:	dc.b	"LE CHEVAL",0
+TxtR6A2:	dc.b	"LA RIVIÈRE",0
+TxtR6A3:	dc.b	"LE VENT",0
+TxtR7Q1:	dc.b	"JE TIENS SANS MAINS,",0
+TxtR7Q2:	dc.b	"JE COMPTE SANS DOIGTS.",0
+TxtR7Q3:	dc.b	"QUI SUIS-JE ?",0
+TxtR7A1:	dc.b	"LE GREFFIER",0
+TxtR7A2:	dc.b	"LA BALANCE",0
+TxtR7A3:	dc.b	"LE REGISTRE",0
 TxtHelpRiddle:	dc.b	"1 2 OU 3 POUR RÉPONDRE  ESC",0
 TxtHelpCreate:	dc.b	"1-9 CHOISIR  R DÉS  ENTRÉE OK  ESC",0
 TxtHelpMove:	dc.b	"ESPACE C I M CARTE L LIVRE P RÉGLAGES",0
@@ -11017,6 +11106,7 @@ TxtPrologHelp:	dc.b	"UNE TOUCHE TOURNE LA PAGE   ESC SORT",0
 TxtMenuHint:	dc.b	"LA PARTIE SE SAUVE A CHAQUE ÉTAGE",0
 TxtResumed:	dc.b	"VOUS REPRENEZ VOTRE DESCENTE.",0
 TxtSaved:	dc.b	"LA PARTIE EST SAUVÉE.",0
+TxtSaveFail:	dc.b	"PAS SAUVÉE : DISQUETTE 1 ABSENTE ?",0
 TxtOptTitle:	dc.b	"RÉGLAGES",0
 TxtOptMusic:	dc.b	"MUSIQUE       ",0
 TxtOptSfx:	dc.b	"BRUITAGES     ",0
@@ -11096,6 +11186,9 @@ SfxSilence:
 
 GfxBase:	ds.l	1
 DosBase:	ds.l	1
+SaveOk:		ds.w	1		; la derniere sauvegarde a-t-elle pris
+OwnTask:	ds.l	1		; notre processus, et la fenetre ou
+OldWinPtr:	ds.l	1		; DOS posait ses requetes
 DgnMapPtr:	ds.l	1		; les cartes, dans le paquet du donjon
 DgnBank:	ds.l	1		; son bestiaire, idem
 OldView:	ds.l	1

@@ -22,8 +22,9 @@ L'HISTOIRE
 
   Trois etages, un par generation de greffiers, creuses dans une
   vieille carriere de schiste : d'ou la forme du lieu -- ni tombeau ni
-  donjon de guerre, un classement -- et d'ou la sortie tout en bas, la
-  ou la carriere debouche sur la vallee.
+  donjon de guerre, un classement. Dessous, la carriere elle-meme,
+  que les greffiers n'ont jamais habillee : le grand registre y est,
+  et la sortie tout en bas, la ou la carriere debouche sur la vallee.
 
   Le dernier greffier n'avait pas d'heritier. La coutume prevoyait le
   cas : l'emmurement de garde. On l'a enferme vivant derriere son
@@ -272,14 +273,20 @@ CLASSES
   ensorceleur.
 
 BESTIAIRE
-  25 creatures du SRD avec leurs statistiques d'origine, du kobold au
-  geant des collines, reparties par niveau de donjon.
+  32 creatures du SRD avec leurs statistiques d'origine, du kobold au
+  golem de chair, reparties par niveau de donjon. La carriere a les
+  siennes : necrophage, chien infernal, apparition, basilic,
+  manticore, ettin et golem de chair.
 
 LE DONJON
-  Trois niveaux. Coffres, objets au sol, niches creusees dans les murs,
-  portes ordinaires et portes verrouillees qui demandent une cle.
-  Onze armes, cinq protections, potions, parchemins et tresors.
-  Trouvez l'escalier de chaque niveau et ressortez vivant du troisieme.
+  Quatre niveaux : les trois etages des greffiers, et la carriere
+  dessous, ou sont le greffe et la sortie. Coffres, objets au sol,
+  niches creusees dans les murs, portes ordinaires et portes
+  verrouillees qui demandent une cle -- davantage a chaque etage.
+  Quatorze armes, sept protections, potions, parchemins et tresors ;
+  la carriere seule a l'epee longue +2, les mailles elfiques, la
+  potion supreme et le sceau du gage, et son guichet les vend.
+  Trouvez l'escalier de chaque niveau et ressortez vivant du dernier.
 
 LES MONSTRES
   Ils ne tiennent plus leur case a vous attendre : ils font un pas
@@ -314,8 +321,9 @@ LE GREFFE
   fait jusque-la que subir. La premiere lecture de chacun vaut de
   l'experience a tous. ESC referme le livre. Les autres rayonnages
   sont muets.
-  Chaque etage a sa porte a runes : elle pose une question et n'accepte
-  que trois reponses -- une clef se vole, pas une reponse. Juste, elle
+  Chaque etage a deux portes a runes, huit enigmes en tout : chacune
+  pose une question et n'accepte que trois reponses -- une clef se
+  vole, pas une reponse. Juste, elle
   s'efface ; faux, la rune inscrit un aventurier, au fer.
 
 MUSIQUE ET BRUITAGES
@@ -331,8 +339,13 @@ Configuration : Amiga 1200 ou 4000 (AGA obligatoire : huit bitplanes et
 palette 24 bits), 68020 minimum, Kickstart 3.0 ou 3.1, environ 800 Ko de
 Chip RAM libre.
 
-Le jeu tient sur deux disquettes. La premiere demarre et lance le
-jeu. La seconde, Faerghail2, porte le source dans son tiroir Src :
+Le jeu tient sur trois disquettes. La premiere demarre et lance le
+jeu. La troisieme, FaerghailData, porte les donnees : le paquet du
+donjon, ses quatre etages et son bestiaire. Avec deux lecteurs,
+mettez-la dans DF1: ; avec un seul, inserez-la quand le Workbench la
+demande, puis remettez la premiere, ou la partie se sauvegarde. Sur
+disque dur, copiez AGACrawl et le tiroir Donjons cote a cote.
+La seconde, Faerghail2, porte le source dans son tiroir Src :
 crawl.s, les fichiers dont il depend, les tables generees, les
 bruitages, les musiques et les cartes. Seuls les decors n'y tiennent
 pas -- plus d'un demi-megaoctet a eux seuls. L'archive Faerghail.lha,

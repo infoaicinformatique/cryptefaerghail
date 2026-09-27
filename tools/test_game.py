@@ -529,6 +529,13 @@ def stairs_test(g, fails):
                  "main", fails):
         return
     ter = g.addr("MapTerrain")
+    # Un monstre poste a deux pas du palier viendrait engager le combat
+    # pendant qu'on se retourne : ce n'est pas le sujet. On deblaie.
+    for y in range(MAPH):
+        for x in range(MAPW):
+            cell = g.mem.r8(ter + y * MAPW + x)
+            if cell & 0x30 == 0x20:
+                g.mem.w8(ter + y * MAPW + x, cell & 0x0f)
     grid = grid_of(g)
     px, py = g.w("PosX"), g.w("PosY")
     check(grid[py][px] & 0x0f == T_STAIRSUP, "on n'arrive pas sur l'escalier "
@@ -573,7 +580,7 @@ def stairs_test(g, fails):
 def ledger_test(g, fails):
     """Le grand registre du dernier etage, et la porte des quittances.
 
-    On descend d'autorite au troisieme -- y arriver en jouant prendrait
+    On descend d'autorite au dernier -- y arriver en jouant prendrait
     la moitie du banc -- puis on verifie les deux moities de la regle :
     l'escalier ne rend pas le jour tant que la ligne n'est pas rayee, et
     la rayer suffit a l'ouvrir."""
@@ -581,7 +588,7 @@ def ledger_test(g, fails):
     g.setw("UiMode", 0)
     g.setw("InCombat", 0)
     heal(g)
-    g.setw("Level", 2)
+    g.setw("Level", read_equ("LEVELS", 4) - 1)
     if not check(g.call(g.addr("LevelEnter")), "LevelEnter ne rend pas la "
                  "main", fails):
         return
@@ -591,7 +598,7 @@ def ledger_test(g, fails):
 
     # La marche jusqu'au greffe puis jusqu'a l'escalier traverse un
     # etage entier de dalles piegees, de herses et de monstres du
-    # troisieme, qui aurait raison d'un groupe arrive la par la porte de
+    # dernier, qui aurait raison d'un groupe arrive la par la porte de
     # service. On deblaie : ce qui est eprouve ici, c'est le registre et
     # la porte des quittances, pas la traversee -- les pieges, les
     # leviers et les combats ont chacun leur banc.
@@ -601,10 +608,11 @@ def ledger_test(g, fails):
             cell = g.mem.r8(ter + y * MAPW + x)
             if cell & 0x0f == T_TRAP:
                 g.mem.w8(ter + y * MAPW + x, cell & 0xf0)
-            elif cell & 0x0f == T_GATE:          # une herse et son levier
+            elif cell & 0x0f in (T_GATE, 6):     # une herse, une enigme
                 g.mem.w8(ter + y * MAPW + x, cell & 0xf0)
             elif cell & 0x30 == 0x20:            # un monstre poste la
                 g.mem.w8(ter + y * MAPW + x, cell & 0x0f)
+    g.setw("KeyCount", 5)                 # les serrures non plus
 
     grid = grid_of(g)
     seats = [(x, y) for y in range(MAPH) for x in range(MAPW)
@@ -1533,7 +1541,8 @@ if __name__ == "__main__":
             break
         if not check(g.w("InvCursor") < 24, f"InvCursor={g.w('InvCursor')}", fails):
             break
-        if not check(g.w("Level") < 3, f"Level={g.w('Level')}", fails):
+        if not check(g.w("Level") < read_equ("LEVELS", 4),
+                     f"Level={g.w('Level')}", fails):
             break
         if not check(g.sw("Gold") >= 0, f"Or negatif {g.sw('Gold')}", fails):
             break

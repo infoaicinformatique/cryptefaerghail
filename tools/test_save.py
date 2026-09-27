@@ -142,6 +142,35 @@ if __name__ == "__main__":
         fails.append(f"sans son donjon, le jeu ne dit rien ({n.console!r})")
     print(f"  il le dit et rend la main : {n.console.strip()}")
 
+    print("--- la disquette des donnees ---")
+    # Le paquet n'est plus sur la disquette du jeu : il vit sur
+    # FaerghailData, que le jeu appelle par son nom de volume quand
+    # PROGDIR: ne l'a pas.
+    old_data = os.environ.get("AGA_DATADIR")
+    os.environ["AGA_PROGDIR"] = vide
+    os.environ["AGA_DATADIR"] = os.path.join(T.ROOT, "bin")
+    try:
+        d = T.Game()
+    finally:
+        for var, old in (("AGA_PROGDIR", old_prog), ("AGA_DATADIR", old_data)):
+            if old is None:
+                del os.environ[var]
+            else:
+                os.environ[var] = old
+    if d.finished:
+        fails.append(f"le paquet de FaerghailData n'est pas lu ({d.console!r})")
+    elif "FaerghailData:Donjons/Crypte.dgn" not in d.opened:
+        fails.append(f"le paquet vient d'ailleurs : {d.opened}")
+    else:
+        print("  PROGDIR: vide, le paquet vient de FaerghailData:")
+    # L'ecran pris, DOS ne doit plus poser de requete que personne ne
+    # verrait : une sauvegarde sans sa disquette echoue, sans attendre.
+    win = d.mem.r32(d.PROCESS + 184)
+    if win != 0xffffffff:
+        fails.append(f"pr_WindowPtr vaut {win:#x} une fois l'ecran pris")
+    else:
+        print("  les requetes de DOS sont coupees une fois l'ecran pris")
+
     print()
     if fails:
         print(f"{len(fails)} anomalie(s) :")

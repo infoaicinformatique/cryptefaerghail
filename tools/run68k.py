@@ -156,6 +156,11 @@ class Harness:
         self.prog_dir = os.environ.get("AGA_PROGDIR", os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "bin"))
+        # FaerghailData: -- la disquette des donnees. Absente (le
+        # repertoire n'existe pas), l'ouverture echoue, comme sur une
+        # machine ou l'on aurait refuse la requete de DOS.
+        self.data_dir = os.environ.get("AGA_DATADIR", self.prog_dir)
+        self.opened = []                 # ce que le jeu a pu ouvrir
         self.console = ""
         self.audio = []
         self.finished = False
@@ -375,6 +380,7 @@ class Harness:
         m.w16(EXECBASE + 296, 0x0001)                # AttnFlags : 68010+,
         self.setup_supervisor()                      # donc un VBR a demander
         self.setup_allocmem()
+        self.setup_findtask()
         stub_library(m, GFXBASE)
         stub_library(m, DOSBASE)
         self.setup_dos()
@@ -410,6 +416,20 @@ class Harness:
                      0x4ed5):                        # jmp (a5)
             m.w16(thunk, word)
             thunk += 2
+
+    # --- exec/FindTask() ---------------------------------------------
+    PROCESS = EXECBASE + 0x800           # notre Process, pour pr_WindowPtr
+
+    def setup_findtask(self):
+        """Le jeu coupe les requetes de DOS une fois l'ecran pris : il
+        lui faut son Process. La souche en rend un, vide, ou le jeu peut
+        lire et ecrire pr_WindowPtr (decalage 184)."""
+        m = self.mem
+        for i in range(0, 256, 4):
+            m.w32(self.PROCESS + i, 0)
+        m.w16(EXECBASE - 294, 0x203c)                # move.l #PROCESS,d0
+        m.w32(EXECBASE - 294 + 2, self.PROCESS)
+        m.w16(EXECBASE - 294 + 6, 0x4e75)            # rts
 
     # --- exec/AllocMem() ---------------------------------------------
     HEAP = 0x00160000                    # au-dessus des hunks charges
@@ -613,7 +633,19 @@ class Harness:
         if name == "output":
             return OUTPUT_FH
         if name == "open":
-            path = self.cstr(d1).replace("PROGDIR:", "")
+            path = self.cstr(d1)
+            if path.startswith("FaerghailData:"):
+                full = os.path.join(self.data_dir,
+                                    path[len("FaerghailData:"):])
+                try:
+                    fh = open(full, "rb")
+                except OSError:
+                    return 0
+                self.next_fh += 1
+                self.files[self.next_fh] = fh
+                self.opened.append(path)
+                return self.next_fh
+            path = path.replace("PROGDIR:", "")
             full = os.path.join(self.dos_dir, path)
             mode = "r+b" if d2 == 1005 else "w+b"
             # Ce qui ne s'ecrit pas et n'est pas dans le repertoire des
@@ -628,6 +660,7 @@ class Harness:
                 return 0
             self.next_fh += 1
             self.files[self.next_fh] = fh
+            self.opened.append(self.cstr(d1))
             return self.next_fh
         if name == "close":
             fh = self.files.pop(d1, None)

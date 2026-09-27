@@ -10,8 +10,9 @@ eclat -- selon la torche en haut a gauche, un trait noir autour de la
 creature, un trait sombre entre ses volumes, et des coups de pinceau
 pour les meches, les fibres, les ecailles et les muscles.
 
-Le resultat reste un bitmap 96 x 88 par pose, deux poses par famille,
-que gen_dungeon.py encode comme le reste de l'art.
+Le resultat reste un bitmap 96 x 88 par pose, trois poses par famille
+-- repos, souffle, et celle qui frappe --, que gen_dungeon.py range
+dans le paquet du donjon.
 
     python3 tools/monster_art.py      # planche dans /tmp/monstres.png
 """
@@ -113,7 +114,11 @@ def stroke(kind, x, y):
 
 
 class Sculpt:
-    def __init__(self):
+    """Le sculpteur. k < 1 rapetisse la creature autour de ses pieds
+    (milieu du bas du cadre) : les familles se dessinent toutes a la
+    meme echelle, et le gobelin n'est pas aussi grand que l'orc."""
+    def __init__(self, k=1.0):
+        self.k = k
         self.h = [[NEG] * W for _ in range(H)]
         self.m = [[None] * W for _ in range(H)]
         self.g = [[0] * W for _ in range(H)]
@@ -126,6 +131,10 @@ class Sculpt:
             return self.ngroup
         return g
 
+    def _t(self, x, y):
+        k = self.k
+        return W / 2 + (x - W / 2) * k, (H - 2) - ((H - 2) - y) * k
+
     def _put(self, x, y, z, mat, g):
         if 0 <= x < W and 0 <= y < H and z > self.h[y][x]:
             self.h[y][x], self.m[y][x], self.g[y][x] = z, mat, g
@@ -134,7 +143,12 @@ class Sculpt:
     def ell(self, cx, cy, rx, ry, z, mat, g=None, depth=None, clip=None):
         """Demi-ellipsoide pose a la hauteur z."""
         g = self._grp(g)
-        depth = min(rx, ry) if depth is None else depth
+        k = self.k
+        if clip:
+            clip = (self._t(0, clip[0])[1], self._t(0, clip[1])[1])
+        cx, cy = self._t(cx, cy)
+        rx, ry, z = rx * k, ry * k, z * k
+        depth = min(rx, ry) if depth is None else depth * k
         for y in range(int(cy - ry) - 1, int(cy + ry) + 2):
             if clip and not (clip[0] <= y <= clip[1]):
                 continue
@@ -148,9 +162,13 @@ class Sculpt:
         """Membre effile le long d'une ligne brisee : pts, rayons et
         hauteurs par sommet (un scalaire vaut pour tous)."""
         g = self._grp(g)
+        k = self.k
         n = len(pts)
+        pts = [self._t(*p) for p in pts]
         rs = r if isinstance(r, (list, tuple)) else [r] * n
         zs = z if isinstance(z, (list, tuple)) else [z] * n
+        rs = [v * k for v in rs]
+        zs = [v * k for v in zs]
         for i in range(n - 1):
             (x0, y0), (x1, y1) = pts[i], pts[i + 1]
             r0, r1, z0, z1 = rs[i], rs[i + 1], zs[i], zs[i + 1]
@@ -172,6 +190,8 @@ class Sculpt:
     def poly(self, pts, z, mat, g=None, bevel=2.0):
         """Plaque plate, biseautee sur ses bords."""
         g = self._grp(g)
+        pts = [self._t(*p) for p in pts]
+        z, bevel = z * self.k, bevel * self.k
         xs = [p[0] for p in pts]
         ys = [p[1] for p in pts]
         n = len(pts)
@@ -195,6 +215,8 @@ class Sculpt:
     def paint(self, cx, cy, rx, ry, mat, dz=0.0, only=None):
         """Recolore une ellipse sur ce qui est deja modele, en la
         creusant de dz : orbites, gueules, taches."""
+        cx, cy = self._t(cx, cy)
+        rx, ry, dz = rx * self.k, ry * self.k, dz * self.k
         for y in range(int(cy - ry) - 1, int(cy + ry) + 2):
             for x in range(int(cx - rx) - 1, int(cx + rx) + 2):
                 if 0 <= x < W and 0 <= y < H and self.m[y][x] and \
@@ -205,6 +227,9 @@ class Sculpt:
                     self.h[y][x] += dz
 
     def dot(self, x, y, mat, z=None):
+        self._dot(*self._t(x, y), mat, z)
+
+    def _dot(self, x, y, mat, z=None):
         x, y = int(round(x)), int(round(y))
         if 0 <= x < W and 0 <= y < H:
             if self.m[y][x] is None:
@@ -213,21 +238,26 @@ class Sculpt:
             self.m[y][x] = mat
 
     def line(self, x0, y0, x1, y1, mat):
+        (x0, y0), (x1, y1) = self._t(x0, y0), self._t(x1, y1)
         steps = int(max(abs(x1 - x0), abs(y1 - y0), 1))
         for i in range(steps + 1):
-            self.dot(x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps, mat)
+            self._dot(x0 + (x1 - x0) * i / steps, y0 + (y1 - y0) * i / steps,
+                      mat)
 
     def fang(self, x, y, length, down=True):
         """Croc : deux pixels de large a la racine, un a la pointe."""
         s = 1 if down else -1
+        x, y = self._t(x, y)
+        length = max(1, int(round(length * self.k)))
         for k in range(length):
-            self.dot(x, y + s * k, "teeth")
+            self._dot(x, y + s * k, "teeth")
             if k < length // 2:
-                self.dot(x + 1, y + s * k, "teeth")
+                self._dot(x + 1, y + s * k, "teeth")
 
     def ink(self, pts):
         """Trait de pinceau sur ce qui est modele : muscles, plis, cotes.
         Il prend le ton le plus sombre de la matiere qu'il traverse."""
+        pts = [self._t(*p) for p in pts]
         for i in range(len(pts) - 1):
             (x0, y0), (x1, y1) = pts[i], pts[i + 1]
             steps = int(max(abs(x1 - x0), abs(y1 - y0), 1))
@@ -312,10 +342,28 @@ class Sculpt:
 
 
 # --- les neuf familles ---------------------------------------------------
-def wolf(s, f):
+# Chaque famille : famille(s, f, a). f, la respiration (0 ou 1) ; a, la
+# pose qui frappe -- celle que le combat montre quand la creature porte
+# son coup.
+def blade(s, base, tip, w, z, mat="steel"):
+    """Une lame plate de base a pointe, large de w a la base."""
+    (x0, y0), (x1, y1) = base, tip
+    dx, dy = x1 - x0, y1 - y0
+    ll = math.hypot(dx, dy) or 1.0
+    px, py = -dy / ll * w / 2, dx / ll * w / 2
+    mx, my = x0 + dx * 0.8, y0 + dy * 0.8
+    s.poly([(x0 + px, y0 + py), (mx + px * 0.9, my + py * 0.9), (x1, y1),
+            (mx - px * 0.9, my - py * 0.9), (x0 - px, y0 - py)], z, mat,
+           bevel=1.2)
+
+
+
+def wolf(s, f, a=0):
     """Bete : loup gris en arret, gueule ouverte (rat, loup, worg...)."""
-    hd = 2 * f                                        # la tete plonge
-    s.cap([(80, 44), (88, 36 - 3 * f), (93, 26 - 5 * f)], [4, 3, 1.5], 2, "fur")
+    hd = 2 * f + 7 * a                                # la tete plonge
+    hx = -5 * a                                       # et se jette en avant
+    s.cap([(80, 44), (88, 36 - 3 * f - 4 * a), (93, 26 - 5 * f - 8 * a)],
+          [4, 3, 1.5], 2, "fur")
     body = s.ell(60, 52, 26, 15, 0, "fur")
     s.cap([(74, 54), (80, 70), (77, 84)], [8, 4, 3], [2, 4, 4], "fur")
     s.cap([(66, 58), (64, 72), (66, 85)], [6, 3.5, 3], [0, 2, 2], "fur")
@@ -325,29 +373,36 @@ def wolf(s, f):
     s.cap([(51, 60), (53, 72), (54, 84)], [7, 4.5, 4], [8, 8, 10], "fur")
     s.ell(30, 85, 6, 2.5, 13, "fur")
     s.ell(55, 85, 6, 2.5, 11, "fur")
-    ruff = s.ell(38, 42 + hd, 17, 15, 12, "fur")
-    s.ell(38, 52 + hd, 11, 9, 14, "furlt", g=ruff)    # poitrail clair
-    s.poly([(24, 32 + hd), (24, 14 + hd), (33, 27 + hd)], 20, "fur")
-    s.poly([(42, 27 + hd), (50, 12 + hd), (50, 31 + hd)], 18, "fur")
-    s.paint(27, 24 + hd, 1.5, 4, "dark", dz=-1)
-    s.paint(47, 23 + hd, 1.5, 4, "dark", dz=-1)
-    head = s.ell(36, 34 + hd, 12, 10, 20, "fur")
-    s.cap([(33, 38 + hd), (27, 46 + hd)], [7, 5], [26, 30], "fur", g=head)
-    s.ell(25, 48 + hd, 3, 2, 35, "dark")                # truffe
-    # gueule ouverte, crocs
-    s.paint(30, 52 + hd + f, 7, 3 + f, "gums", dz=-4)
-    s.paint(30, 52 + hd + f, 5, 2 + f, "dark", dz=-2)
+    ruff = s.ell(38 + hx // 2, 42 + hd, 17, 15, 12, "fur")
+    s.ell(38 + hx // 2, 52 + hd, 11, 9, 14, "furlt", g=ruff)    # poitrail
+    s.poly([(24 + hx, 32 + hd + 3 * a), (24 + hx - 3 * a, 14 + hd + 8 * a),
+            (33 + hx, 27 + hd)], 20, "fur")           # oreilles couchees
+    s.poly([(42 + hx, 27 + hd), (50 + hx + 3 * a, 12 + hd + 8 * a),
+            (50 + hx, 31 + hd + 3 * a)], 18, "fur")
+    s.paint(27 + hx, 24 + hd + 3 * a, 1.5, 4, "dark", dz=-1)
+    s.paint(47 + hx, 23 + hd + 3 * a, 1.5, 4, "dark", dz=-1)
+    head = s.ell(36 + hx, 34 + hd, 12, 10, 20, "fur")
+    s.cap([(33 + hx, 38 + hd), (27 + hx, 46 + hd)], [7, 5], [26, 30], "fur",
+          g=head)
+    s.ell(25 + hx, 48 + hd - 2 * a, 3, 2, 35, "dark")   # truffe
+    # gueule ouverte, crocs -- grande ouverte quand il mord
+    mo = f + 3 * a
+    s.paint(30 + hx, 52 + hd + mo, 7 + a, 3 + mo, "gums", dz=-4)
+    s.paint(30 + hx, 52 + hd + mo, 5 + a, 2 + mo, "dark", dz=-2)
     for fx in (25, 29, 33):
-        s.fang(fx, 50 + hd, 3)
+        s.fang(fx + hx, 50 + hd, 3 + a)
     for fx in (27, 32):
-        s.fang(fx, 55 + hd + 2 * f, 2, down=False)
-    s.cap([(31, 32 + hd), (35, 30 + hd)], 1.2, 34, "dark")   # sourcils
-    s.cap([(39, 30 + hd), (43, 32 + hd)], 1.2, 34, "dark")
-    s.dot(33, 34 + hd, "eyeY"), s.dot(34, 34 + hd, "eyeY")
-    s.dot(40, 34 + hd, "eyeY"), s.dot(41, 34 + hd, "eyeY")
+        s.fang(fx + hx, 55 + hd + 2 * mo, 2 + a, down=False)
+    s.cap([(31 + hx, 32 + hd + a), (35 + hx, 30 + hd + 2 * a)], 1.2, 34,
+          "dark")                                     # sourcils fronces
+    s.cap([(39 + hx, 30 + hd + 2 * a), (43 + hx, 32 + hd + a)], 1.2, 34,
+          "dark")
+    eye = "eyeR" if a else "eyeY"
+    s.dot(33 + hx, 34 + hd, eye), s.dot(34 + hx, 34 + hd, eye)
+    s.dot(40 + hx, 34 + hd, eye), s.dot(41 + hx, 34 + hd, eye)
 
 
-def skeleton(s, f):
+def skeleton(s, f, a=0):
     """Mort-vivant : squelette en armes, rouille et bouclier fendu."""
     up = 6 * f
     for side in (-1, 1):
@@ -374,14 +429,21 @@ def skeleton(s, f):
     s.ell(66, 52, 11, 13, 17, "wood", g=sh, depth=4)
     s.ell(66, 52, 4, 4, 20, "iron")
     s.line(62, 40, 68, 58, "dark")                     # fente
-    # bras droit : l'epee levee
-    s.cap([(35, 34), (29, 46), (26, 38 - up)], [2.4, 2, 2], 14, "bone")
-    s.ell(26, 37 - up, 3, 3, 18, "bone")
-    s.cap([(26, 42 - up), (26, 32 - up)], 1.6, 20, "leather")
-    s.cap([(21, 32 - up), (31, 32 - up)], 1.5, 22, "iron")
-    s.poly([(24, 31 - up), (28, 31 - up), (27, 2 - up), (26, -1 - up),
-            (25, 2 - up)], 21, "steel", bevel=1.2)
-    s.cap([(26, 30 - up), (26, 4 - up)], 0.3, 23, "iron")     # gorge
+    if a:                                   # l'epee s'abat en travers
+        s.cap([(35, 34), (34, 46), (44, 50)], [2.4, 2, 2], 24, "bone")
+        s.ell(45, 50, 3, 3, 28, "bone")
+        s.cap([(40, 46), (50, 54)], 1.5, 30, "iron")          # garde
+        s.cap([(42, 52), (47, 48)], 1.6, 29, "leather")
+        blade(s, (48, 51), (84, 74), 4, 31)
+        s.line(50, 52, 80, 71, "iron")
+    else:                                   # bras droit : l'epee levee
+        s.cap([(35, 34), (29, 46), (26, 38 - up)], [2.4, 2, 2], 14, "bone")
+        s.ell(26, 37 - up, 3, 3, 18, "bone")
+        s.cap([(26, 42 - up), (26, 32 - up)], 1.6, 20, "leather")
+        s.cap([(21, 32 - up), (31, 32 - up)], 1.5, 22, "iron")
+        s.poly([(24, 31 - up), (28, 31 - up), (27, 2 - up), (26, -1 - up),
+                (25, 2 - up)], 21, "steel", bevel=1.2)
+        s.cap([(26, 30 - up), (26, 4 - up)], 0.3, 23, "iron")     # gorge
     # crane et heaume rouille
     skull = s.ell(48, 19, 9, 10, 18, "bone")
     s.ell(48, 27, 6, 4, 20, "bone", g=skull)
@@ -392,12 +454,13 @@ def skeleton(s, f):
     s.paint(52, 19, 3, 3, "dark", dz=-6)
     s.dot(44, 19, "eyeR"), s.dot(52, 19, "eyeR")
     s.paint(48, 24, 1.2, 2, "dark", dz=-3)
-    s.paint(48, 28 + f, 5, 1.2, "dark", dz=-3)
+    jaw = f + 2 * a                         # la machoire tombe
+    s.paint(48, 28 + jaw, 5, 1.2 + a, "dark", dz=-3)
     for tx in range(44, 53, 2):
-        s.dot(tx, 27 + f, "teeth")
+        s.dot(tx, 27 + jaw, "teeth")
 
 
-def goblin(s, f):
+def goblin(s, f, a=0):
     """Petit humanoide : gobelin voute, oreilles en lame, poignard."""
     for side in (-1, 1):
         s.cap([(48 + side * 6, 66), (48 + side * 10, 76), (48 + side * 8, 85)],
@@ -415,14 +478,19 @@ def goblin(s, f):
               "teeth")
     # bras droit : poignard courbe
     up = 5 * f
-    s.cap([(36, 50), (28, 56), (26, 46 - up)], [3.5, 2.5, 2.4], 16, "gob")
-    s.ell(26, 45 - up, 3, 3, 20, "gob")
-    s.poly([(24, 43 - up), (28, 43 - up), (26, 28 - up), (21, 22 - up),
-            (23, 30 - up)], 22, "steel", bevel=1.2)
+    if a:                                   # il plonge vers le groupe
+        s.cap([(36, 50), (36, 60), (46, 62)], [3.5, 2.5, 2.4], 26, "gob")
+        s.ell(47, 62, 3, 3, 30, "gob")
+        blade(s, (50, 63), (66, 76), 4, 31)
+    else:
+        s.cap([(36, 50), (28, 56), (26, 46 - up)], [3.5, 2.5, 2.4], 16, "gob")
+        s.ell(26, 45 - up, 3, 3, 20, "gob")
+        s.poly([(24, 43 - up), (28, 43 - up), (26, 28 - up), (21, 22 - up),
+                (23, 30 - up)], 22, "steel", bevel=1.2)
     # tete, oreilles, nez
     for side in (-1, 1):
-        s.poly([(48 + side * 9, 26), (48 + side * 36, 16 - 2 * f),
-                (48 + side * 10, 36)], 14, "gob")
+        s.poly([(48 + side * 9, 26), (48 + side * 36, 16 - 2 * f + 8 * a),
+                (48 + side * 10, 36)], 14, "gob")   # oreilles couchees
         s.paint(48 + side * 20, 25, 6, 1.5, "gums", dz=-1)
     head = s.ell(48, 32, 13, 12, 18, "gob")
     s.ell(48, 38, 10, 6, 20, "gob", g=head)
@@ -432,12 +500,12 @@ def goblin(s, f):
     s.paint(43, 31, 2.5, 1.6, "eyeY", dz=-1)
     s.paint(53, 31, 2.5, 1.6, "eyeY", dz=-1)
     s.dot(43, 31, "dark"), s.dot(53, 31, "dark")
-    s.paint(48, 42 + f, 8, 2 + f, "dark", dz=-3)       # rictus
+    s.paint(48, 42 + f + a, 8 + a, 2 + f + 2 * a, "dark", dz=-3)   # rictus
     for tx in (42, 45, 51, 54):
-        s.fang(tx, 41 + f, 2)
+        s.fang(tx, 41 + f, 2 + a)
 
 
-def orc(s, f):
+def orc(s, f, a=0):
     """Humanoide arme : orc cuirasse, hache de guerre."""
     for side in (-1, 1):
         s.cap([(48 + side * 9, 64), (48 + side * 11, 76)], [7, 6], 6, "orc")
@@ -463,14 +531,23 @@ def orc(s, f):
     s.cap([(69, 50), (71, 58)], 5.5, 16, "iron")       # brassard
     # bras droit : la hache
     up = 5 * f
-    s.cap([(30, 38), (22, 48), (26, 34 - up)], [6, 5, 4.5], 12, "orc")
-    s.cap([(23, 50 - up), (31, 4 - up)], 2.2, 20, "wood")
-    s.ell(26, 35 - up, 5, 5, 24, "orc")
-    blade = [(30, 6 - up), (42, 0 - up), (46, 10 - up), (43, 22 - up),
-             (31, 16 - up)]
-    s.poly(blade, 22, "steel", bevel=2.5)
-    s.poly([(30, 8 - up), (22, 4 - up), (20, 12 - up), (30, 14 - up)], 22,
-           "iron", bevel=1.5)
+    if a:                                   # elle s'abat en travers
+        s.cap([(30, 38), (30, 50), (42, 56)], [6, 5, 4.5], 26, "orc")
+        s.cap([(38, 50), (70, 76)], 2.2, 30, "wood")
+        s.ell(42, 56, 5, 5, 32, "orc")
+        s.poly([(62, 64), (76, 62), (84, 72), (78, 84), (66, 80)], 33,
+               "steel", bevel=2.5)
+        s.poly([(66, 76), (62, 84), (70, 88), (74, 80)], 33, "iron",
+               bevel=1.5)
+    else:
+        s.cap([(30, 38), (22, 48), (26, 34 - up)], [6, 5, 4.5], 12, "orc")
+        s.cap([(23, 50 - up), (31, 4 - up)], 2.2, 20, "wood")
+        s.ell(26, 35 - up, 5, 5, 24, "orc")
+        blade_ = [(30, 6 - up), (42, 0 - up), (46, 10 - up), (43, 22 - up),
+                  (31, 16 - up)]
+        s.poly(blade_, 22, "steel", bevel=2.5)
+        s.poly([(30, 8 - up), (22, 4 - up), (20, 12 - up), (30, 14 - up)], 22,
+               "iron", bevel=1.5)
     # epaulieres de fer
     for side in (-1, 1):
         g = s.ell(48 + side * 18, 34, 10, 8, 18, "iron")
@@ -486,13 +563,13 @@ def orc(s, f):
     s.paint(44, 21, 2, 1.3, "eyeR", dz=-2)
     s.paint(52, 21, 2, 1.3, "eyeR", dz=-2)
     s.ell(48, 24, 2.5, 2.5, 28, "orc")
-    s.paint(48, 31 + f, 6, 1.5, "dark", dz=-2)
+    s.paint(48, 31 + f + a, 6 + a, 1.5 + 2 * a, "dark", dz=-2)   # il rugit
     for side in (-1, 1):
         s.cap([(48 + side * 5, 31), (48 + side * 6, 25)], [1.5, 0.6], 29,
               "teeth")
 
 
-def brute(s, f):
+def brute(s, f, a=0):
     """Grand brutal : minotaure cornu, massue ferree."""
     for side in (-1, 1):
         s.cap([(48 + side * 12, 66), (48 + side * 15, 78), (48 + side * 14, 84)],
@@ -515,12 +592,20 @@ def brute(s, f):
     s.cap([(78, 50), (80, 58)], 7, 14, "iron")
     # bras droit : la massue
     up = 6 * f
-    s.cap([(26, 36), (14, 48), (16, 36 - up)], [9, 7, 6], 10, "hide")
-    s.cap([(14, 52 - up), (26, 6 - up)], [2.5, 7], 18, "wood")
-    for k in range(4):
-        s.dot(19 + k * 2, 26 - k * 5 - up, "iron", z=30)
-        s.dot(29 - k, 20 - k * 4 - up, "iron")
-    s.ell(16, 38 - up, 6, 6, 22, "hide")
+    if a:                                   # elle s'abat en travers
+        s.cap([(26, 36), (22, 52), (36, 60)], [9, 7, 6], 24, "hide")
+        s.cap([(32, 54), (74, 82)], [2.5, 8], 30, "wood")
+        for k in range(4):
+            s.dot(52 + k * 6, 64 + k * 4, "iron", z=40)
+            s.dot(56 + k * 6, 72 + k * 3, "iron")
+        s.ell(36, 60, 6, 6, 34, "hide")
+    else:
+        s.cap([(26, 36), (14, 48), (16, 36 - up)], [9, 7, 6], 10, "hide")
+        s.cap([(14, 52 - up), (26, 6 - up)], [2.5, 7], 18, "wood")
+        for k in range(4):
+            s.dot(19 + k * 2, 26 - k * 5 - up, "iron", z=30)
+            s.dot(29 - k, 20 - k * 4 - up, "iron")
+        s.ell(16, 38 - up, 6, 6, 22, "hide")
     # tete de taureau
     for side in (-1, 1):
         s.cap([(48 + side * 10, 12), (48 + side * 22, 10),
@@ -536,11 +621,13 @@ def brute(s, f):
     s.cap([(50, 19), (57, 16)], 2, 28, "hide", g=head)
     s.paint(42, 20, 2, 1.3, "eyeR", dz=-2)
     s.paint(54, 20, 2, 1.3, "eyeR", dz=-2)
+    if a:                                   # il mugit
+        s.paint(48, 35, 5, 1.5, "dark", dz=-3)
 
 
-def spectre(s, f):
+def spectre(s, f, a=0):
     """Spectre : robe en lambeaux qui flotte, capuche vide."""
-    fl = -2 * f
+    fl = -2 * f + 4 * a
     hem = []
     for i in range(9):
         x = 22 + i * 6.5
@@ -555,18 +642,24 @@ def spectre(s, f):
         s.cap([(x, 40 + fl), (x - 2 + k, 78 + fl)], 1.5, 5, "robe")
     # manches et mains osseuses tendues vers le groupe
     for side in (-1, 1):
-        sl = s.cap([(48 + side * 12, 30 + fl), (48 + side * 22, 44 + fl),
-                    (48 + side * 26, 50 + fl - 3 * f)], [6, 7, 8], 10, "robe")
-        hx, hy = 48 + side * 28, 54 + fl - 3 * f
-        s.ell(hx, hy, 3.5, 3, 16, "bone")
+        if a:                               # les mains fondent en avant
+            s.cap([(48 + side * 12, 30 + fl), (48 + side * 16, 42 + fl),
+                   (48 + side * 12, 50 + fl)], [6, 7, 8], 22, "robe")
+            hx, hy = 48 + side * 12, 55 + fl
+        else:
+            s.cap([(48 + side * 12, 30 + fl), (48 + side * 22, 44 + fl),
+                   (48 + side * 26, 50 + fl - 3 * f)], [6, 7, 8], 10, "robe")
+            hx, hy = 48 + side * 28, 54 + fl - 3 * f
+        hz = 28 if a else 16
+        s.ell(hx, hy, 3.5, 3, hz, "bone")
         for k in range(4):
             s.cap([(hx, hy + 1), (hx + side * (k - 1) * 2, hy + 7 + (k % 2))],
-                  0.8, 17, "bone")
+                  0.8, hz + 1, "bone")
     hood = s.ell(48, 22 + fl, 14, 14, 12, "robe")
     s.poly([(38, 12 + fl), (48, -1 + fl), (58, 12 + fl)], 20, "robe")
     s.paint(48, 25 + fl, 9, 10, "dark", dz=-10)
-    s.paint(44, 24 + fl, 1.5, 1.2, "eyeB")
-    s.paint(52, 24 + fl, 1.5, 1.2, "eyeB")
+    s.paint(44, 24 + fl, 1.5 + a, 1.2 + a, "eyeB")
+    s.paint(52, 24 + fl, 1.5 + a, 1.2 + a, "eyeB")
     s.dot(44, 24 + fl, "glow"), s.dot(52, 24 + fl, "glow")
     # feux follets
     for i in range(7):
@@ -575,7 +668,7 @@ def spectre(s, f):
         s.dot(x, y, "glow")
 
 
-def mummy(s, f):
+def mummy(s, f, a=0):
     """Momie : bandelettes, bras tendus, un oeil qui brule."""
     for side in (-1, 1):
         s.cap([(48 + side * 7, 62), (48 + side * 8, 84)], [6, 4.5], 6, "wrap")
@@ -586,7 +679,7 @@ def mummy(s, f):
     s.ell(48, 38, 2.5, 3, 25, "clothb" if False else "eyeB")
     # bras tendus vers le groupe
     for side in (-1, 1):
-        dy = 2 * f if side > 0 else -2 * f
+        dy = (2 * f if side > 0 else -2 * f) - 12 * a
         s.cap([(48 + side * 14, 32), (48 + side * 22, 44 + dy),
                (48 + side * 20, 52 + dy)], [5, 4.5, 4], [12, 16, 20], "wrap")
         s.ell(48 + side * 20, 54 + dy, 4, 3.5, 22, "wrap")
@@ -598,13 +691,15 @@ def mummy(s, f):
     s.paint(44, 18, 2.5, 2, "dark", dz=-4)
     s.paint(53, 19, 3, 1.5, "dark", dz=-4)
     s.dot(44, 18, "eyeR"), s.dot(45, 18, "eyeR")
-    s.paint(48, 26, 4, 1.2, "dark", dz=-3)
+    if a:                                   # les deux yeux brulent
+        s.dot(53, 19, "eyeR"), s.dot(54, 19, "eyeR")
+    s.paint(48, 26 + a, 4 + a, 1.2 + 2 * a, "dark", dz=-3)
     s.cap([(38, 10), (58, 14)], 1, 27, "rust")           # bande de travers
 
 
-def gargoyle(s, f):
+def gargoyle(s, f, a=0):
     """Creature ailee : gargouille accroupie, ailes de chauve-souris."""
-    flap = 5 * f
+    flap = 5 * f - 6 * a
     for side in (-1, 1):
         tip = (48 + side * 47, 6 + flap)
         fingers = [tip, (48 + side * 44, 32 + flap // 2),
@@ -613,9 +708,9 @@ def gargoyle(s, f):
         elbow = (48 + side * 32, 16 + flap // 2)
         mem = [shoulder, elbow, tip]
         for k in range(1, len(fingers)):
-            a, b = fingers[k - 1], fingers[k]
-            mem.append(((a[0] + b[0]) / 2 - side * 4, (a[1] + b[1]) / 2 - 2))
-            mem.append(b)
+            p, q = fingers[k - 1], fingers[k]
+            mem.append(((p[0] + q[0]) / 2 - side * 4, (p[1] + q[1]) / 2 - 2))
+            mem.append(q)
         mem.append((48 + side * 14, 48))
         s.poly(mem, 0, "stone", bevel=2.5)
         s.cap([shoulder, elbow, tip], [3, 2.5, 1], 4, "stone")
@@ -632,11 +727,12 @@ def gargoyle(s, f):
     body = s.ell(48, 50, 15, 18, 8, "stone")
     s.ell(48, 42, 11, 8, 14, "stone", g=body)
     for side in (-1, 1):                             # bras et griffes
-        s.cap([(48 + side * 12, 36), (48 + side * 16, 50),
-               (48 + side * 10, 62)], [5, 4, 3.5], 16, "stone")
+        hy = 62 - 10 * a                    # les griffes montent a l'assaut
+        s.cap([(48 + side * 12, 36), (48 + side * (16 + 4 * a), 50 - 4 * a),
+               (48 + side * 10, hy)], [5, 4, 3.5], 16 + 8 * a, "stone")
         for k in range(3):
-            s.cap([(48 + side * 10, 62), (48 + side * (6 + k * 3), 67)], 1,
-                  22, "horn")
+            s.cap([(48 + side * 10, hy), (48 + side * (6 + k * 3), hy + 5)], 1,
+                  22 + 8 * a, "horn")
     head = s.ell(48, 24, 10, 10, 16, "stone")
     s.ell(48, 31, 8, 5, 20, "stone", g=head)
     for side in (-1, 1):
@@ -648,11 +744,11 @@ def gargoyle(s, f):
     s.cap([(49, 24), (56, 21)], 1.6, 28, "stone", g=head)
     s.paint(44, 25, 2, 1.2, "eyeR", dz=-2)
     s.paint(52, 25, 2, 1.2, "eyeR", dz=-2)
-    s.paint(48, 33 + f, 6, 2 + f, "dark", dz=-4)
-    s.fang(43, 31, 3), s.fang(52, 31, 3)
+    s.paint(48, 33 + f + a, 6 + a, 2 + f + 2 * a, "dark", dz=-4)
+    s.fang(43, 31, 3 + a), s.fang(52, 31, 3 + a)
 
 
-def hydra(s, f):
+def hydra(s, f, a=0):
     """Hydre : cinq tetes de serpent sur un tronc d'ecailles."""
     s.cap([(70, 76), (84, 80), (93, 70), (90, 60)], [8, 6, 4, 2], 2, "scale")
     s.ell(48, 72, 30, 15, 4, "scale")
@@ -667,7 +763,9 @@ def hydra(s, f):
     for i in order:
         hx, hy, side = heads[i]
         wob = (2 if i % 2 else -2) * (1 if f else -1)
-        tx, ty = 48 + hx + wob, hy + (i % 2) * 2 * f
+        lunge = (10 if 1 <= i <= 3 else 4) * a          # elles frappent
+        tx = 48 + (hx * 0.8 if a else hx) + wob
+        ty = hy + (i % 2) * 2 * f + lunge
         mid = (48 + hx * 0.4 - side * 6, 50 - (50 - ty) * 0.4)
         z = 10 + (4 - abs(i - 2)) * 4
         s.cap([(48 + hx * 0.2, 64), mid, (tx, ty + 8)], [7, 5, 4.5],
@@ -676,8 +774,9 @@ def hydra(s, f):
         s.ell(tx + side * 6, ty + 7, 6, 3.5, z + 7, "scale", g=head)
         s.cap([(tx - 5, ty + 1), (tx + 5, ty + 1)], 1.5, z + 11, "scale",
               g=head)
-        s.paint(tx + side * 7, ty + 9 + f, 5, 1.5 + f, "gums", dz=-3)
-        s.paint(tx + side * 7, ty + 9 + f, 4, 0.8 + f, "dark", dz=-2)
+        mo = f + 2 * a
+        s.paint(tx + side * 7, ty + 9 + mo, 5 + a, 1.5 + mo, "gums", dz=-3)
+        s.paint(tx + side * 7, ty + 9 + mo, 4 + a, 0.8 + mo, "dark", dz=-2)
         s.fang(tx + side * 5, ty + 8, 2)
         s.fang(tx + side * 9, ty + 8, 2)
         s.cap([(tx - 3, ty + 1), (tx - side * 5 - 2, ty - 3)], [1.2, 0.4],
@@ -690,11 +789,22 @@ FAMILIES = [wolf, skeleton, goblin, orc, brute, spectre, mummy, gargoyle,
             hydra]
 
 
-def monster(kind, frame=0):
-    """-> 88 lignes de 96 index (None = transparent)."""
-    s = Sculpt()
-    FAMILIES[kind](s, 1 if frame else 0)
+# La taille de chaque famille, les pieds au sol : le cadre est le meme
+# pour toutes, et un gobelin n'a pas la carrure d'un minotaure.
+SCALE = [1.0, 0.95, 0.8, 1.0, 1.0, 0.95, 0.95, 1.0, 1.0]
+
+NPOSES = 3                                # repos, souffle, attaque
+
+
+def monster(kind, pose=0):
+    """-> 88 lignes de 96 index (None = transparent). pose : 0 repos,
+    1 souffle, 2 attaque."""
+    s = Sculpt(SCALE[kind])
+    FAMILIES[kind](s, 1 if pose == 1 else 0, 1 if pose == 2 else 0)
     return s.render()
+
+
+draw = monster                            # le nom qu'attend gen_dungeon
 
 
 def write_png(path, rows):
@@ -719,9 +829,9 @@ def sheet(path, scale=3, kinds=None):
     kinds = list(range(len(FAMILIES))) if kinds is None else kinds
     tw, th = W + 4, H + 4
     rows = [[(24, 22, 20)] * (len(kinds) * tw * scale)
-            for _ in range(2 * th * scale)]
+            for _ in range(NPOSES * th * scale)]
     for c, k in enumerate(kinds):
-        for fr in (0, 1):
+        for fr in range(NPOSES):
             px = monster(k, fr)
             for y in range(H):
                 for x in range(W):

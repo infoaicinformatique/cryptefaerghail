@@ -164,7 +164,7 @@ data/sfx.bin     bruitages synthétisés                           (généré)
 data/crawlmus.mod  la marche du donjon                           (généré)
 data/titlemus.mod  la procession de l'accueil                    (généré)
 tools/gen_dungeon.py générateur des décors, des cartes et de la police 8x8
-tools/monsters.py    le bestiaire, modelé en volumes (trois poses par famille)
+tools/monster_art.py le bestiaire, sculpté puis peint (trois poses par famille)
 tools/bestiary_sheet.py  la planche du bestiaire (docs/bestiaire.png)
 tools/gen_tables.py  générateur des tables du jeu
 tools/gen_sfx.py     générateur des bruitages
@@ -517,20 +517,26 @@ génération à l'autre.
 L'état de quatre étages ne tient plus dans une sauvegarde de trois : le nombre
 magique devient `FAEA`.
 
-**Le bestiaire** est modelé, et non plus peint à plat. Les premières
+**Le bestiaire** est sculpté, puis peint à la manière de 1991. Les premières
 silhouettes avaient été dessinées pour seize couleurs : des ellipses d'une
-teinte, des traits d'un pixel. `tools/monsters.py` compose chaque famille de
-volumes — ellipsoïdes pour un crâne ou une panse, troncs de cône pour un
-membre, plaques pour une aile ou une lame —, les rend à travers un tampon de
-profondeur, éclaire chaque pixel selon sa normale (la lumière des portraits,
-d'en haut à gauche), trame d'un demi-cran pour fondre les gammes courtes, puis
-cerne la silhouette et chaque recouvrement d'un trait sombre. Fourrure,
-écailles, bandelettes, pierre et haillons ont chacun leur grain ; les yeux, les
-crocs et les griffes se posent au pixel.
+teinte, des traits d'un pixel. `tools/monster_art.py` compose chaque famille
+de volumes — ellipsoïdes pour un crâne ou une panse, membres effilés, plaques
+biseautées pour une aile ou une lame —, qui laissent une carte de hauteurs.
+Mais il ne les rend pas en relief lisse : comme les peintres d'*Eye of the
+Beholder*, il pose quatre tons par matière en aplats — ombre, demi-teinte,
+lumière, éclat — selon la torche en haut à gauche, un trait noir autour de la
+créature, un trait sombre entre ses volumes, et des coups de pinceau pour les
+mèches, les fibres, les écailles et les muscles. Vingt-sept matières : poil,
+os, rouille, bois, écailles, bandelettes, étoffe, or, yeux qui brûlent… Le
+gobelin est sculpté plus petit que l'orc : chaque famille a sa taille, les
+pieds au sol.
 
 Chaque famille a **trois poses** : deux qui respirent, que le combat alterne,
 et une qui frappe — le jeu la montre quelques trames quand la créature porte
-un coup. Chaque pose est rognée à la boîte de ses pixels : un cadre fixe de
+un coup : le loup se jette gueule ouverte, l'épée du squelette et la hache de
+l'orc s'abattent en travers, la massue du minotaure aussi, le spectre fond sur
+le groupe mains en avant, la momie lève les bras, la gargouille dresse ses
+ailes, et les têtes de l'hydre frappent. Chaque pose est rognée à la boîte de ses pixels : un cadre fixe de
 96 × 88 coûtait le masque et les huit plans du vide autour d'elle.
 
 ![Le bestiaire](docs/bestiaire.png)

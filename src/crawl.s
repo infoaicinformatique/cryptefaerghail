@@ -325,6 +325,10 @@ Start:
 	moveq	#0,d0
 	jsr	_LVOOpenLibrary(a6)
 	move.l	d0,DosBase
+	move.l	4.w,a6			; le masque d'interruption du CIA-B,
+	lea	CiabName,a1		; que le systeme tient a jour et que
+	jsr	_LVOOpenResource(a6)	; SysIOBegin lui rendra (voir plus bas)
+	move.l	d0,CiabBase
 	bsr	LoadDungeon		; le paquet du donjon, depuis la disquette
 	tst.w	d0
 	beq	ExitNoDungeon
@@ -3298,6 +3302,66 @@ UnpackSave:				; -> d0 = 1 si la sauvegarde est bonne
 	movem.l	(sp)+,d1/a0-a2
 	rts
 
+; SysIOBegin / SysIOEnd : rendre la machine au systeme le temps d'un
+; acces a la disquette, puis la reprendre.
+;
+; Un Permit ne suffisait pas. Le jeu a coupe toutes les interruptions
+; et tout le DMA, pose ses propres vecteurs de niveau 3 et 6, vide le
+; masque du CIA-B et garde le blitter. Or le trackdisk.device a besoin
+; du DMA disque, de ses interruptions, de l'impulsion d'index (le FLG
+; du CIA-B), de timer.device -- donc du VBLANK et du CIA-A du systeme --
+; et, selon la version, du blitter pour decoder le MFM. Sans eux, la
+; premiere ecriture attendait pour toujours : le jeu restait fige a la
+; fin de la creation du groupe, au moment de la premiere sauvegarde.
+; Le banc ne le voyait pas, son dos.library etant simule cote hote.
+;
+; Pendant l'acces, l'ecran appartient au systeme (l'image se fige ou
+; s'eteint un instant) et la musique se tait.
+SysIOBegin:
+	movem.l	d0-d1/a0-a1/a5-a6,-(sp)
+	lea	CUSTOM,a5
+	move.w	#DMAF_AUDIO,DMACON(a5)	; silence, sans couper le module
+	bsr	CIA_Remove
+	bsr	VBI_Remove
+	move.l	GfxBase,a6
+	jsr	_LVOWaitBlit(a6)
+	jsr	_LVODisownBlitter(a6)
+	move.l	CiabBase,d0		; le CIA-B retrouve le masque du
+	beq.s	.noCiab			; systeme -- l'index du lecteur
+	move.l	d0,a6
+	moveq	#0,d0
+	jsr	_LVOAbleICR(a6)		; -> le masque que tient la ressource
+	and.b	#$7f,d0
+	or.b	#$80,d0
+	jsr	_LVOAbleICR(a6)
+.noCiab:
+	move.w	OldDmacon,DMACON(a5)	; le DMA et les interruptions du
+	move.w	OldIntena,INTENA(a5)	; systeme, en plus des notres
+	move.l	4.w,a6
+	jsr	_LVOPermit(a6)
+	movem.l	(sp)+,d0-d1/a0-a1/a5-a6
+	rts
+
+SysIOEnd:
+	movem.l	d0-d1/a0-a1/a5-a6,-(sp)
+	move.l	4.w,a6
+	jsr	_LVOForbid(a6)
+	move.l	GfxBase,a6
+	jsr	_LVOOwnBlitter(a6)
+	jsr	_LVOWaitBlit(a6)
+	lea	CUSTOM,a5
+	move.w	#$7fff,INTENA(a5)
+	move.w	#$7fff,INTREQ(a5)
+	move.w	#$7fff,DMACON(a5)
+	move.l	#CopList,COP1LCH(a5)	; notre image, de nouveau
+	move.w	d0,COPJMP1(a5)
+	bsr	VBI_Install
+	bsr	CIA_Install
+	move.w	#DMAF_SETCLR|DMAF_MASTER|DMAF_RASTER|DMAF_COPPER|DMAF_BLITTER|DMAF_AUDIO|DMAF_SPRITE,DMACON(a5)
+	move.w	#1,NeedRedraw
+	movem.l	(sp)+,d0-d1/a0-a1/a5-a6
+	rts
+
 SaveGame:
 	movem.l	d0-d7/a0-a6,-(sp)
 	move.l	DosBase,d0
@@ -3308,8 +3372,7 @@ SaveGame:
 .stashed:
 	bsr	PackSave		; dans la sauvegarde que par son etat
 	clr.w	SaveOk
-	move.l	4.w,a6
-	jsr	_LVOPermit(a6)
+	bsr	SysIOBegin
 	move.l	DosBase,a6
 	move.l	#SaveName,d1
 	move.l	#MODE_NEWFILE,d2
@@ -3326,14 +3389,13 @@ SaveGame:
 	move.w	#1,SaveOk
 	bra.s	.reforbid
 .failed:				; la disquette du jeu n'est pas la,
-	move.l	4.w,a6			; ou elle est protegee : DOS ne pose
-	jsr	_LVOForbid(a6)		; plus de requete, c'est au journal
+	bsr	SysIOEnd		; ou elle est protegee : DOS ne pose
+					; plus de requete, c'est au journal
 	lea	TxtSaveFail,a0		; de le dire
 	bsr	LogAdd
 	bra.s	.done
 .reforbid:
-	move.l	4.w,a6
-	jsr	_LVOForbid(a6)
+	bsr	SysIOEnd
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -3343,8 +3405,7 @@ LoadGame:				; -> d0 = 1 si la partie est reprise
 	moveq	#0,d5
 	move.l	DosBase,d0
 	beq.s	.done
-	move.l	4.w,a6
-	jsr	_LVOPermit(a6)
+	bsr	SysIOBegin
 	move.l	DosBase,a6
 	move.l	#SaveName,d1
 	move.l	#MODE_OLDFILE,d2
@@ -3362,8 +3423,7 @@ LoadGame:				; -> d0 = 1 si la partie est reprise
 	move.l	d4,d1
 	jsr	_LVOClose(a6)
 .reforbid:
-	move.l	4.w,a6
-	jsr	_LVOForbid(a6)
+	bsr	SysIOEnd
 	tst.w	d5
 	beq.s	.done
 	bsr	UnpackSave
@@ -10406,6 +10466,7 @@ DirTable:
 	dc.w	-1,0
 
 SaveName:	dc.b	"PROGDIR:AGACrawl.sav",0
+CiabName:	dc.b	"ciab.resource",0
 ; Le paquet se cherche d'abord a cote du jeu -- installe sur un disque
 ; dur, tout est dans le meme tiroir --, puis sur la disquette des
 ; donnees. Celle-ci s'appelle par son nom de volume : si elle n'est
@@ -11287,6 +11348,7 @@ MonX:		ds.w	1		; la case du monstre que l'on combat
 MonY:		ds.w	1
 Phase:		ds.w	1
 UiMode:		ds.w	1
+CiabBase:	ds.l	1		; ciab.resource (SysIOBegin)
 InTown:		ds.w	1		; le groupe est au bourg (voir EnterTown)
 Bank:		ds.w	1		; l'or en depot
 StreetHeat:	ds.w	1		; le guet, eveille par les essais

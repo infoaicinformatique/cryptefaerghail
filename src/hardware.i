@@ -107,6 +107,8 @@ CIAACRA         = $bfee01       ; bit 6 : sens du port serie (poignee de main)
 
 ; --- LVO exec.library ---
 _LVOForbid      = -132
+_LVOOpenResource = -498
+_LVOAbleICR     = -18           ; cia.resource
 _LVOAllocMem    = -198
 _LVOFreeMem     = -210
 _LVOPermit      = -138

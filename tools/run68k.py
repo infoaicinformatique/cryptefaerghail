@@ -25,6 +25,7 @@ STACK = 0x0000f000
 EXECBASE = 0x00001000
 GFXBASE = 0x00002000
 DOSBASE = 0x00003000
+CIABBASE = 0x00005000                     # ciab.resource : AbleICR rend 0
 CUSTOM = 0xdff000
 CIAA = 0xbfe001
 
@@ -132,9 +133,14 @@ class Harness:
         self.pending = None
         self.icr = 0
         self.custom = {}
-        self.intena = 0                  # INTENA, INTREQ et DMACON sont des
-        self.intreq = 0                  # registres a bascule : bit 15 pose,
-        self.dmacon = 0                  # sinon efface
+        # INTENA, INTREQ et DMACON sont des registres a bascule : bit 15
+        # pose, sinon efface. On part de ce qu'un Kickstart laisse au
+        # lancement -- interruptions du CIA-A, du CIA-B, de la trame,
+        # DMA du lecteur allume -- pour que le banc voie si le jeu les
+        # rend le temps d'un acces au disque (dos_io).
+        self.intena = 0x602c
+        self.intreq = 0
+        self.dmacon = 0x03f0
         self.cia_mask = 0                # CIA-B : masque d'interruption,
         self.cia_flags = 0               # drapeaux, compte du timer A et
         self.cia_latch = 0               # accumulateur de tics
@@ -383,6 +389,10 @@ class Harness:
         self.setup_findtask()
         stub_library(m, GFXBASE)
         stub_library(m, DOSBASE)
+        stub_library(m, CIABBASE, returns={-18: 0})  # AbleICR
+        m.w16(EXECBASE - 498, 0x203c)                # OpenResource
+        m.w32(EXECBASE - 498 + 2, CIABBASE)
+        m.w16(EXECBASE - 498 + 6, 0x4e75)
         self.setup_dos()
         thunk = EXECBASE + 0x400                     # OpenLibrary : le nom
         m.w16(EXECBASE - 552, 0x4ef9)                # decide de la base
@@ -578,6 +588,7 @@ class Harness:
         self.files = {}
         self.next_fh = 1
         self.dos_calls = []
+        self.dos_io = []
         m = self.mem
         # Les vecteurs sont espaces de six octets : on n'y met qu'un saut
         # vers une amorce rangee plus loin, sinon les sequences se
@@ -630,6 +641,11 @@ class Harness:
         d2 = self.cpu.r_reg(2)
         d3 = self.cpu.r_reg(3)
         self.dos_calls.append(name)
+        # L'etat de la machine au moment de l'appel : un vrai
+        # trackdisk.device n'avance pas sans le DMA disque, le CIA-A et
+        # le VBLANK du systeme.
+        self.dos_io.append((name, self.intena, self.dmacon,
+                            self.mem.r32(0x6c)))
         if name == "output":
             return OUTPUT_FH
         if name == "open":

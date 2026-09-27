@@ -41,6 +41,32 @@ def party(g):
         reglages=(g.w("OptMusic"), g.w("OptSfx"), g.w("KbLayout")))
 
 
+def check_io(g, calls, what, fails):
+    """Un vrai trackdisk.device n'avance pas sans le DMA disque, le CIA-A
+    et le VBLANK du systeme : pendant chaque appel a dos.library, le jeu
+    doit les avoir rendus -- sinon la partie gele a la premiere
+    sauvegarde, ce que le banc, dont le DOS est simule, ne voyait pas.
+    Et il doit les reprendre ensuite."""
+    if not calls:
+        fails.append(f"{what} : aucun appel a dos.library")
+        return
+    for name, intena, dmacon, lvl3 in calls:
+        if not intena & 0x0008 or not intena & 0x4000:
+            fails.append(f"{what} : {name} avec INTENA ${intena:04x}, "
+                         "sans les interruptions du systeme")
+        if not dmacon & 0x0010 or not dmacon & 0x0200:
+            fails.append(f"{what} : {name} avec DMACON ${dmacon:04x}, "
+                         "sans le DMA du lecteur")
+        if lvl3 != 0:
+            fails.append(f"{what} : {name} avec le niveau 3 du jeu")
+    if g.intena & 0x0008 or not g.mem.r32(0x6c) or not g.intena & 0x0020:
+        fails.append(f"{what} : le jeu ne reprend pas la machine "
+                     f"(INTENA ${g.intena:04x})")
+    else:
+        print(f"  {what} : {len(calls)} appel(s) a DOS, machine rendue "
+              "puis reprise")
+
+
 if __name__ == "__main__":
     fails = []
     shutil.rmtree(SAVEDIR, ignore_errors=True)
@@ -58,9 +84,11 @@ if __name__ == "__main__":
     g.key(T.K_1)                          # 1 : nouvelle partie
     if g.w("Phase") != PHASE_CREATE:
         fails.append("la touche 1 n'ouvre pas la creation")
+    n0 = len(g.dos_io)
     T.create_party(g)
     if g.w("Phase") != PHASE_PLAY:
         fails.append("la creation n'aboutit pas")
+    check_io(g, g.dos_io[n0:], "la premiere sauvegarde", fails)
     if not os.path.exists(os.path.join(SAVEDIR, "AGACrawl.sav")):
         fails.append("aucun fichier ecrit apres la creation")
 
@@ -94,7 +122,9 @@ if __name__ == "__main__":
     h = T.Game()
     if not h.w("HasSave"):
         fails.append("la sauvegarde n'est pas reconnue au demarrage")
+    n0 = len(h.dos_io)
     h.key(T.K_1 + 1)                      # 2 : reprendre
+    check_io(h, h.dos_io[n0:], "la reprise", fails)
     if h.w("Phase") != PHASE_PLAY:
         fails.append(f"la reprise echoue (Phase {h.w('Phase')})")
     else:

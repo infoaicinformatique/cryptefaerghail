@@ -104,6 +104,15 @@ DOS_LVOS = {-30: "open", -36: "close", -42: "read", -48: "write",
             -60: "output"}
 OUTPUT_FH = 0x7fff                       # la console du Shell
 
+# Ce que le systeme a d'arme quand le jeu demarre : INTEN, EXTER, VERTB,
+# PORTS, SOFTINT ; et le DMA, disque compris. Un acces a dos.library
+# doit les retrouver -- sur la machine, trackdisk.device attend sans
+# fin s'il manque le DMA disque ou les interruptions du systeme. Les
+# vecteurs du systeme sont nuls dans le banc : rien ne part tant que le
+# jeu n'a pas pose les siens.
+OS_INTENA = 0x602c
+OS_DMACON = 0x03f0
+
 
 # --- souches de bibliotheques : un petit bout de 68k a chaque LVO ------
 def stub_library(mem, base, returns=None):
@@ -132,9 +141,9 @@ class Harness:
         self.pending = None
         self.icr = 0
         self.custom = {}
-        self.intena = 0                  # INTENA, INTREQ et DMACON sont des
+        self.intena = OS_INTENA          # INTENA, INTREQ et DMACON sont des
         self.intreq = 0                  # registres a bascule : bit 15 pose,
-        self.dmacon = 0                  # sinon efface
+        self.dmacon = OS_DMACON          # sinon efface
         self.cia_mask = 0                # CIA-B : masque d'interruption,
         self.cia_flags = 0               # drapeaux, compte du timer A et
         self.cia_latch = 0               # accumulateur de tics
@@ -578,6 +587,7 @@ class Harness:
         self.files = {}
         self.next_fh = 1
         self.dos_calls = []
+        self.dos_hw = []                 # INTENA et DMACON a chaque appel
         m = self.mem
         # Les vecteurs sont espaces de six octets : on n'y met qu'un saut
         # vers une amorce rangee plus loin, sinon les sequences se
@@ -630,6 +640,7 @@ class Harness:
         d2 = self.cpu.r_reg(2)
         d3 = self.cpu.r_reg(3)
         self.dos_calls.append(name)
+        self.dos_hw.append((name, self.intena, self.dmacon))
         if name == "output":
             return OUTPUT_FH
         if name == "open":

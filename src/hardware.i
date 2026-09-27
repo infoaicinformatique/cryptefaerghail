@@ -98,6 +98,7 @@ DMAF_SPRITE     = $0020
 DMAF_MASTER     = $0200
 DMAF_AUD0       = $0001
 DMAF_AUDIO      = $000f
+DMAF_DISK       = $0010
 
 ; --- CIA-A ---
 CIAAPRA         = $bfe001       ; bit 6 = bouton gauche souris (0 = appuye)
@@ -113,7 +114,12 @@ _LVOPermit      = -138
 _LVOOpenLibrary = -552
 _LVOCloseLibrary = -414
 _LVOFindTask    = -294
+_LVOOpenResource = -498
 pr_WindowPtr    = 184           ; Process : ou DOS pose ses requetes
+
+; --- ciab.resource : le masque d'interruption du CIA-B, tel que le
+; systeme le croit (le registre, lui, ne se relit pas)
+_LVOAbleICR     = -18
 
 ; --- dos.library : sauvegarde de la partie ---
 _LVOOpen        = -30
@@ -121,6 +127,10 @@ _LVOClose       = -36
 _LVORead        = -42
 _LVOWrite       = -48
 _LVOOutput      = -60
+_LVODelay       = -198
+_LVODoPkt       = -240
+fh_Type         = 8             ; FileHandle : le port du gestionnaire
+ACTION_FLUSH    = 27            ; le gestionnaire ecrit tout ce qu'il garde
 MODE_OLDFILE    = 1005
 MODE_NEWFILE    = 1006
 

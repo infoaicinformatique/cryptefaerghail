@@ -325,6 +325,10 @@ Start:
 	moveq	#0,d0
 	jsr	_LVOOpenLibrary(a6)
 	move.l	d0,DosBase
+	lea	CiabName,a1		; voir SysLend : de quoi rendre le CIA-B
+	moveq	#0,d0
+	jsr	_LVOOpenResource(a6)
+	move.l	d0,CiabBase
 	bsr	LoadDungeon		; le paquet du donjon, depuis la disquette
 	tst.w	d0
 	beq	ExitNoDungeon
@@ -3253,7 +3257,83 @@ TitleKey:
 ;
 ; Le jeu tourne sous Forbid ; dos.library a besoin du multitache, on
 ; rend donc la main le temps de l'acces au fichier, puis on la reprend.
+;
+; Permit ne suffisait pas : c'etait le plantage de la fin de la
+; creation, ou la premiere sauvegarde tombe. Le jeu a coupe le DMA
+; disque et toutes les interruptions sauf les deux siennes, et pris les
+; vecteurs de niveau 3 et 6 ; trackdisk.device attendait une fin de
+; transfert qui ne pouvait pas venir, et timer.device ne battait plus.
+; Open ne rendait jamais la main. Le banc ne le voyait pas : son DOS
+; est servi par l'hote, sans disque ni interruption.
+;
+; SysLend rend donc au systeme ce que Start lui a pris -- vecteurs,
+; INTENA, DMA disque, masque du CIA-B, blitter --, et SysTake le
+; reprend. L'ecran reste le notre : on ne rend pas la vue. La musique
+; se tait le temps du disque. Apres une ecriture, DISK_SETTLE laisse au
+; systeme finir son travail : le gestionnaire de fichiers garde des
+; blocs, trackdisk garde la piste, et le moteur ne s'arrete qu'apres ;
+; reprendre la main plus tot laisserait la sauvegarde a moitie sur la
+; disquette et le moteur tourner jusqu'a la suivante.
 ;----------------------------------------------------------------------
+DISK_SETTLE	= 150			; trois secondes, en cinquantiemes
+
+SysLend:
+	movem.l	d0-d1/a0-a1/a5-a6,-(sp)
+	lea	CUSTOM,a5
+	move.w	DMACONR(a5),d0		; la musique se tait le temps du
+	and.w	#DMAF_AUDIO,d0		; disque : sans le replayer, Paula
+	move.w	d0,SysAudio		; bouclerait sur la note en cours
+	move.w	#DMAF_AUDIO,DMACON(a5)
+	move.w	CIA_Bpm,SysBpm
+	bsr	CIA_Remove		; nos deux vecteurs rendus
+	bsr	VBI_Remove
+	move.l	CiabBase,d0		; CIA_Install a coupe tout le CIA-B
+	beq.s	.noCiab			; sauf le timer A ; la ressource sait
+	move.l	d0,a6			; ce que le systeme y avait arme
+	moveq	#0,d0			; (l'index du lecteur) : on le
+	jsr	_LVOAbleICR(a6)		; lui redemande, et on le rearme
+	or.b	#$80,d0
+	jsr	_LVOAbleICR(a6)
+.noCiab:
+	bsr	WaitBlit
+	move.l	GfxBase,a6
+	jsr	_LVODisownBlitter(a6)
+	move.w	OldDmacon,DMACON(a5)	; le DMA disque, entre autres
+	move.w	OldIntena,INTENA(a5)	; et les interruptions du systeme
+	move.l	4.w,a6
+	jsr	_LVOPermit(a6)
+	movem.l	(sp)+,d0-d1/a0-a1/a5-a6
+	rts
+
+SysTake:
+	movem.l	d0-d1/a0-a1/a5-a6,-(sp)
+	move.l	4.w,a6
+	jsr	_LVOForbid(a6)
+	move.l	GfxBase,a6		; avant de couper les interruptions :
+	jsr	_LVOOwnBlitter(a6)	; OwnBlitter peut devoir attendre
+	jsr	_LVOWaitBlit(a6)
+	lea	CUSTOM,a5
+	move.w	#$7fff,INTENA(a5)
+	move.w	#$7fff,INTREQ(a5)
+	move.w	#DMAF_DISK,DMACON(a5)
+	move.l	#CopList,COP1LCH(a5)	; au cas ou le systeme l'aurait
+	move.w	d0,COPJMP1(a5)		; repointee
+	bsr	VBI_Install
+	bsr	CIA_Install		; qui remet le tempo par defaut
+	move.w	SysBpm,d0
+	bsr	CIA_SetBpm
+	move.w	SysAudio,d0		; les canaux qui jouaient
+	or.w	#DMAF_SETCLR,d0
+	move.w	d0,DMACON(a5)
+	move.w	JOY0DAT(a5),d0		; la souris a pu bouger : on recale
+	move.w	d0,d1			; les compteurs, comme au depart
+	and.w	#$00ff,d1
+	move.w	d1,MouseRawX
+	lsr.w	#8,d0
+	move.w	d0,MouseRawY
+	movem.l	(sp)+,d0-d1/a0-a1/a5-a6
+	rts
+
 PackSave:
 	movem.l	d0/a0-a2,-(sp)
 	lea	SaveBuf,a1
@@ -3308,32 +3388,37 @@ SaveGame:
 .stashed:
 	bsr	PackSave		; dans la sauvegarde que par son etat
 	clr.w	SaveOk
-	move.l	4.w,a6
-	jsr	_LVOPermit(a6)
+	bsr	SysLend
 	move.l	DosBase,a6
 	move.l	#SaveName,d1
 	move.l	#MODE_NEWFILE,d2
 	jsr	_LVOOpen(a6)
 	move.l	d0,d4
 	beq.s	.failed
+	lsl.l	#2,d0			; le port du gestionnaire, pour lui
+	move.l	d0,a0			; demander d'ecrire ce qu'il garde
+	move.l	fh_Type(a0),d5
 	move.l	d4,d1
 	move.l	#SaveBuf,d2
 	move.l	#SAVESIZE,d3
 	jsr	_LVOWrite(a6)
 	move.l	d4,d1
 	jsr	_LVOClose(a6)
+	move.l	d5,d1
+	beq.s	.settle
+	moveq	#ACTION_FLUSH,d2
+	jsr	_LVODoPkt(a6)
+.settle:
+	move.l	#DISK_SETTLE,d1		; puis le moteur s'arrete
+	jsr	_LVODelay(a6)
 	move.w	#1,HasSave
 	move.w	#1,SaveOk
-	bra.s	.reforbid
-.failed:				; la disquette du jeu n'est pas la,
-	move.l	4.w,a6			; ou elle est protegee : DOS ne pose
-	jsr	_LVOForbid(a6)		; plus de requete, c'est au journal
-	lea	TxtSaveFail,a0		; de le dire
-	bsr	LogAdd
+	bsr	SysTake
 	bra.s	.done
-.reforbid:
-	move.l	4.w,a6
-	jsr	_LVOForbid(a6)
+.failed:				; la disquette du jeu n'est pas la,
+	bsr	SysTake			; ou elle est protegee : DOS ne pose
+	lea	TxtSaveFail,a0		; plus de requete, c'est au journal
+	bsr	LogAdd			; de le dire
 .done:
 	movem.l	(sp)+,d0-d7/a0-a6
 	rts
@@ -3343,8 +3428,7 @@ LoadGame:				; -> d0 = 1 si la partie est reprise
 	moveq	#0,d5
 	move.l	DosBase,d0
 	beq.s	.done
-	move.l	4.w,a6
-	jsr	_LVOPermit(a6)
+	bsr	SysLend
 	move.l	DosBase,a6
 	move.l	#SaveName,d1
 	move.l	#MODE_OLDFILE,d2
@@ -3361,9 +3445,10 @@ LoadGame:				; -> d0 = 1 si la partie est reprise
 .close:
 	move.l	d4,d1
 	jsr	_LVOClose(a6)
+	move.l	#DISK_SETTLE,d1		; le moteur s'arrete
+	jsr	_LVODelay(a6)
 .reforbid:
-	move.l	4.w,a6
-	jsr	_LVOForbid(a6)
+	bsr	SysTake
 	tst.w	d5
 	beq.s	.done
 	bsr	UnpackSave
@@ -10421,6 +10506,8 @@ DungeonNames:
 	dc.l	DungeonName,DungeonName2,0
 DosName:	dc.b	"dos.library",0
 	even
+CiabName:	dc.b	"ciab.resource",0
+	even
 
 ; Les pieges : nom (16 octets), sauvegarde qui sauve, faces du de.
 ; Les degats montent d'un de par etage.
@@ -11189,6 +11276,9 @@ DosBase:	ds.l	1
 SaveOk:		ds.w	1		; la derniere sauvegarde a-t-elle pris
 OwnTask:	ds.l	1		; notre processus, et la fenetre ou
 OldWinPtr:	ds.l	1		; DOS posait ses requetes
+CiabBase:	ds.l	1		; ciab.resource, pour rendre le CIA-B
+SysAudio:	ds.w	1		; les canaux qui jouaient avant SysLend
+SysBpm:		ds.w	1		; et le tempo du module
 DgnMapPtr:	ds.l	1		; les cartes, dans le paquet du donjon
 DgnBank:	ds.l	1		; son bestiaire, idem
 OldView:	ds.l	1

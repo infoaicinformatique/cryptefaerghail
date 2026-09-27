@@ -63,6 +63,18 @@ if __name__ == "__main__":
         fails.append("la creation n'aboutit pas")
     if not os.path.exists(os.path.join(SAVEDIR, "AGACrawl.sav")):
         fails.append("aucun fichier ecrit apres la creation")
+    # Le plantage de la fin de la creation : la premiere sauvegarde
+    # partait avec le DMA disque coupe et les interruptions du systeme
+    # masquees, et trackdisk.device attendait pour toujours. Chaque appel
+    # a DOS doit retrouver le systeme tel que le jeu l'a trouve.
+    import run68k
+    for nom, intena, dmacon in g.dos_hw:
+        if intena != run68k.OS_INTENA or not dmacon & 0x0010:
+            fails.append(f"{nom} appele sans le systeme : INTENA "
+                         f"{intena:#06x}, DMACON {dmacon:#06x}")
+            break
+    else:
+        print(f"  {len(g.dos_hw)} appels a DOS, le systeme rendu a chacun")
 
     for _ in range(30):                   # on joue un peu
         grid = P.terrain(g)

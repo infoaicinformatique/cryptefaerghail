@@ -1031,7 +1031,7 @@ def town_test(g, fails):
     check(g.hero(2, "hr_Hp") == g.hero(2, "hr_HpMax")
           and g.w("Gold") == 1000 - cost, "le temple soigne mal", fails)
     sethero(g, 1, "hr_Hp", 0)
-    price = 30 * g.hero(1, "hr_Level")
+    price = 20 * g.hero(1, "hr_Level")
     tries = 0
     while g.hero(1, "hr_Hp") == 0 and tries < 20:
         g.setw("Gold", 1000)
@@ -1069,7 +1069,7 @@ def town_test(g, fails):
     g.setw("TownCursor", 0)
     g.key(K_RET)
     check(g.hero(0, "hr_Level") == lvl0 + 1, "la guilde ne forme pas", fails)
-    check(g.w("Gold") == 1000 - 25 * lvl0, f"la formation coute "
+    check(g.w("Gold") == 1000 - 10 * lvl0, f"la formation coute "
           f"{1000 - g.w('Gold')}", fails)
     check(g.hero(0, "hr_HpMax") > hpm and not g.hero(0, "hr_Flags") & 1,
           "former n'ajoute pas de vie ou laisse le drapeau", fails)

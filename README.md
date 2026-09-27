@@ -177,6 +177,7 @@ tools/render_mod.py  rejoue un module en Python et écrit un WAV
 tools/make_lha.py    écrit l'archive LhA (et se relit pour se vérifier)
 tools/run68k.py      banc 68020 : charge l'exécutable, émule chipset et clavier
 tools/test_game.py   fait tourner le jeu et contrôle ses invariants
+tools/arena.py       l'arene : un groupe d'un niveau donne contre une espece
 tools/play_game.py   pilote le jeu vers les monstres, les objets, l'escalier
 tools/shot68k.py     photographie les écrans dessinés par le processeur émulé
 tools/test_sfx.py    vérifie les bruitages aux registres de Paula
@@ -356,8 +357,8 @@ grimoire et les réglages s'y ouvrent comme ailleurs.
 |---|---|---|
 | Le comptoir | acheter, vendre (l'étal du village : potions, arc, hache, armures) | celui de l'objet, marchandage compris |
 | L'auberge | le dortoir rend la moitié des forces et les sorts ; une chambre, tout | 2 ou 5 pièces par aventurier debout |
-| Le temple | soigner ; **relever un mort** — une fois sur quatre, les dieux se détournent (moins pour les robustes), et l'offrande reste | 1 pièce les 2 PV ; 30 par niveau du mort |
-| La guilde | **passer le niveau** que l'expérience a gagné ; `TAB` : apprendre une **langue**, pour le héros choisi (`1` à `6`) | 25 par niveau ; 100 la langue |
+| Le temple | soigner ; **relever un mort** — une fois sur quatre, les dieux se détournent (moins pour les robustes), et l'offrande reste | 1 pièce les 2 PV ; 20 par niveau du mort |
+| La guilde | **passer le niveau** que l'expérience a gagné ; `TAB` : apprendre une **langue**, pour le héros choisi (`1` à `6`) | 10 par niveau ; 100 la langue |
 | La banque | déposer et retirer, par 50 ou tout | — |
 | La rue | le vol à la tire : Dextérité et désamorçage contre le guet, qui s'éveille à chaque essai. Pris : 50 pièces d'amende, ou la nuit au cachot | — |
 
@@ -442,6 +443,29 @@ beholder ou le flagelleur mental, sont donc absentes :
   `10 + niveau du sort + mod. de lancement`, et les monstres y opposent leurs
   propres sauvegardes — réussie, une boule de feu n'inflige que la moitié des
   dégâts. Les sorts s'apprennent sur des **parchemins**.
+
+### L'équilibre
+
+Depuis que la guilde fait payer chaque niveau, l'économie et la courbe de
+progression ont été réglées ensemble, mesurées au pilote (`tools/play_game.py`,
+graine dans `PLAY_SEED`) et à l'arène (`tools/arena.py NIVEAU ESPECE [ETAGE]
+[N]` : un groupe reposé d'un niveau donné contre une espèce, N fois).
+
+- **Paliers d'expérience** : `100 × n × (n+1) / 2` — niveau 3 à 300 PX,
+  5 à 1 000, 7 à 2 100.
+- **Budget d'une rencontre** : un groupe d'ennemis ne dépasse pas FP 1, 3, 6
+  puis 8 selon l'étage, sauf une créature seule plus forte que lui. Trois
+  ogres au deuxième étage, c'était une rencontre de niveau 6 contre un groupe
+  de niveau 3. Le géant des collines (FP 7) ne descend plus qu'à la carrière.
+- **L'or** : les créatures portent le double de la table du SRD, et un coffre
+  vaut 25 à 84 pièces fois le numéro de l'étage.
+- **La guilde** : 10 pièces par niveau atteint ; **le temple** : 20 par
+  niveau du mort.
+
+À l'arène, un groupe reposé bat la rencontre la plus dure de chaque étage au
+niveau qu'on peut y avoir : ogre au niveau 3, troll et momie aux niveaux 4-5,
+ettin et golem de chair au niveau 7 (0,3 à 1 mort par combat). Ce qui tue,
+c'est l'usure : descendre sans remonter se soigner et se former.
 
 ### Les huit classes
 

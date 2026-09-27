@@ -366,9 +366,11 @@ def cast_first(g, stats):
 
 
 def heal_up(g, stats):
-    """Entre deux combats : potions et sorts de soin sur les blesses."""
+    """Entre deux combats : potions et sorts de soin sur les blesses --
+    tous, pas seulement le premier."""
     for i in range(T.NH):
-        if g.hero(i, "hr_Hp") * 2 > g.hero(i, "hr_HpMax"):
+        if g.hero(i, "hr_Hp") * 2 > g.hero(i, "hr_HpMax") \
+                or g.hero(i, "hr_Hp") <= 0:
             continue
         g.key(T.K_1 + i)
         for slot in range(3):             # un lanceur soigne le groupe
@@ -383,7 +385,6 @@ def heal_up(g, stats):
                 g.key(T.K_U)
                 g.key(T.K_DOWN)
             g.key(T.K_I)
-        break
 
 
 def ready(g):
@@ -391,7 +392,7 @@ def ready(g):
     out = []
     for i in range(T.NH):
         if g.hero(i, "hr_Hp") > 0 and g.hero(i, "hr_Flags") & 1:
-            out.append((i, 25 * g.hero(i, "hr_Level")))
+            out.append((i, 10 * g.hero(i, "hr_Level")))
     return out
 
 
@@ -401,7 +402,10 @@ def want_town(g):
     gold = g.w("Gold")
     payable = [c for _, c in ready(g) if c <= gold]
     dead = [i for i in range(T.NH) if g.hero(i, "hr_Hp") <= 0]
-    return len(payable) >= 2 or (len(dead) >= 2 and gold >= 60)
+    hp = sum(max(0, g.hero(i, "hr_Hp")) for i in range(T.NH))
+    hpm = sum(g.hero(i, "hr_HpMax") for i in range(T.NH))
+    tired = hp * 100 < hpm * 45 and gold >= 5 * (T.NH - len(dead))
+    return len(payable) >= 1 or tired or (len(dead) >= 1 and gold >= 60)
 
 
 def in_town(g, fails, stats):
@@ -477,7 +481,7 @@ def fight(g, fails, stats):
 
 
 def main():
-    random.seed(7)
+    random.seed(int(os.environ.get("PLAY_SEED", "7")))
     fails, log = [], []
     stats = {"rounds": 0, "fights": 0, "steps": 0, "items": 0,
              "spells": 0, "menus": 0, "heals": 0,
@@ -501,7 +505,7 @@ def main():
     pull_levers(g, fails, stats)
     if levers and not stats["levers"]:
         fails.append(f"{levers} levier(s) sur le niveau, aucun tire")
-    for tour in range(40):
+    for tour in range(60):
         if g.w("Level") == T.read_equ("LEVELS", 4) - 1 \
                 and not g.w("Acquitted") and not g.w("GameOver"):
             sign_ledger(g, fails, stats)  # sinon la sortie ne cede pas
@@ -509,12 +513,22 @@ def main():
         here = (g.w("PosX"), g.w("PosY"))
         path = None
         todo = goals
-        if stats["bourg"] < 8 and want_town(g):
+        if stats["bourg"] < 16 and want_town(g):
             todo = [("remonter", lambda c: c & 0x0f == T_STAIRSUP)] + goals
         for label, want in todo:
             path = bfs(grid, here, want)
             if path:
                 break
+        if not path and grid[here[1]][here[0]] & 0x0f == T_STAIRS:
+            # Remonte du dessous, on reapparait sur l'escalier qui
+            # descend : bfs ne vise jamais la case de depart. Un pas de
+            # cote, et l'escalier redevient un but.
+            side = next(((here[0] + dx, here[1] + dy) for dx, dy in DIRS
+                         if passable(grid[here[1] + dy][here[0] + dx])
+                         and grid[here[1] + dy][here[0] + dx] & 0x0f
+                         not in (T_STAIRS, T_STAIRSUP)), None)
+            if side and step_to(g, side, log):
+                continue
         if not path:
             log.append(("plus de but atteignable", here))
             break
@@ -542,7 +556,11 @@ def main():
                 if g.w("GameOver"):
                     break
         if g.w("GameOver"):
-            log.append(("groupe aneanti", g.w("Level")))
+            if any(g.hero(i, "hr_Hp") > 0 for i in range(T.NH)):
+                log.append(("victoire : la porte des quittances",))
+            else:
+                log.append(("groupe aneanti", g.w("Level"), "par",
+                            g.w("MonKind"), "x", g.w("GroupN")))
             break
 
     if not stats["steps"]:

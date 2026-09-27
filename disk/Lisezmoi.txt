@@ -131,7 +131,7 @@ AMBELUNE
   les morts -- pas toujours : les dieux se detournent parfois, et
   gardent l'offrande. La guilde forme ceux qui sont prets : l'expe-
   rience ne fait plus passer de niveau toute seule, il faut payer le
-  maitre (25 pieces par niveau). TAB y montre les langues, a 100
+  maitre (10 pieces par niveau). TAB y montre les langues, a 100
   pieces, pour le heros choisi (1 a 6). La banque garde l'or -- sauf
   les rares nuits ou on la pille. La rue offre ses bourses aux doigts
   agiles, et son guet aux maladroits. A l'arrivee, gare aux coupe-

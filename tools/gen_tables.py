@@ -162,6 +162,12 @@ def tongue_mask(names):
 def monster_xp(cr):
     return max(5, int(300 * cr / 4))
 
+# Ce qu'une creature porte : le double de la table. La guilde fait
+# payer chaque niveau, le temple chaque resurrection ; avec l'or du SRD,
+# un groupe arrivait au troisieme etage sans de quoi se former.
+def monster_gold(gold):
+    return 2 * gold
+
 # --- Classes du SRD 3.5 ----------------------------------------------
 # nom, de de vie, progression d'attaque (0 complete, 1 trois quarts,
 # 2 demie), sauvegardes fortes (Vig, Ref, Vol), lanceur (0 aucun,
@@ -347,7 +353,7 @@ with open(OUT, "w", encoding="latin-1") as f:
         tongue, temper = SPECIES_TALK[name]
         f.write(f"\tdc.w\t{hd},{hdf},{hpb},{ac},{atk},{dice},{faces},{dmg},"
                 f"{crit},{mult},{fort},{ref},{will},{monster_xp(cr)},"
-                f"{gold},{art},{tongue},{temper}\n")
+                f"{monster_gold(gold)},{art},{tongue},{temper}\n")
     f.write(f"NMONSTERS\t= {len(MONSTERS)}\n")
 
     f.write("\n; rencontres par niveau de donjon : numeros de monstres\n")

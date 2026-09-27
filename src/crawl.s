@@ -5005,10 +5005,16 @@ TryMove:				; d1 = +1 en avant, -1 en arriere
 	bsr	MapSet
 	moveq	#SFX_CHEST,d0
 	bsr	SfxPlay
-	moveq	#60,d1
-	bsr	RndMod
-	add.w	#25,d0
+	moveq	#60,d1			; 25 a 84 pieces, fois l'etage : la
+	bsr	RndMod			; formation coute plus cher en bas,
+	add.w	#25,d0			; les coffres y sont mieux garnis
+	move.w	Level,d1
+	addq.w	#1,d1
+	mulu.w	d1,d0
 	add.w	d0,Gold
+	bcc.s	.goldOk
+	move.w	#$ffff,Gold
+.goldOk:
 	lea	TmpStr,a1
 	lea	TxtChest,a0
 	bsr	StrCopy
@@ -6977,17 +6983,28 @@ StartCombat:
 	move.w	d0,MonHp
 	move.w	mt_Art(a2),MonArt
 
-	; Le groupe : de un a quatre de la meme espece, d'autant moins que
-	; l'espece est lourde, d'autant plus qu'on est bas. Chacun a ses
-	; points de vie ; ceux de derriere attendent dans GroupHp.
-	move.w	mt_Hd(a2),d0		; quatre au plus, un de moins tous
-	subq.w	#1,d0			; les deux des de vie
-	lsr.w	#1,d0
+	; Le groupe : de un a quatre de la meme espece. L'etage a un budget
+	; de puissance (GroupBudget, en points d'experience : 75 par facteur
+	; de puissance) ; le groupe n'en depasse pas, sauf une creature seule
+	; plus forte que lui. Chacun a ses points de vie ; ceux de derriere
+	; attendent dans GroupHp.
+	move.w	Level,d0
+	add.w	d0,d0
+	lea	GroupBudget,a0
+	moveq	#0,d1
+	move.w	(a0,d0.w),d1
+	move.w	mt_Xp(a2),d0
+	beq.s	.maxAll
+	divu.w	d0,d1			; combien le budget en paie
+	cmp.w	#GROUPMAX,d1
+	ble.s	.maxOk
+.maxAll:
 	moveq	#GROUPMAX,d1
-	sub.w	d0,d1
-	bgt.s	.maxOk
-	moveq	#1,d1
 .maxOk:
+	tst.w	d1
+	bgt.s	.maxPos
+	moveq	#1,d1
+.maxPos:
 	move.w	Level,d0		; et pas plus que l'etage n'en autorise
 	addq.w	#2,d0
 	cmp.w	d0,d1
@@ -7930,8 +7947,9 @@ TOWN_BANK	= 4
 TOWN_STREET	= 5
 TOWN_LEAVE	= 6			; la derniere ligne de la place
 SQUAREROWS	= 7
-TRAIN_COST	= 25			; par niveau atteint
-RAISE_COST	= 30			; par niveau du mort
+XP_STEP		= 100			; palier : XP_STEP x n x (n+1) / 2
+TRAIN_COST	= 10			; par niveau atteint
+RAISE_COST	= 20			; par niveau du mort
 TONGUE_COST	= 100
 DORM_COST	= 2			; par aventurier debout
 ROOM_COST	= 5
@@ -8361,7 +8379,7 @@ TempleServe:
 
 ;--- la guilde ----------------------------------------------------------
 ; XpNeed : a6 = heros -> d0 = PX du prochain palier, 0 au plafond.
-; Palier = 150 x n x (n+1) / 2.
+; Palier = 100 x n x (n+1) / 2.
 XpNeed:
 	move.w	d1,-(sp)
 	move.w	hr_Level(a6),d0
@@ -8374,7 +8392,7 @@ XpNeed:
 	addq.w	#1,d1
 	mulu.w	d1,d0
 	lsr.l	#1,d0
-	mulu.w	#150,d0
+	mulu.w	#XP_STEP,d0
 .done:
 	move.w	(sp)+,d1
 	rts
@@ -10494,6 +10512,13 @@ TrapTable:
 	dc.w	1,6
 	dc.b	"NUAGE ACIDE",0,0,0,0,0
 	dc.w	0,4
+
+; Le budget de puissance d'une rencontre, par etage, en points
+; d'experience (75 par facteur de puissance) : FP 1, 3, 6 et 8. Trois
+; ogres au deuxieme etage, c'etait une rencontre de niveau 6 contre un
+; groupe de niveau 3.
+GroupBudget:
+	dc.w	75,225,450,600
 
 ; L'etal du marchand, un par etage : huit numeros d'objet dans
 ; ItemTable. Le prix est celui de l'objet ; il rachete a moitie.
